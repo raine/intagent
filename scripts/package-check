@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/intake-package.XXXXXX")"
+cleanup() {
+  rm -rf "$temporary_dir"
+}
+trap cleanup EXIT
+
+bun pm pack --dry-run >/dev/null
+bun build --compile src/cli.ts --outfile "$temporary_dir/intake" >/dev/null
+bun build --compile src/sources/fastmail.ts \
+  --outfile "$temporary_dir/intake-fastmail-source" >/dev/null
+bun build --compile src/sources/github.ts \
+  --outfile "$temporary_dir/intake-github-source" >/dev/null
+"$temporary_dir/intake" --help >/dev/null

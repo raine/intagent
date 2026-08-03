@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+git_common_dir="$(git rev-parse --git-common-dir)"
+hooks_dir="$git_common_dir/hooks"
+
+if (($# == 0)); then
+  set -- pre-commit
+fi
+
+mkdir -p "$hooks_dir"
+
+for hook_name in "$@"; do
+  if [[ ! "$hook_name" =~ ^[a-z0-9-]+$ ]]; then
+    printf 'error: invalid hook name: %s\n' "$hook_name" >&2
+    exit 1
+  fi
+
+  tracked_hook="$repo_root/hooks/$hook_name"
+  hook_path="$hooks_dir/$hook_name"
+
+  if [[ ! -x "$tracked_hook" ]]; then
+    printf 'error: tracked hook is missing or not executable: %s\n' "$tracked_hook" >&2
+    exit 1
+  fi
+
+  # Dollar expressions belong to the generated shim and expand when it runs.
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    '' \
+    'worktree_root="$(git rev-parse --show-toplevel)"' \
+    "tracked_hook=\"\$worktree_root/hooks/$hook_name\"" \
+    '' \
+    'if [[ ! -x "$tracked_hook" ]]; then' \
+    "  printf 'error: tracked $hook_name hook is missing or not executable: %s\\n' \"\$tracked_hook\" >&2" \
+    '  exit 1' \
+    'fi' \
+    '' \
+    'exec "$tracked_hook" "$@"' >"$hook_path"
+  chmod 0755 "$hook_path"
+done

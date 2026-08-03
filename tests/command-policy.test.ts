@@ -1,0 +1,120 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { CommandPolicy } from "../src/agent/command-policy.ts"
+import { testConfig } from "./fixtures/config.ts"
+
+let root = ""
+let bin = ""
+let log = ""
+let policy: CommandPolicy
+
+beforeEach(async () => {
+  root = await realpath(await mkdtemp(join(tmpdir(), "intake-policy-")))
+  bin = join(root, "bin")
+  log = join(root, "calls.log")
+  await Bun.write(log, "")
+  await Bun.$`mkdir -p ${bin}`.quiet()
+  for (const name of ["aven", "workmux", "tmux", "gh", "git", "rg", "fd"]) {
+    const path = join(bin, name)
+    const body = `#!/bin/sh\nprintf '%s' '${name}' >> '${log}'\nfor argument in "$@"; do printf '|%s' "$argument" >> '${log}'; done\nprintf '\\n' >> '${log}'\nif [ "$1" = slow ]; then /bin/sleep 2; fi\nif [ "$1" = large ]; then i=0; while [ $i -lt 400 ]; do printf '0123456789'; i=$((i+1)); done; fi\nif [ '${name}' = aven ]; then printf 'Created APP-TEST\\n'; else while IFS= read -r line; do printf '%s\\n' "$line"; done; printf 'token=secret-value\\n'; fi\n`
+    await writeFile(path, body)
+    await chmod(path, 0o755)
+  }
+  policy = new CommandPolicy(testConfig(root, bin), [await realpath(root)])
+})
+
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true })
+})
+
+describe("restricted command policy", () => {
+  test("accepts quoted arguments and authorized pipelines", async () => {
+    const parsed = policy.parseAndAuthorize(
+      'aven search "login issue" | rg "APP-*"',
+      root,
+    )
+    expect(parsed.stages).toEqual([
+      ["aven", "search", "login issue"],
+      ["rg", "APP-*"],
+    ])
+    const result = await policy.execute(
+      'aven search "login issue" | rg "APP-*"',
+      root,
+    )
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain("Created APP-TEST")
+    expect(result.stdout).toContain("[REDACTED]")
+    expect(await readFile(log, "utf8")).toContain("aven|search|login issue")
+  })
+
+  test.each([
+    "aven search x; rg y",
+    "aven search x && rg y",
+    "aven search $(id)",
+    "aven search $HOME",
+    "aven search x > out",
+    "VALUE=x aven search y",
+    "aven search *.md",
+    "(aven search x)",
+    "aven search x;",
+    "aven search x # hidden",
+    "aven search x &",
+    "aven search x\nrg y",
+  ])("rejects forbidden shell syntax: %s", (command) => {
+    expect(() => policy.parseAndAuthorize(command, root)).toThrow()
+  })
+
+  test("authorizes every pipeline stage before execution", async () => {
+    await expect(
+      policy.execute("aven search x | curl example.com", root),
+    ).rejects.toThrow("forbidden")
+    expect(await readFile(log, "utf8")).toBe("")
+  })
+
+  test("rejects unknown flags, subcommands, and working directories", () => {
+    expect(() =>
+      policy.parseAndAuthorize("aven delete APP-TEST", root),
+    ).toThrow("not allowed")
+    expect(() => policy.parseAndAuthorize("aven search --all x", root)).toThrow(
+      "flag is not allowed",
+    )
+    expect(() => policy.parseAndAuthorize("aven search x", tmpdir())).toThrow(
+      "outside approved roots",
+    )
+  })
+
+  test("rejects canonical working-directory and path escapes", async () => {
+    const escapedDirectory = await mkdtemp(join(tmpdir(), "intake-escape-"))
+    const cwdLink = join(root, "cwd-link")
+    const pathLink = join(root, "path-link")
+    await symlink(escapedDirectory, cwdLink)
+    await symlink(escapedDirectory, pathLink)
+    try {
+      await expect(policy.execute("aven search x", cwdLink)).rejects.toThrow(
+        "outside approved roots",
+      )
+      await expect(
+        policy.execute(`rg needle ${pathLink}`, root),
+      ).rejects.toThrow("filesystem argument is outside approved roots")
+    } finally {
+      await rm(escapedDirectory, { recursive: true, force: true })
+    }
+  })
+
+  test("enforces wall-clock timeout and output bounds", async () => {
+    await expect(policy.execute("rg slow", root)).rejects.toThrow()
+    const result = await policy.execute("rg large", root)
+    expect(result.stdout.length).toBeLessThanOrEqual(1024)
+    expect(result.truncated).toBe(true)
+  })
+})
