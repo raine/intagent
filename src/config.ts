@@ -26,20 +26,8 @@ const sourceSchema = z
 const commandRuleSchema = z
   .object({
     executable: z.string().regex(/^[a-zA-Z0-9._+-]+$/),
-    subcommands: z.array(z.string()).optional(),
-    allowedFlags: z
-      .array(z.string().regex(/^--?[a-zA-Z0-9][a-zA-Z0-9-]*$/))
-      .default([]),
-    valueFlags: z
-      .array(z.string().regex(/^--?[a-zA-Z0-9][a-zA-Z0-9-]*$/))
-      .default([]),
-    minPositionals: z.number().int().min(0).default(0),
-    maxPositionals: z.number().int().min(0).max(100).default(20),
   })
   .strict()
-  .refine((rule) => rule.minPositionals <= rule.maxPositionals, {
-    message: "minPositionals must not exceed maxPositionals",
-  })
 
 export const configSchema = z
   .object({
@@ -217,92 +205,12 @@ export async function initializePrivateConfig(
 }
 
 export const defaultCommandRules: CommandRule[] = [
-  {
-    executable: "aven",
-    subcommands: ["list", "search", "show", "context", "add", "note", "prime"],
-    allowedFlags: [
-      "--project",
-      "--status",
-      "--priority",
-      "--label",
-      "--open",
-      "--ready",
-      "--blocked",
-      "--limit",
-      "--json",
-      "--full",
-      "--description",
-      "--workspace",
-    ],
-    valueFlags: [
-      "--project",
-      "--status",
-      "--priority",
-      "--label",
-      "--limit",
-      "--description",
-      "--workspace",
-    ],
-    minPositionals: 0,
-    maxPositionals: 20,
-  },
-  {
-    executable: "workmux",
-    subcommands: ["status", "list", "path", "add"],
-    allowedFlags: [
-      "--json",
-      "--pr",
-      "--auto-name",
-      "-A",
-      "--background",
-      "-b",
-      "--prompt",
-      "-p",
-      "--base",
-    ],
-    valueFlags: ["--pr", "--prompt", "-p", "--base"],
-    minPositionals: 0,
-    maxPositionals: 4,
-  },
-  {
-    executable: "tmux",
-    subcommands: ["list-sessions", "list-windows", "has-session"],
-    allowedFlags: ["-F", "-t"],
-    valueFlags: ["-F", "-t"],
-    minPositionals: 0,
-    maxPositionals: 0,
-  },
-  {
-    executable: "git",
-    subcommands: ["remote", "status", "branch", "rev-parse", "config"],
-    allowedFlags: ["-C", "--get", "--show-toplevel", "--porcelain", "--format"],
-    valueFlags: ["-C", "--get", "--format"],
-    minPositionals: 0,
-    maxPositionals: 4,
-  },
-  {
-    executable: "rg",
-    allowedFlags: [
-      "-n",
-      "--line-number",
-      "-l",
-      "--files",
-      "-g",
-      "--glob",
-      "-F",
-      "--fixed-strings",
-    ],
-    valueFlags: ["-g", "--glob"],
-    minPositionals: 0,
-    maxPositionals: 10,
-  },
-  {
-    executable: "fd",
-    allowedFlags: ["-H", "--hidden", "-t", "--type", "-d", "--max-depth"],
-    valueFlags: ["-t", "--type", "-d", "--max-depth"],
-    minPositionals: 0,
-    maxPositionals: 4,
-  },
+  { executable: "aven" },
+  { executable: "workmux" },
+  { executable: "tmux" },
+  { executable: "git" },
+  { executable: "rg" },
+  { executable: "fd" },
 ]
 
 export function errorMessage(error: unknown): string {

@@ -32,11 +32,26 @@ export async function validateSkills(
       let valid = true
       try {
         const canonical = await realpath(candidate)
+        const candidateStat = await lstat(canonical)
+        if (!candidateStat.isDirectory()) {
+          diagnostics.push(`${candidate}: skill entry is not a directory`)
+          valid = false
+        }
         if (!isWithin(canonical, approvedRoots)) {
           diagnostics.push(
             `${candidate}: canonical skill path is outside approved roots`,
           )
           valid = false
+        }
+        if (valid) {
+          const skillFile = join(canonical, "SKILL.md")
+          const skillStat = await lstat(skillFile).catch(() => null)
+          if (!skillStat?.isFile()) {
+            diagnostics.push(
+              `${candidate}: SKILL.md is missing or is not a file`,
+            )
+            valid = false
+          }
         }
         if (valid) {
           const errors = await validateLinks(candidate, approvedRoots)
@@ -86,7 +101,16 @@ async function validateLinks(
         continue
       }
       const targetStat = await lstat(target)
-      if (targetStat.isDirectory()) pending.push(target)
+      if (targetStat.isDirectory()) {
+        const skillFile = await lstat(join(target, "SKILL.md")).catch(
+          () => null,
+        )
+        if (!skillFile?.isFile()) {
+          errors.push(`${path}: linked skill target has no SKILL.md file`)
+          continue
+        }
+        pending.push(target)
+      }
       continue
     }
     if (!stat.isDirectory()) continue

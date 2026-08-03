@@ -214,8 +214,13 @@ export class IntakeDatabase {
            WHERE ev.status IN ('pending', 'retryable')
              AND (ev.next_attempt_at IS NULL OR ev.next_attempt_at <= ?)
              AND NOT EXISTS (
-               SELECT 1 FROM events active
-               WHERE active.entity_id = ev.entity_id AND active.status = 'processing'
+               SELECT 1 FROM events prior
+               WHERE prior.entity_id = ev.entity_id
+                 AND prior.status IN ('pending', 'retryable', 'processing')
+                 AND (
+                   prior.observed_at < ev.observed_at OR
+                   (prior.observed_at = ev.observed_at AND prior.id < ev.id)
+                 )
              )
            ORDER BY ev.observed_at, ev.id LIMIT 1`,
         )
@@ -309,35 +314,55 @@ export class IntakeDatabase {
     const next = retryable
       ? new Date(Date.now() + delay * 1000).toISOString()
       : null
-    this.raw
-      .query(
-        "UPDATE events SET status = ?, next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ?",
-      )
-      .run(
-        retryable ? "retryable" : "failed",
-        next,
-        error.slice(0, 4096),
-        new Date().toISOString(),
-        id,
-      )
+    const status = retryable ? "retryable" : "failed"
+    this.raw.transaction(() => {
+      this.raw
+        .query(
+          "UPDATE events SET status = ?, next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ? AND status = 'processing'",
+        )
+        .run(status, next, error.slice(0, 4096), new Date().toISOString(), id)
+      this.raw
+        .query(
+          "UPDATE entities SET handling_status = ? WHERE id = (SELECT entity_id FROM events WHERE id = ?)",
+        )
+        .run(status, id)
+    })()
   }
 
   retry(id: number): boolean {
-    const result = this.raw
-      .query(
-        "UPDATE events SET status = 'retryable', attempt_count = 0, next_attempt_at = NULL, last_error = NULL, updated_at = ? WHERE id = ? AND payload IS NOT NULL AND status != 'processing'",
-      )
-      .run(new Date().toISOString(), id)
-    return Number(result.changes) === 1
+    return this.raw.transaction(() => {
+      const result = this.raw
+        .query(
+          "UPDATE events SET status = 'retryable', attempt_count = 0, next_attempt_at = NULL, last_error = NULL, updated_at = ? WHERE id = ? AND payload IS NOT NULL AND status != 'processing'",
+        )
+        .run(new Date().toISOString(), id)
+      if (Number(result.changes) === 1) {
+        this.raw
+          .query(
+            "UPDATE entities SET handling_status = 'retryable' WHERE id = (SELECT entity_id FROM events WHERE id = ?)",
+          )
+          .run(id)
+      }
+      return Number(result.changes) === 1
+    })()
   }
 
   ignore(id: number): boolean {
-    const result = this.raw
-      .query(
-        "UPDATE events SET status = 'ignored', payload = NULL, next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status != 'processing'",
-      )
-      .run(new Date().toISOString(), id)
-    return Number(result.changes) === 1
+    return this.raw.transaction(() => {
+      const result = this.raw
+        .query(
+          "UPDATE events SET status = 'ignored', payload = NULL, next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status != 'processing'",
+        )
+        .run(new Date().toISOString(), id)
+      if (Number(result.changes) === 1) {
+        this.raw
+          .query(
+            "UPDATE entities SET handling_status = 'ignored' WHERE id = (SELECT entity_id FROM events WHERE id = ?)",
+          )
+          .run(id)
+      }
+      return Number(result.changes) === 1
+    })()
   }
 
   recordCommand(

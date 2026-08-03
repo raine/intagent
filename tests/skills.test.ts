@@ -58,6 +58,28 @@ describe("skill boundaries", () => {
     ).toBe(true)
   })
 
+  test("rejects linked reference directories without a skill file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "intake-skills-"))
+    paths.push(root)
+    const wrapper = join(root, "wrappers", "mail")
+    const reference = join(root, "references", "incomplete")
+    await mkdir(join(wrapper, "references"), { recursive: true })
+    await mkdir(reference, { recursive: true })
+    await writeFile(
+      join(wrapper, "SKILL.md"),
+      "---\nname: mail\ndescription: Triage mail.\n---\n",
+    )
+    await symlink(reference, join(wrapper, "references", "incomplete"))
+    const config = testConfig(root, root)
+    config.skills = {
+      directories: [join(root, "wrappers")],
+      approvedRoots: [root],
+    }
+    const validation = await validateSkills(config)
+    expect(validation.skillPaths).toEqual([])
+    expect(validation.diagnostics.join("\n")).toContain("has no SKILL.md")
+  })
+
   test("rejects wrapper links whose canonical target is outside approved roots", async () => {
     const root = await mkdtemp(join(tmpdir(), "intake-skills-"))
     const outside = await mkdtemp(join(tmpdir(), "intake-outside-"))

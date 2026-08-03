@@ -6,7 +6,6 @@ import { loginCodex, PiTriageRunner } from "./agent/pi-runner.ts"
 import { validateSkills } from "./agent/skills.ts"
 import {
   canonicalRoots,
-  configDirectory,
   defaultConfigPath,
   errorMessage,
   expandPath,
@@ -98,11 +97,7 @@ async function main(argv: string[]): Promise<void> {
       throw new Error(
         `Configuration validation failed:\n${diagnostics.join("\n")}`,
       )
-    const roots = await canonicalRoots([
-      ...config.projectRoots,
-      ...config.skills.approvedRoots,
-      configDirectory(),
-    ])
+    const roots = await canonicalRoots(config.projectRoots)
     const policy = new CommandPolicy(config, roots)
     const runner = new PiTriageRunner(config, database, policy)
     const monitor = new IntakeMonitor(config, database, runner)

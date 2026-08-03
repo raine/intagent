@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-import { readFile } from "node:fs/promises"
-import { expandPath } from "../config.ts"
+import { lstat, readFile, realpath } from "node:fs/promises"
+import { dirname, join, resolve } from "node:path"
+import { expandPath, isWithin } from "../config.ts"
 import {
   sourceMain,
   type IntakeItem,
@@ -54,21 +55,21 @@ export async function pollGithub(
   const apiBase =
     stringOption(request, "apiBaseUrl") ?? "https://api.github.com"
   const maxPages = numberOption(request, "maxPages") ?? DEFAULT_MAX_PAGES
+  if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 1_000)
+    throw new Error(
+      "GitHub source options.maxPages must be an integer from 1 to 1000",
+    )
 
   for (const repository of repositories.sort()) {
     const checkpoint = previous.repositories[repository]
     if (!checkpoint) {
-      const latest = await githubGet<GithubItem[]>(
-        `${apiBase}/repos/${repository}/issues?state=all&sort=created&direction=desc&per_page=1&page=1`,
+      next.repositories[repository] = await baselineRepository(
+        repository,
+        apiBase,
         token,
+        maxPages,
         fetcher,
       )
-      next.repositories[repository] = latest[0]
-        ? {
-            createdAt: latest[0].created_at,
-            numbersAtTimestamp: [latest[0].number],
-          }
-        : { createdAt: "1970-01-01T00:00:00.000Z", numbersAtTimestamp: [] }
       continue
     }
     if (items.length >= request.itemLimit) continue
@@ -104,15 +105,17 @@ export async function discoverGithubRepositories(
 ): Promise<string[]> {
   const repositories = new Set<string>()
   for (const rootValue of roots) {
-    const root = expandPath(rootValue)
-    const glob = new Bun.Glob("**/.git/config")
-    for await (const configPath of glob.scan({
+    const root = await realpath(expandPath(rootValue))
+    const glob = new Bun.Glob("**/.git")
+    for await (const marker of glob.scan({
       cwd: root,
       absolute: true,
-      onlyFiles: true,
+      onlyFiles: false,
       dot: true,
     })) {
-      const content = await readFile(configPath, "utf8").catch(() => "")
+      const canonical = await realpath(marker).catch(() => null)
+      if (!canonical || !isWithin(canonical, [root])) continue
+      const content = await readRepositoryConfig(marker)
       for (const remote of gitRemoteUrls(content)) {
         const identity = githubIdentity(remote)
         if (identity) repositories.add(identity)
@@ -122,17 +125,40 @@ export async function discoverGithubRepositories(
   return [...repositories]
 }
 
+async function readRepositoryConfig(marker: string): Promise<string> {
+  const stat = await lstat(marker)
+  if (stat.isDirectory())
+    return readFile(join(marker, "config"), "utf8").catch(() => "")
+  if (!stat.isFile()) return ""
+  const markerText = await readFile(marker, "utf8").catch(() => "")
+  const gitDirValue = markerText.match(/^gitdir:\s*(.+?)\s*$/im)?.[1]
+  if (!gitDirValue) return ""
+  const gitDirectory = resolve(dirname(marker), gitDirValue)
+  const direct = await readFile(join(gitDirectory, "config"), "utf8").catch(
+    () => "",
+  )
+  if (direct) return direct
+  const commonValue = await readFile(join(gitDirectory, "commondir"), "utf8")
+    .then((value) => value.trim())
+    .catch(() => "")
+  if (!commonValue) return ""
+  return readFile(
+    join(resolve(gitDirectory, commonValue), "config"),
+    "utf8",
+  ).catch(() => "")
+}
+
 function gitRemoteUrls(config: string): string[] {
   const urls: string[] = []
   let inRemote = false
   for (const line of config.split(/\r?\n/)) {
     const section = line.match(/^\s*\[([^\]]+)\]\s*$/)
     if (section) {
-      inRemote = section[1]?.startsWith('remote "') ?? false
+      inRemote = /^remote\s+"/i.test(section[1] ?? "")
       continue
     }
     if (!inRemote) continue
-    const url = line.match(/^\s*url\s*=\s*(.+?)\s*$/)?.[1]
+    const url = line.match(/^\s*url\s*=\s*(.+?)\s*$/i)?.[1]
     if (url) urls.push(url)
   }
   return urls
@@ -141,10 +167,49 @@ function gitRemoteUrls(config: string): string[] {
 export function githubIdentity(remote: string): string | null {
   const normalized = remote.trim().replace(/\.git\/?$/, "")
   const match = normalized.match(
-    /^(?:https?:\/\/|ssh:\/\/git@|git@)github\.com[/:]([^/]+)\/([^/]+)$/i,
+    /^(?:(?:https?|git):\/\/|ssh:\/\/git@|git@)github\.com[/:]([^/]+)\/([^/]+)$/i,
   )
-  if (!match?.[1] || !match[2]) return null
+  if (
+    !match?.[1] ||
+    !match[2] ||
+    !/^[a-zA-Z0-9_.-]+$/.test(match[1]) ||
+    !/^[a-zA-Z0-9_.-]+$/.test(match[2])
+  )
+    return null
   return `${match[1]}/${match[2]}`.toLowerCase()
+}
+
+async function baselineRepository(
+  repository: string,
+  apiBase: string,
+  token: string,
+  maxPages: number,
+  fetcher: typeof fetch,
+): Promise<RepoCheckpoint> {
+  let createdAt: string | undefined
+  const numbersAtTimestamp: number[] = []
+  for (let page = 1; page <= maxPages; page += 1) {
+    const response = await githubGet<GithubItem[]>(
+      `${apiBase}/repos/${repository}/issues?state=all&sort=created&direction=desc&per_page=${PAGE_SIZE}&page=${page}`,
+      token,
+      fetcher,
+    )
+    const first = response[0]
+    if (!first)
+      return createdAt
+        ? { createdAt, numbersAtTimestamp }
+        : { createdAt: "1970-01-01T00:00:00.000Z", numbersAtTimestamp: [] }
+    createdAt ??= first.created_at
+    for (const item of response) {
+      if (item.created_at !== createdAt)
+        return { createdAt, numbersAtTimestamp }
+      numbersAtTimestamp.push(item.number)
+    }
+    if (response.length < PAGE_SIZE) return { createdAt, numbersAtTimestamp }
+  }
+  throw new Error(
+    `GitHub baseline pagination bound reached for ${repository} at one creation timestamp`,
+  )
 }
 
 async function listNewItems(
@@ -272,7 +337,8 @@ function parseCheckpoint(value: unknown): GithubCheckpoint {
   for (const entry of Object.values(repositories)) {
     if (
       typeof entry.createdAt !== "string" ||
-      !Array.isArray(entry.numbersAtTimestamp)
+      !Array.isArray(entry.numbersAtTimestamp) ||
+      !entry.numbersAtTimestamp.every((number) => Number.isSafeInteger(number))
     ) {
       throw new Error("GitHub checkpoint is invalid")
     }

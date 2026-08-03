@@ -77,35 +77,31 @@ describe("restricted command policy", () => {
   test("authorizes every pipeline stage before execution", async () => {
     await expect(
       policy.execute("aven search x | curl example.com", root),
-    ).rejects.toThrow("forbidden")
+    ).rejects.toThrow("not allowed")
     expect(await readFile(log, "utf8")).toBe("")
   })
 
-  test("rejects unknown flags, subcommands, and working directories", () => {
-    expect(() =>
-      policy.parseAndAuthorize("aven delete APP-TEST", root),
-    ).toThrow("not allowed")
-    expect(() => policy.parseAndAuthorize("aven search --all x", root)).toThrow(
-      "flag is not allowed",
-    )
+  test("passes literal arguments for every command on the executable allowlist", () => {
+    expect(
+      policy.parseAndAuthorize("aven delete APP-TEST --all", root).stages,
+    ).toEqual([["aven", "delete", "APP-TEST", "--all"]])
+    expect(
+      policy.parseAndAuthorize("gh issue close 42 --repo example/project", root)
+        .stages,
+    ).toEqual([["gh", "issue", "close", "42", "--repo", "example/project"]])
     expect(() => policy.parseAndAuthorize("aven search x", tmpdir())).toThrow(
       "outside approved roots",
     )
   })
 
-  test("rejects canonical working-directory and path escapes", async () => {
+  test("rejects canonical working-directory escapes", async () => {
     const escapedDirectory = await mkdtemp(join(tmpdir(), "intake-escape-"))
     const cwdLink = join(root, "cwd-link")
-    const pathLink = join(root, "path-link")
     await symlink(escapedDirectory, cwdLink)
-    await symlink(escapedDirectory, pathLink)
     try {
       await expect(policy.execute("aven search x", cwdLink)).rejects.toThrow(
         "outside approved roots",
       )
-      await expect(
-        policy.execute(`rg needle ${pathLink}`, root),
-      ).rejects.toThrow("filesystem argument is outside approved roots")
     } finally {
       await rm(escapedDirectory, { recursive: true, force: true })
     }

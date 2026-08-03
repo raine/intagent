@@ -2,13 +2,15 @@ import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { createInterface } from "node:readline/promises"
 import { stdin, stdout } from "node:process"
-import type { AuthPrompt, Model } from "@earendil-works/pi-ai"
+import type { AuthPrompt } from "@earendil-works/pi-ai"
 import {
   createAgentSession,
   DefaultResourceLoader,
   defineTool,
+  formatSkillsForPrompt,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   type ExtensionAPI,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent"
@@ -46,35 +48,67 @@ export class PiTriageRunner implements TriageRunner {
       authPath: join(agentDirectory, "auth.json"),
       modelsPath: join(agentDirectory, "models.json"),
     })
-    const model = await resolveCodexModel(runtime)
+    const codexRuntime = codexOnlyRuntime(runtime)
+    if ((await codexRuntime.getAvailable("openai-codex")).length === 0) {
+      throw new Error(
+        "OpenAI Codex subscription authentication is required. Run `intake login`.",
+      )
+    }
     const cwd = expandPath(this.config.projectRoots[0] ?? configDirectory())
     const tool = this.createTool(event, cwd)
     const guard = this.createGuard(cwd)
-    const resourceLoader = new DefaultResourceLoader({
+    const loaderOptions = {
       cwd,
       agentDir: agentDirectory,
       additionalSkillPaths: skillValidation.skillPaths,
-      extensionFactories: [guard],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      systemPrompt: systemPrompt(this.config),
+    } as const
+    const discoveryLoader = new DefaultResourceLoader(loaderOptions)
+    await discoveryLoader.reload()
+    const loadedSkills = discoveryLoader.getSkills()
+    const skillErrors = loadedSkills.diagnostics.filter(
+      (diagnostic) => diagnostic.type === "error",
+    )
+    if (skillErrors.length > 0) {
+      throw new Error(
+        `Pi skill loading failed:\n${skillErrors.map((error) => `${error.path}: ${error.message}`).join("\n")}`,
+      )
+    }
+    const skillCatalog = formatSkillsForPrompt(loadedSkills.skills).replace(
+      "Use the read tool to load a skill's file when the task matches its description.",
+      "Use the restricted Bash tool with rg -n to load a skill's file when the task matches its description.",
+    )
+    const resourceLoader = new DefaultResourceLoader({
+      ...loaderOptions,
+      extensionFactories: [guard],
+      systemPrompt: `${systemPrompt(this.config)}${skillCatalog}`,
     })
     await resourceLoader.reload()
 
     const { session } = await createAgentSession({
       cwd,
       agentDir: agentDirectory,
-      modelRuntime: runtime,
-      model,
+      modelRuntime: codexRuntime,
       resourceLoader,
+      settingsManager: SettingsManager.inMemory(),
       sessionManager: SessionManager.inMemory(cwd),
       noTools: "all",
       tools: ["bash"],
       customTools: [tool],
     })
+    if (
+      session.model?.provider !== "openai-codex" ||
+      session.model.api !== "openai-codex-responses"
+    ) {
+      session.dispose()
+      throw new Error(
+        "Pi did not resolve an OpenAI Codex subscription model with tool support",
+      )
+    }
 
     const timeoutController = new AbortController()
     const timeout = setTimeout(
@@ -118,7 +152,7 @@ export class PiTriageRunner implements TriageRunner {
       name: "bash",
       label: "Restricted Bash",
       description:
-        "Run one policy-approved simple command or pipeline. Shell expansions, redirects, command lists, interpreters, outward actions, and destructive commands are unavailable.",
+        "Run one executable-allowlisted simple command or pipeline. Shell expansions, redirects, command lists, and unlisted executables are unavailable.",
       promptSnippet:
         "Run a command through the restricted local command policy",
       parameters: Type.Object({
@@ -203,22 +237,19 @@ export class PiTriageRunner implements TriageRunner {
   }
 }
 
-async function resolveCodexModel(runtime: ModelRuntime): Promise<Model<any>> {
-  const available = [...(await runtime.getAvailable("openai-codex"))]
-  if (available.length === 0) {
-    throw new Error(
-      "OpenAI Codex subscription authentication is required. Run `intake login`.",
-    )
-  }
-  const aliases = available.filter(
-    (model) => !/\d{4}-\d{2}-\d{2}/.test(model.id),
-  )
-  const candidates = aliases.length > 0 ? aliases : available
-  candidates.sort((left, right) => right.id.localeCompare(left.id))
-  const model = candidates[0]
-  if (!model || model.provider !== "openai-codex")
-    throw new Error("resolved model is not an OpenAI Codex subscription model")
-  return model
+function codexOnlyRuntime(runtime: ModelRuntime): ModelRuntime {
+  return new Proxy(runtime, {
+    get(target, property) {
+      if (property === "getAvailable") {
+        return async (provider?: string) => {
+          if (provider && provider !== "openai-codex") return []
+          return target.getAvailable("openai-codex")
+        }
+      }
+      const value = Reflect.get(target, property, target)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
 }
 
 function systemPrompt(config: IntakeConfig): string {

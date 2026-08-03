@@ -20,53 +20,8 @@ export interface CommandResult {
   truncated: boolean
 }
 
-const forbiddenExecutables = new Set([
-  "bash",
-  "sh",
-  "zsh",
-  "fish",
-  "env",
-  "xargs",
-  "python",
-  "python3",
-  "node",
-  "bun",
-  "deno",
-  "ruby",
-  "perl",
-  "awk",
-  "sed",
-  "find",
-  "curl",
-  "wget",
-  "gh",
-])
-
-const forbiddenSubcommands: Record<string, Set<string>> = {
-  aven: new Set(["delete", "restore", "edit", "bulk-update", "sync", "import"]),
-  git: new Set([
-    "push",
-    "commit",
-    "merge",
-    "rebase",
-    "reset",
-    "clean",
-    "checkout",
-    "switch",
-  ]),
-  tmux: new Set([
-    "kill-session",
-    "kill-window",
-    "send-keys",
-    "run-shell",
-    "new-window",
-    "new-session",
-  ]),
-  workmux: new Set(["merge", "remove", "rm", "send", "run", "close"]),
-}
-
 export class CommandPolicy {
-  private readonly roots: string[]
+  private readonly workingRoots: string[]
   private readonly path: string[]
   private readonly rules: Map<string, CommandRule>
   readonly timeoutMilliseconds: number
@@ -74,7 +29,7 @@ export class CommandPolicy {
   private readonly filters: RegExp[]
 
   constructor(config: IntakeConfig, canonicalWorkingRoots: string[]) {
-    this.roots = canonicalWorkingRoots
+    this.workingRoots = canonicalWorkingRoots
     this.path = config.commands.path.map((path) => resolve(path))
     this.rules = new Map(
       config.commands.rules.map((rule) => [rule.executable, rule]),
@@ -82,6 +37,7 @@ export class CommandPolicy {
     this.timeoutMilliseconds = config.commands.timeoutSeconds * 1000
     this.maxOutputBytes = config.commands.maxOutputBytes
     this.filters = [
+      /(https?:\/\/)[^/\s:@]+:[^@\s/]+@/gi,
       /\b(?:sk-[a-zA-Z0-9_-]{16,}|gh[opurs]_[a-zA-Z0-9]{20,})\b/g,
       /\b(?:bearer|token|password|secret)\s*[:=]\s*\S+/gi,
       ...config.commands.sensitivePatterns.map(
@@ -96,7 +52,7 @@ export class CommandPolicy {
     if (command.includes("\0")) throw new Error("NUL bytes are forbidden")
     rejectUnsupportedTokens(command)
     const resolvedCwd = resolve(cwd)
-    if (!isWithin(resolvedCwd, this.roots))
+    if (!isWithin(resolvedCwd, this.workingRoots))
       throw new Error(`working directory is outside approved roots: ${cwd}`)
 
     let ast
@@ -137,9 +93,6 @@ export class CommandPolicy {
       throw new Error(`working directory is unavailable: ${cwd}`)
     }
     const parsed = this.parseAndAuthorize(command, canonicalCwd)
-    for (const stage of parsed.stages) {
-      await this.authorizeFilesystemArguments(stage, canonicalCwd)
-    }
     let stdin: Uint8Array | undefined
     let stderr = ""
     let truncated = false
@@ -149,8 +102,10 @@ export class CommandPolicy {
       const executable = await this.resolveExecutable(stage[0] ?? "")
       if (signal?.aborted) throw new Error("command cancelled")
       let timedOut = false
+      let forceKill: ReturnType<typeof setTimeout> | undefined
       const child = Bun.spawn([executable, ...stage.slice(1)], {
         cwd: canonicalCwd,
+        detached: true,
         env: {
           PATH: this.path.join(":"),
           HOME: process.env.HOME ?? "",
@@ -165,11 +120,18 @@ export class CommandPolicy {
         stdout: "pipe",
         stderr: "pipe",
       })
-      const cancel = () => child.kill()
+      const terminate = () => {
+        killProcessGroup(child.pid, "SIGTERM")
+        forceKill ??= setTimeout(
+          () => killProcessGroup(child.pid, "SIGKILL"),
+          1_000,
+        )
+      }
+      const cancel = () => terminate()
       signal?.addEventListener("abort", cancel, { once: true })
       const timeout = setTimeout(() => {
         timedOut = true
-        child.kill()
+        terminate()
       }, this.timeoutMilliseconds)
       try {
         const [code, out, err] = await Promise.all([
@@ -186,6 +148,10 @@ export class CommandPolicy {
         if (code !== 0) break
       } finally {
         clearTimeout(timeout)
+        if (forceKill) {
+          clearTimeout(forceKill)
+          killProcessGroup(child.pid, "SIGKILL")
+        }
         signal?.removeEventListener("abort", cancel)
       }
     }
@@ -239,105 +205,8 @@ export class CommandPolicy {
 
   private authorizeStage(argv: string[]): void {
     const executable = argv[0] ?? ""
-    if (executable.includes("/") || forbiddenExecutables.has(executable)) {
-      throw new Error(`executable is forbidden: ${executable}`)
-    }
-    const rule = this.rules.get(executable)
-    if (!rule) throw new Error(`executable is not allowed: ${executable}`)
-
-    let index = 1
-    if (rule.subcommands) {
-      const subcommand = argv[index]
-      if (!subcommand || !rule.subcommands.includes(subcommand)) {
-        throw new Error(
-          `subcommand is not allowed for ${executable}: ${subcommand ?? "missing"}`,
-        )
-      }
-      if (forbiddenSubcommands[executable]?.has(subcommand))
-        throw new Error(`subcommand is forbidden: ${executable} ${subcommand}`)
-      index += 1
-    }
-
-    let positionals = 0
-    while (index < argv.length) {
-      const argument = argv[index] ?? ""
-      if (argument === "--")
-        throw new Error("the option terminator is forbidden")
-      if (argument.startsWith("-")) {
-        const flag = argument.includes("=")
-          ? argument.slice(0, argument.indexOf("="))
-          : argument
-        if (!rule.allowedFlags.includes(flag))
-          throw new Error(`flag is not allowed for ${executable}: ${flag}`)
-        if (rule.valueFlags.includes(flag) && !argument.includes("=")) {
-          index += 1
-          if (index >= argv.length || (argv[index]?.startsWith("-") ?? false)) {
-            throw new Error(`flag requires a value: ${flag}`)
-          }
-        }
-      } else {
-        positionals += 1
-      }
-      index += 1
-    }
-    if (
-      positionals < rule.minPositionals ||
-      positionals > rule.maxPositionals
-    ) {
-      throw new Error(
-        `positional argument count is outside policy for ${executable}`,
-      )
-    }
-    if (
-      executable === "git" &&
-      argv[1] === "config" &&
-      (argv.length !== 4 ||
-        argv[2] !== "--get" ||
-        !/^remote\.[a-zA-Z0-9._-]+\.url$/.test(argv[3] ?? ""))
-    ) {
-      throw new Error("git config is restricted to remote URL lookup")
-    }
-  }
-
-  private async authorizeFilesystemArguments(
-    argv: string[],
-    cwd: string,
-  ): Promise<void> {
-    const executable = argv[0]
-    if (executable !== "rg" && executable !== "fd") return
-    const rule = this.rules.get(executable)
-    if (!rule) return
-    const positionals: string[] = []
-    let index = 1
-    while (index < argv.length) {
-      const argument = argv[index] ?? ""
-      if (argument.startsWith("-")) {
-        const flag = argument.includes("=")
-          ? argument.slice(0, argument.indexOf("="))
-          : argument
-        if (rule.valueFlags.includes(flag) && !argument.includes("="))
-          index += 1
-      } else {
-        positionals.push(argument)
-      }
-      index += 1
-    }
-    const paths =
-      executable === "rg" && argv.includes("--files")
-        ? positionals
-        : positionals.slice(1)
-    for (const path of paths) {
-      let canonical: string
-      try {
-        canonical = await realpath(resolve(cwd, path))
-      } catch {
-        throw new Error(`filesystem argument is unavailable: ${path}`)
-      }
-      if (!isWithin(canonical, this.roots)) {
-        throw new Error(
-          `filesystem argument is outside approved roots: ${path}`,
-        )
-      }
+    if (!this.rules.has(executable)) {
+      throw new Error(`executable is not allowed: ${executable}`)
     }
   }
 
@@ -414,6 +283,14 @@ function isFullyQuoted(word: WordNode, source: string): boolean {
     (raw.startsWith('"') && raw.endsWith('"')) ||
     (raw.startsWith("'") && raw.endsWith("'"))
   )
+}
+
+function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+  }
 }
 
 async function readBounded(

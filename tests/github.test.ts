@@ -47,9 +47,20 @@ function request(root: string, checkpoint: unknown): PollRequest {
 }
 
 describe("GitHub source", () => {
-  test("discovers and canonicalizes GitHub remotes beneath every root", async () => {
+  test("discovers canonical remotes from repositories and worktree markers", async () => {
     const root = await repositoryRoot()
-    expect(await discoverGithubRepositories([root])).toEqual([
+    await mkdir(join(root, "linked-worktree"), { recursive: true })
+    await mkdir(join(root, "shared.git"), { recursive: true })
+    await writeFile(
+      join(root, "shared.git", "config"),
+      '[REMOTE "origin"]\n  URL = git://github.com/Example/Linked.git\n',
+    )
+    await writeFile(
+      join(root, "linked-worktree", ".git"),
+      "gitdir: ../shared.git\n",
+    )
+    expect((await discoverGithubRepositories([root])).sort()).toEqual([
+      "example/linked",
       "example/project",
     ])
     expect(githubIdentity("ssh://git@github.com/Owner/Repo.git")).toBe(
@@ -62,8 +73,12 @@ describe("GitHub source", () => {
     process.env.GITHUB_TOKEN = "source-only-token"
     const root = await repositoryRoot()
     const fetcher = (async (input: string | URL | Request) => {
-      expect(requestUrl(input)).toContain("per_page=1")
-      return Response.json([issue(7, "2026-08-03T10:00:00.000Z")])
+      expect(requestUrl(input)).toContain("per_page=100&page=1")
+      return Response.json([
+        issue(8, "2026-08-03T10:00:00.000Z"),
+        issue(7, "2026-08-03T10:00:00.000Z"),
+        issue(6, "2026-08-03T09:59:59.000Z"),
+      ])
     }) as typeof fetch
     const result = await pollGithub(request(root, null), fetcher)
     expect(result.items).toEqual([])
@@ -71,7 +86,7 @@ describe("GitHub source", () => {
       repositories: {
         "example/project": {
           createdAt: "2026-08-03T10:00:00.000Z",
-          numbersAtTimestamp: [7],
+          numbersAtTimestamp: [8, 7],
         },
       },
     })

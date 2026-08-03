@@ -76,6 +76,29 @@ describe("intake persistence", () => {
     expect(database.claimNext()?.revisionId).toBe("message-2")
   })
 
+  test("keeps later entity events behind a delayed retry", () => {
+    const database = new IntakeDatabase(":memory:")
+    databases.push(database)
+    database.sourceSucceeded(
+      "mail",
+      {},
+      [item(), item("message-2")],
+      "2026-08-03T10:01:00.000Z",
+    )
+    const first = database.claimNext()
+    database.fail(first?.id ?? 0, "model unavailable", 3, 3_600)
+    const nextAttemptAt = database.event(first?.id ?? 0)?.nextAttemptAt
+    expect(nextAttemptAt).not.toBeNull()
+    expect(
+      database.claimNext(
+        new Date(Date.parse(nextAttemptAt ?? "") - 1).toISOString(),
+      ),
+    ).toBeNull()
+    expect(database.claimNext(nextAttemptAt ?? undefined)?.revisionId).toBe(
+      "message-1",
+    )
+  })
+
   test("derives durable Aven and investigation references", () => {
     const database = new IntakeDatabase(":memory:")
     databases.push(database)

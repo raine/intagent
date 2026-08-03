@@ -67,6 +67,63 @@ describe("external source protocol", () => {
     }
   })
 
+  test("records source startup failures", async () => {
+    const root = await mkdtemp(join(tmpdir(), "intake-source-"))
+    paths.push(root)
+    const config = testConfig(root, root)
+    const source = {
+      name: "missing",
+      command: join(root, "does-not-exist"),
+      args: [],
+      intervalSeconds: 60,
+      timeoutSeconds: 1,
+      itemLimit: 10,
+      environment: [],
+      options: {},
+    }
+    const database = new IntakeDatabase(":memory:")
+    try {
+      await expect(pollSource(source, config, database)).rejects.toThrow()
+      expect(database.sourceStatuses()[0]?.lastError).toBeTruthy()
+    } finally {
+      database.close()
+    }
+  })
+
+  test("kills the source process tree on timeout", async () => {
+    const root = await mkdtemp(join(tmpdir(), "intake-source-"))
+    paths.push(root)
+    const command = join(root, "source")
+    const descendantMarker = join(root, "descendant-ran")
+    await writeFile(
+      command,
+      `#!/bin/sh\n(/bin/sleep 2; /usr/bin/touch '${descendantMarker}') &\n/bin/sleep 5\n`,
+    )
+    await chmod(command, 0o755)
+    const config = testConfig(root, root)
+    const source = {
+      name: "fake",
+      command,
+      args: [],
+      intervalSeconds: 60,
+      timeoutSeconds: 1,
+      itemLimit: 10,
+      environment: [],
+      options: {},
+    }
+    const database = new IntakeDatabase(":memory:")
+    try {
+      await expect(pollSource(source, config, database)).rejects.toThrow(
+        "timed out",
+      )
+      await Bun.sleep(1_200)
+      expect(await Bun.file(descendantMarker).exists()).toBe(false)
+      expect(database.sourceCheckpoint("fake")).toBeNull()
+    } finally {
+      database.close()
+    }
+  })
+
   test("does not advance checkpoint after malformed stdout", async () => {
     const root = await mkdtemp(join(tmpdir(), "intake-source-"))
     paths.push(root)

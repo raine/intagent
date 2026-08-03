@@ -12,8 +12,7 @@ interface JmapSession {
 }
 
 interface Checkpoint {
-  queryState: string
-  watermark: string
+  emailState: string
 }
 
 interface Email {
@@ -27,6 +26,7 @@ interface Email {
   receivedAt: string
   sentAt?: string
   messageId?: string[]
+  mailboxIds?: Record<string, boolean>
   bodyValues?: Record<string, { value: string; isTruncated?: boolean }>
   textBody?: Array<{ partId?: string; type?: string }>
   htmlBody?: Array<{ partId?: string; type?: string }>
@@ -80,24 +80,17 @@ export async function pollFastmail(
     (await findInbox(session.apiUrl, accountId, token, fetcher))
 
   if (!request.checkpoint) {
-    const query = await jmapCall<any>(
+    const baseline = await jmapCall<any>(
       session.apiUrl,
       token,
-      [
-        "Email/query",
-        {
-          accountId,
-          filter: { inMailbox: inboxId },
-          sort: [{ property: "receivedAt", isAscending: false }],
-          limit: 1,
-        },
-        "baseline",
-      ],
+      ["Email/get", { accountId, ids: [], properties: ["id"] }, "baseline"],
       fetcher,
     )
+    if (typeof baseline.state !== "string")
+      throw new Error("Fastmail baseline response has no Email state")
     return {
       protocolVersion: 1,
-      checkpoint: { queryState: query.queryState, watermark: request.now },
+      checkpoint: { emailState: baseline.state },
       items: [],
     }
   }
@@ -107,33 +100,30 @@ export async function pollFastmail(
     session.apiUrl,
     token,
     [
-      "Email/queryChanges",
+      "Email/changes",
       {
         accountId,
-        filter: { inMailbox: inboxId },
-        sort: [{ property: "receivedAt", isAscending: false }],
-        sinceQueryState: checkpoint.queryState,
+        sinceState: checkpoint.emailState,
         maxChanges: request.itemLimit,
       },
       "changes",
     ],
     fetcher,
   )
-  const ids = (changes.added ?? [])
-    .map((entry: { id: string }) => entry.id)
-    .slice(0, request.itemLimit)
-  const newMessages =
+  if (typeof changes.newState !== "string")
+    throw new Error("Fastmail changes response has no Email state")
+  const ids = (changes.created ?? []).slice(0, request.itemLimit)
+  const createdEmails =
     ids.length > 0
       ? await getEmails(session.apiUrl, accountId, token, ids, fetcher)
       : []
-  const eligible = newMessages
-    .filter((email) => email.receivedAt >= checkpoint.watermark)
+  const newMessages = createdEmails
+    .filter((email) => email.mailboxIds?.[inboxId] === true)
     .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt))
   const threadCache = new Map<string, Email[]>()
   const items: IntakeItem[] = []
-  let watermark = checkpoint.watermark
 
-  for (const email of eligible) {
+  for (const email of newMessages) {
     let thread = threadCache.get(email.threadId)
     if (!thread) {
       thread = await getThread(
@@ -146,12 +136,11 @@ export async function pollFastmail(
       threadCache.set(email.threadId, thread)
     }
     items.push(normalizeEmail(accountId, email, thread))
-    if (email.receivedAt > watermark) watermark = email.receivedAt
   }
 
   return {
     protocolVersion: 1,
-    checkpoint: { queryState: changes.newQueryState, watermark },
+    checkpoint: { emailState: changes.newState },
     items,
   }
 }
@@ -201,6 +190,7 @@ async function getEmails(
           "receivedAt",
           "sentAt",
           "messageId",
+          "mailboxIds",
           "textBody",
           "htmlBody",
           "bodyValues",
@@ -351,10 +341,7 @@ function parseCheckpoint(value: unknown): Checkpoint {
   if (!value || typeof value !== "object")
     throw new Error("Fastmail checkpoint is invalid")
   const checkpoint = value as Partial<Checkpoint>
-  if (
-    typeof checkpoint.queryState !== "string" ||
-    typeof checkpoint.watermark !== "string"
-  ) {
+  if (typeof checkpoint.emailState !== "string") {
     throw new Error("Fastmail checkpoint is invalid")
   }
   return checkpoint as Checkpoint

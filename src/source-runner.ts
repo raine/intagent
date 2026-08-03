@@ -61,16 +61,33 @@ export async function pollSource(
     if (value !== undefined) environment[name] = value
   }
 
-  const processHandle = Bun.spawn([source.command, ...source.args], {
-    env: environment,
-    stdin: new Blob([JSON.stringify(request)]),
-    stdout: "pipe",
-    stderr: "pipe",
-  })
+  const processHandle = (() => {
+    try {
+      return Bun.spawn([source.command, ...source.args], {
+        detached: true,
+        env: environment,
+        stdin: new Blob([JSON.stringify(request)]),
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    } catch (error) {
+      const message = redactSourceError(errorMessage(error), source.environment)
+      database.sourceFailed(source.name, message, now.toISOString())
+      throw new Error(message)
+    }
+  })()
   let timedOut = false
+  let forceKill: ReturnType<typeof setTimeout> | undefined
+  const terminate = () => {
+    killProcessGroup(processHandle.pid, "SIGTERM")
+    forceKill ??= setTimeout(
+      () => killProcessGroup(processHandle.pid, "SIGKILL"),
+      1_000,
+    )
+  }
   const timeout = setTimeout(() => {
     timedOut = true
-    processHandle.kill()
+    terminate()
   }, source.timeoutSeconds * 1000)
   try {
     const stdoutPromise = boundedText(processHandle.stdout, SOURCE_OUTPUT_LIMIT)
@@ -109,12 +126,24 @@ export async function pollSource(
       now.toISOString(),
     )
   } catch (error) {
-    processHandle.kill()
+    if (processHandle.exitCode === null) terminate()
     const message = redactSourceError(errorMessage(error), source.environment)
     database.sourceFailed(source.name, message, now.toISOString())
     throw new Error(message)
   } finally {
     clearTimeout(timeout)
+    if (forceKill) {
+      clearTimeout(forceKill)
+      killProcessGroup(processHandle.pid, "SIGKILL")
+    }
+  }
+}
+
+function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
   }
 }
 
