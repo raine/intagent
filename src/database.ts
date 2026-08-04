@@ -76,6 +76,100 @@ const migrations = [
     created_at TEXT NOT NULL
   );
   `,
+  `
+  ALTER TABLE events ADD COLUMN source TEXT;
+  UPDATE events
+  SET source = (SELECT source FROM entities WHERE entities.id = events.entity_id);
+
+  CREATE TEMP TABLE entity_merge AS
+  SELECT entity.id AS old_id,
+    (SELECT MIN(candidate.id)
+     FROM entities candidate
+     WHERE candidate.external_id = entity.external_id) AS canonical_id
+  FROM entities entity;
+
+  CREATE TEMP TABLE event_merge AS
+  SELECT event.id AS old_id,
+    (SELECT MIN(candidate.id)
+     FROM events candidate
+     JOIN entity_merge candidate_entity ON candidate_entity.old_id = candidate.entity_id
+     WHERE candidate_entity.canonical_id = event_entity.canonical_id
+       AND candidate.revision_id = event.revision_id) AS canonical_id
+  FROM events event
+  JOIN entity_merge event_entity ON event_entity.old_id = event.entity_id;
+
+  UPDATE command_events
+  SET event_id = (
+    SELECT canonical_id FROM event_merge WHERE old_id = command_events.event_id
+  )
+  WHERE event_id IN (SELECT old_id FROM event_merge WHERE old_id != canonical_id);
+
+  DELETE FROM events
+  WHERE id IN (SELECT old_id FROM event_merge WHERE old_id != canonical_id);
+
+  UPDATE events
+  SET entity_id = (
+    SELECT canonical_id FROM entity_merge WHERE old_id = events.entity_id
+  );
+
+  UPDATE entities AS canonical
+  SET aven_ref = COALESCE(
+        (SELECT duplicate.aven_ref
+         FROM entities duplicate
+         JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+         WHERE mapping.canonical_id = canonical.id
+           AND duplicate.aven_ref IS NOT NULL
+         ORDER BY duplicate.last_event_at DESC, duplicate.id DESC
+         LIMIT 1),
+        canonical.aven_ref
+      ),
+      investigation_handle = COALESCE(
+        (SELECT duplicate.investigation_handle
+         FROM entities duplicate
+         JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+         WHERE mapping.canonical_id = canonical.id
+           AND duplicate.investigation_handle IS NOT NULL
+         ORDER BY duplicate.last_event_at DESC, duplicate.id DESC
+         LIMIT 1),
+        canonical.investigation_handle
+      ),
+      kind = (SELECT duplicate.kind
+              FROM entities duplicate
+              JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+              WHERE mapping.canonical_id = canonical.id
+              ORDER BY duplicate.last_event_at DESC, duplicate.id DESC
+              LIMIT 1),
+      title = (SELECT duplicate.title
+               FROM entities duplicate
+               JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+               WHERE mapping.canonical_id = canonical.id
+               ORDER BY duplicate.last_event_at DESC, duplicate.id DESC
+               LIMIT 1),
+      last_event_at = (SELECT MAX(duplicate.last_event_at)
+                       FROM entities duplicate
+                       JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+                       WHERE mapping.canonical_id = canonical.id),
+      handling_status = (SELECT duplicate.handling_status
+                         FROM entities duplicate
+                         JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+                         WHERE mapping.canonical_id = canonical.id
+                         ORDER BY duplicate.last_event_at DESC, duplicate.id DESC
+                         LIMIT 1),
+      operational_metadata = (SELECT duplicate.operational_metadata
+                              FROM entities duplicate
+                              JOIN entity_merge mapping ON mapping.old_id = duplicate.id
+                              WHERE mapping.canonical_id = canonical.id
+                              ORDER BY duplicate.last_event_at DESC, duplicate.id DESC
+                              LIMIT 1)
+  WHERE canonical.id IN (SELECT canonical_id FROM entity_merge);
+
+  DELETE FROM entities
+  WHERE id IN (SELECT old_id FROM entity_merge WHERE old_id != canonical_id);
+
+  CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id);
+  DROP TABLE event_merge;
+  DROP TABLE entity_merge;
+  `,
 ]
 
 export class IntakeDatabase {
@@ -151,7 +245,7 @@ export class IntakeDatabase {
           .query(
             `INSERT INTO entities(source, external_id, kind, title, last_event_at, operational_metadata)
              VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(source, external_id) DO UPDATE SET
+             ON CONFLICT(external_id) DO UPDATE SET
                kind = excluded.kind,
                title = excluded.title,
                last_event_at = excluded.last_event_at,
@@ -166,15 +260,16 @@ export class IntakeDatabase {
             JSON.stringify({ url: item.url ?? null, kind: item.kind }),
           )
         const entity = this.raw
-          .query("SELECT id FROM entities WHERE source = ? AND external_id = ?")
-          .get(source, item.entityId) as { id: number }
+          .query("SELECT id FROM entities WHERE external_id = ?")
+          .get(item.entityId) as { id: number }
         const result = this.raw
           .query(
-            `INSERT OR IGNORE INTO events(entity_id, revision_id, payload, occurred_at, observed_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT OR IGNORE INTO events(entity_id, source, revision_id, payload, occurred_at, observed_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             entity.id,
+            source,
             item.revisionId,
             JSON.stringify(item),
             item.occurredAt,
@@ -240,7 +335,7 @@ export class IntakeDatabase {
   event(id: number): EventRecord | null {
     return this.raw
       .query(
-        `SELECT ev.id, en.source, en.external_id AS entityId, ev.revision_id AS revisionId,
+        `SELECT ev.id, ev.source, en.external_id AS entityId, ev.revision_id AS revisionId,
            en.kind, en.title, ev.payload, en.operational_metadata AS operationalMetadata,
            ev.occurred_at AS occurredAt, ev.observed_at AS observedAt, ev.status,
            ev.attempt_count AS attemptCount, ev.next_attempt_at AS nextAttemptAt,
@@ -254,7 +349,7 @@ export class IntakeDatabase {
   listEvents(limit = 50): EventRecord[] {
     return this.raw
       .query(
-        `SELECT ev.id, en.source, en.external_id AS entityId, ev.revision_id AS revisionId,
+        `SELECT ev.id, ev.source, en.external_id AS entityId, ev.revision_id AS revisionId,
            en.kind, en.title, ev.payload, en.operational_metadata AS operationalMetadata,
            ev.occurred_at AS occurredAt, ev.observed_at AS observedAt, ev.status,
            ev.attempt_count AS attemptCount, ev.next_attempt_at AS nextAttemptAt,
