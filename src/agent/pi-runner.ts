@@ -278,6 +278,7 @@ export class PiTriageRunner implements TriageRunner {
           return {
             content: [{ type: "text" as const, text: combined }],
             details: result,
+            isError: result.exitCode !== 0,
           }
         } catch (error) {
           const message = this.policy.filter(errorMessage(error))
