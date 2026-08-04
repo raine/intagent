@@ -394,11 +394,19 @@ export class IntakeDatabase {
       )
 
     if (exitCode !== 0) return
-    const aven = output.match(/\b([A-Z][A-Z0-9]*-[A-Z0-9]{3,})\b/)
-    const explicitHandle = output.match(
-      /handle(?:\s+name)?[:=]\s*([a-z0-9][a-z0-9._-]*)/i,
-    )?.[1]
-    const worktreePath = output.match(/^\s*Worktree:\s*(\S+)/im)?.[1]
+    const executable = command.match(/^\s*([a-zA-Z0-9._+-]+)/)?.[1]
+    const aven =
+      executable === "aven"
+        ? output.match(/\b([A-Z][A-Z0-9]*-[A-Z0-9]{3,})\b/)
+        : null
+    const explicitHandle =
+      executable === "workmux"
+        ? output.match(/handle(?:\s+name)?[:=]\s*([a-z0-9][a-z0-9._-]*)/i)?.[1]
+        : undefined
+    const worktreePath =
+      executable === "workmux"
+        ? output.match(/^\s*Worktree:\s*(\S+)/im)?.[1]
+        : undefined
     const workmux =
       explicitHandle ?? (worktreePath ? basename(worktreePath) : null)
     if (aven) this.updateEntityReference(id, "aven_ref", aven[1] ?? null)

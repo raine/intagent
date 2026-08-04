@@ -106,6 +106,16 @@ describe("intake persistence", () => {
     const event = database.claimNext()
     database.recordCommand(
       event?.id ?? 0,
+      "rg -n APP-EXAMPLE skills",
+      0,
+      "Created APP-EXAMPLE\nWorktree: /tmp/project__worktrees/example",
+    )
+    expect(database.event(event?.id ?? 0)).toMatchObject({
+      avenRef: null,
+      investigationHandle: null,
+    })
+    database.recordCommand(
+      event?.id ?? 0,
       'aven add title --description "Complete content"',
       0,
       "Created APP-7KQ9 with Complete content",
