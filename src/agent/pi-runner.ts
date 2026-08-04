@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { createInterface } from "node:readline/promises"
 import { stdin, stdout } from "node:process"
 import type { AuthPrompt } from "@earendil-works/pi-ai"
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth"
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -22,6 +23,8 @@ import { DurableLogStore, type TriageRunLog } from "../logging.ts"
 import { CommandPolicy } from "./command-policy.ts"
 import { TerminalTriageReporter } from "./terminal-reporter.ts"
 import { validateSkills } from "./skills.ts"
+
+registerBunOAuthFlows()
 
 export interface TriageRunner {
   run(event: EventRecord, signal?: AbortSignal): Promise<void>
@@ -161,6 +164,7 @@ export class PiTriageRunner implements TriageRunner {
       ? AbortSignal.any([outerSignal, timeoutController.signal])
       : timeoutController.signal
     let turns = 0
+    let modelFailure: string | undefined
     const reporter = new TerminalTriageReporter(process.stderr, (value) =>
       this.policy.filter(value),
     )
@@ -170,6 +174,12 @@ export class PiTriageRunner implements TriageRunner {
       void log.event(agentEvent)
       if (agentEvent.type === "turn_end") {
         turns += 1
+        if (
+          agentEvent.message.role === "assistant" &&
+          agentEvent.message.stopReason === "error"
+        ) {
+          modelFailure = agentEvent.message.errorMessage ?? "model turn failed"
+        }
         if (turns >= this.config.triage.max_turns) void session.abort()
       }
     })
@@ -181,6 +191,7 @@ export class PiTriageRunner implements TriageRunner {
       const prompt = buildEventPrompt(event)
       await log.prompt(prompt)
       await session.prompt(prompt)
+      if (modelFailure) throw new Error(modelFailure)
       if (signal.aborted)
         throw signal.reason instanceof Error
           ? signal.reason
