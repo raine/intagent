@@ -24,7 +24,7 @@ function json(value: unknown): Response {
 }
 
 describe("Fastmail source", () => {
-  test("establishes an Email-state baseline without historical events", async () => {
+  test("establishes a mailbox-query baseline without historical events", async () => {
     process.env.FASTMAIL_API_TOKEN = "source-only-token"
     const calls: unknown[] = []
     const fetcher = (async (
@@ -41,17 +41,16 @@ describe("Fastmail source", () => {
       calls.push(body)
       return json({
         methodResponses: [
-          [
-            "Email/get",
-            { state: "email-state-1", list: [], notFound: [] },
-            "baseline",
-          ],
+          ["Email/query", { queryState: "query-state-1", ids: [] }, "query"],
         ],
       })
     }) as typeof fetch
     const result = await pollFastmail(request(null), fetcher)
     expect(result.items).toEqual([])
-    expect(result.checkpoint).toEqual({ emailState: "email-state-1" })
+    expect(result.checkpoint).toEqual({
+      queryState: "query-state-1",
+      mailboxId: "inbox",
+    })
     expect(calls).toHaveLength(1)
   })
 
@@ -69,17 +68,17 @@ describe("Fastmail source", () => {
       }
       const body = JSON.parse(init.body as string)
       const [method, arguments_, callId] = body.methodCalls[0]
-      if (method === "Email/changes") {
+      if (method === "Email/queryChanges") {
         expect(arguments_.maxChanges).toBe(10)
+        expect(arguments_.filter).toEqual({ inMailbox: "inbox" })
         return json({
           methodResponses: [
             [
               method,
               {
-                created: ["message-2"],
-                updated: [],
-                destroyed: [],
-                newState: "email-state-2",
+                added: [{ id: "message-2", index: 0 }],
+                removed: [],
+                newQueryState: "query-state-2",
                 hasMoreChanges: false,
               },
               callId,
@@ -120,7 +119,7 @@ describe("Fastmail source", () => {
     }) as typeof fetch
 
     const result = await pollFastmail(
-      request({ emailState: "email-state-1" }),
+      request({ queryState: "query-state-1", mailboxId: "inbox" }),
       fetcher,
     )
     expect(result.items).toHaveLength(1)
@@ -150,10 +149,13 @@ describe("Fastmail source", () => {
     expect(JSON.stringify(result.items[0]?.metadata)).not.toContain(
       "blob-secret",
     )
-    expect(result.checkpoint).toEqual({ emailState: "email-state-2" })
+    expect(result.checkpoint).toEqual({
+      queryState: "query-state-2",
+      mailboxId: "inbox",
+    })
   })
 
-  test("advances through non-creation changes without emitting intake", async () => {
+  test("advances through removals without emitting intake", async () => {
     process.env.FASTMAIL_API_TOKEN = "source-only-token"
     const fetcher = (async (
       _input: string | URL | Request,
@@ -167,17 +169,16 @@ describe("Fastmail source", () => {
       }
       const body = JSON.parse(init.body as string)
       const [method, , callId] = body.methodCalls[0]
-      expect(method).toBe("Email/changes")
+      expect(method).toBe("Email/queryChanges")
       return json({
         methodResponses: [
           [
             method,
             {
-              created: [],
-              updated: ["message-1"],
-              destroyed: [],
-              newState: "email-state-2",
-              hasMoreChanges: true,
+              added: [],
+              removed: ["message-1"],
+              newQueryState: "query-state-2",
+              hasMoreChanges: false,
             },
             callId,
           ],
@@ -186,11 +187,14 @@ describe("Fastmail source", () => {
     }) as typeof fetch
 
     const result = await pollFastmail(
-      request({ emailState: "email-state-1" }),
+      request({ queryState: "query-state-1", mailboxId: "inbox" }),
       fetcher,
     )
     expect(result.items).toEqual([])
-    expect(result.checkpoint).toEqual({ emailState: "email-state-2" })
+    expect(result.checkpoint).toEqual({
+      queryState: "query-state-2",
+      mailboxId: "inbox",
+    })
   })
 })
 function email(id: string, receivedAt: string, value: string) {

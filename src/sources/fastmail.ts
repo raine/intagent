@@ -12,7 +12,8 @@ interface JmapSession {
 }
 
 interface Checkpoint {
-  emailState: string
+  queryState: string
+  mailboxId: string
 }
 
 interface Email {
@@ -75,59 +76,148 @@ export async function pollFastmail(
     stringOption(request, "accountId") ??
     session.primaryAccounts[EMAIL_ACCOUNT_CAPABILITY]
   if (!accountId) throw new Error("Fastmail JMAP session has no mail account")
-  const inboxId =
+  const mailboxId =
     stringOption(request, "mailboxId") ??
     (await findInbox(session.apiUrl, accountId, token, fetcher))
+  const bootstrapLimit = Math.min(
+    integerOption(request, "bootstrapLimit") ?? 0,
+    request.itemLimit,
+  )
 
   if (!request.checkpoint) {
-    const baseline = await jmapCall<any>(
+    const baseline = await queryMailbox(
       session.apiUrl,
+      accountId,
       token,
-      ["Email/get", { accountId, ids: [], properties: ["id"] }, "baseline"],
+      mailboxId,
+      bootstrapLimit,
       fetcher,
     )
-    if (typeof baseline.state !== "string")
-      throw new Error("Fastmail baseline response has no Email state")
+    const messages =
+      baseline.ids.length > 0
+        ? await getEmails(
+            session.apiUrl,
+            accountId,
+            token,
+            baseline.ids,
+            fetcher,
+          )
+        : []
     return {
       protocolVersion: 1,
-      checkpoint: { emailState: baseline.state },
-      items: [],
+      checkpoint: { queryState: baseline.queryState, mailboxId },
+      items: await normalizeMessages(
+        session.apiUrl,
+        accountId,
+        token,
+        messages,
+        fetcher,
+      ),
     }
   }
 
   const checkpoint = parseCheckpoint(request.checkpoint)
+  if (!checkpoint || checkpoint.mailboxId !== mailboxId) {
+    const baseline = await queryMailbox(
+      session.apiUrl,
+      accountId,
+      token,
+      mailboxId,
+      0,
+      fetcher,
+    )
+    return {
+      protocolVersion: 1,
+      checkpoint: { queryState: baseline.queryState, mailboxId },
+      items: [],
+    }
+  }
+
   const changes = await jmapCall<any>(
     session.apiUrl,
     token,
     [
-      "Email/changes",
+      "Email/queryChanges",
       {
         accountId,
-        sinceState: checkpoint.emailState,
+        filter: { inMailbox: mailboxId },
+        sort: [{ property: "receivedAt", isAscending: false }],
+        sinceQueryState: checkpoint.queryState,
         maxChanges: request.itemLimit,
       },
       "changes",
     ],
     fetcher,
   )
-  if (typeof changes.newState !== "string")
-    throw new Error("Fastmail changes response has no Email state")
-  const ids = (changes.created ?? []).slice(0, request.itemLimit)
-  const createdEmails =
+  if (typeof changes.newQueryState !== "string")
+    throw new Error("Fastmail query changes response has no query state")
+  const ids = (changes.added ?? [])
+    .map((addition: { id?: string }) => addition.id)
+    .filter((id: unknown): id is string => typeof id === "string")
+    .slice(0, request.itemLimit)
+  const messages =
     ids.length > 0
       ? await getEmails(session.apiUrl, accountId, token, ids, fetcher)
       : []
-  const newMessages = createdEmails
-    .filter((email) => email.mailboxIds?.[inboxId] === true)
-    .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt))
+
+  return {
+    protocolVersion: 1,
+    checkpoint: { queryState: changes.newQueryState, mailboxId },
+    items: await normalizeMessages(
+      session.apiUrl,
+      accountId,
+      token,
+      messages,
+      fetcher,
+    ),
+  }
+}
+
+async function queryMailbox(
+  apiUrl: string,
+  accountId: string,
+  token: string,
+  mailboxId: string,
+  limit: number,
+  fetcher: typeof fetch,
+): Promise<{ queryState: string; ids: string[] }> {
+  const result = await jmapCall<any>(
+    apiUrl,
+    token,
+    [
+      "Email/query",
+      {
+        accountId,
+        filter: { inMailbox: mailboxId },
+        sort: [{ property: "receivedAt", isAscending: false }],
+        limit,
+      },
+      "query",
+    ],
+    fetcher,
+  )
+  if (typeof result.queryState !== "string")
+    throw new Error("Fastmail mailbox query response has no query state")
+  return { queryState: result.queryState, ids: result.ids ?? [] }
+}
+
+async function normalizeMessages(
+  apiUrl: string,
+  accountId: string,
+  token: string,
+  messages: Email[],
+  fetcher: typeof fetch,
+): Promise<IntakeItem[]> {
   const threadCache = new Map<string, Email[]>()
   const items: IntakeItem[] = []
-
-  for (const email of newMessages) {
+  const ordered = [...messages].sort((left, right) =>
+    left.receivedAt.localeCompare(right.receivedAt),
+  )
+  for (const email of ordered) {
     let thread = threadCache.get(email.threadId)
     if (!thread) {
       thread = await getThread(
-        session.apiUrl,
+        apiUrl,
         accountId,
         token,
         email.threadId,
@@ -137,12 +227,7 @@ export async function pollFastmail(
     }
     items.push(normalizeEmail(accountId, email, thread))
   }
-
-  return {
-    protocolVersion: 1,
-    checkpoint: { emailState: changes.newState },
-    items,
-  }
+  return items
 }
 
 async function findInbox(
@@ -337,12 +422,15 @@ function formatAddresses(addresses?: Address[]): string {
     .join(", ")
 }
 
-function parseCheckpoint(value: unknown): Checkpoint {
+function parseCheckpoint(value: unknown): Checkpoint | undefined {
   if (!value || typeof value !== "object")
     throw new Error("Fastmail checkpoint is invalid")
   const checkpoint = value as Partial<Checkpoint>
-  if (typeof checkpoint.emailState !== "string") {
-    throw new Error("Fastmail checkpoint is invalid")
+  if (
+    typeof checkpoint.queryState !== "string" ||
+    typeof checkpoint.mailboxId !== "string"
+  ) {
+    return undefined
   }
   return checkpoint as Checkpoint
 }
@@ -350,6 +438,13 @@ function parseCheckpoint(value: unknown): Checkpoint {
 function stringOption(request: PollRequest, name: string): string | undefined {
   const value = request.options[name]
   return typeof value === "string" ? value : undefined
+}
+
+function integerOption(request: PollRequest, name: string): number | undefined {
+  const value = request.options[name]
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined
 }
 
 if (import.meta.main) sourceMain(pollFastmail)
