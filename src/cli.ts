@@ -26,7 +26,7 @@ Commands:
   retry ID              queue a retained event for another attempt
   ignore ID             mark an event handled without action
   login                 authenticate the OpenAI Codex subscription provider
-  init                   create private configuration directories and config
+  init                  create private configuration directories and config
   validate-config       validate YAML, command boundaries, and skill links
 `
 
