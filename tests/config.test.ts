@@ -70,7 +70,10 @@ describe("configuration", () => {
     const result = await initializePrivateConfig(path, {
       XDG_STATE_HOME: join(root, "state"),
     })
-    expect(result.created).toEqual([path])
+    expect(result.created).toEqual([
+      path,
+      join(root, "private", "projects.yaml"),
+    ])
     const contents = await readFile(path, "utf8")
     expect(contents).toContain("project_roots:")
     expect(contents).toContain("approved_roots:")

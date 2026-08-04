@@ -103,6 +103,12 @@ export function configDirectory(
     : join(homedir(), ".config", "intake")
 }
 
+export function projectRegistryPath(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return join(configDirectory(env), "projects.yaml")
+}
+
 export function stateDirectory(
   env: Record<string, string | undefined> = process.env,
 ): string {
@@ -231,6 +237,11 @@ export async function initializePrivateConfig(
       mode: 0o600,
     })
     created.push(path)
+  }
+  const projects = join(directory, "projects.yaml")
+  if (!(await Bun.file(projects).exists())) {
+    await writeFile(projects, stringify([]), { mode: 0o600 })
+    created.push(projects)
   }
   return { configPath: path, created }
 }
