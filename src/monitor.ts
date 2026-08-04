@@ -58,6 +58,15 @@ export class IntakeMonitor {
   }
 
   async watch(): Promise<void> {
+    const schedules = this.config.sources
+      .map(
+        (source) =>
+          `${source.name} every ${source.intervalSeconds} second${source.intervalSeconds === 1 ? "" : "s"}`,
+      )
+      .join(", ")
+    process.stdout.write(
+      `Watching ${schedules || "no configured sources"}. Press Ctrl-C to stop.\n`,
+    )
     const pollers = this.config.sources.map((source) => this.pollLoop(source))
     const worker = this.workerLoop()
     await Promise.all([...pollers, worker])
@@ -72,8 +81,10 @@ export class IntakeMonitor {
       if (this.stopping) break
       try {
         const observed = await pollSource(source, this.config, this.database)
-        if (observed > 0)
-          process.stdout.write(`${source.name}: queued ${observed} event(s)\n`)
+        const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
+        process.stdout.write(
+          `${time}  ${source.name}: checked, queued ${observed} event${observed === 1 ? "" : "s"}\n`,
+        )
       } catch (error) {
         process.stderr.write(`${source.name}: ${errorMessage(error)}\n`)
       }
