@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   ensureProjectRegistry,
+  findLikelyProject,
   loadProjectInventory,
   validateProjectRegistryContent,
   validateProjectRegistryWrite,
@@ -45,6 +46,22 @@ describe("project registry", () => {
         defaultBranch: "main",
       },
     ])
+  })
+
+  test("finds a repository at its likely project-root path", async () => {
+    const root = await temporaryRoot()
+    const codeRoot = join(root, "code")
+    const repository = join(codeRoot, "example")
+    initializeRepository(repository)
+
+    const project = await findLikelyProject("owner/example", [codeRoot])
+
+    expect(project).toMatchObject({
+      path: await realpath(repository),
+      githubRepositories: ["owner/example"],
+      defaultBranch: "main",
+    })
+    expect(await findLikelyProject("other/example", [codeRoot])).toBeNull()
   })
 
   test("limits writes to a valid project registry", async () => {

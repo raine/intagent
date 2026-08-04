@@ -1,5 +1,5 @@
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { parse, stringify } from "yaml"
 import { canonicalRoots, expandPath, isWithin } from "./config.ts"
 
@@ -58,6 +58,30 @@ export async function loadProjectInventory(
     }
   }
   return { projects, diagnostics }
+}
+
+export async function findLikelyProject(
+  repository: string,
+  projectRoots: string[],
+): Promise<ProjectInventoryEntry | null> {
+  const parts = repository.split("/")
+  if (parts.length !== 2 || parts.some((part) => part.length === 0)) return null
+  const repositoryName = parts[1]!
+  const roots = await canonicalRoots(projectRoots)
+  for (const root of roots) {
+    try {
+      const project = await inspectProject(join(root, repositoryName), roots)
+      if (
+        project.githubRepositories.some(
+          (candidate) => candidate.toLowerCase() === repository.toLowerCase(),
+        )
+      )
+        return project
+    } catch {
+      // A missing or unrelated likely path is not a registry diagnostic.
+    }
+  }
+  return null
 }
 
 export async function validateProjectRegistryWrite(
