@@ -142,10 +142,12 @@ export class IntakeMonitor {
       if (this.stopping) break
       try {
         const observed = await this.poll(source)
-        const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
-        process.stdout.write(
-          `${time}  ${source.name}: checked, queued ${observed} event${observed === 1 ? "" : "s"}\n`,
-        )
+        if (observed > 0) {
+          const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
+          process.stdout.write(
+            `${time}  ${source.name}: queued ${observed} event${observed === 1 ? "" : "s"}\n`,
+          )
+        }
       } catch (error) {
         process.stderr.write(`${source.name}: ${errorMessage(error)}\n`)
       }
