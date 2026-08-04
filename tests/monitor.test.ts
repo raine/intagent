@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core"
 import {
   type AssistantMessage,
@@ -7,13 +10,20 @@ import {
 } from "@earendil-works/pi-ai/compat"
 import type { IntakeConfig } from "../src/config.ts"
 import { IntakeDatabase, type EventRecord } from "../src/database.ts"
+import { DurableLogStore, type LogRecord } from "../src/logging.ts"
 import { IntakeMonitor } from "../src/monitor.ts"
 import type { TriageRunner } from "../src/agent/pi-runner.ts"
 import { testConfig } from "./fixtures/config.ts"
 
 const databases: IntakeDatabase[] = []
-afterEach(() => {
+const temporaryDirectories: string[] = []
+afterEach(async () => {
   for (const database of databases.splice(0)) database.close()
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  )
 })
 
 class MockAssistantStream extends EventStream<
@@ -66,12 +76,36 @@ describe("monitor scheduling", () => {
       "2026-08-03T12:00:00.000Z",
     )
     const runner = new FakeModelRunner()
-    const config: IntakeConfig = testConfig("/tmp", "/bin")
-    const monitor = new IntakeMonitor(config, database, runner)
+    const root = await mkdtemp(join(tmpdir(), "intake-monitor-"))
+    temporaryDirectories.push(root)
+    const config: IntakeConfig = testConfig(root, "/bin")
+    const logs = new DurableLogStore(config.state.logs)
+    const monitor = new IntakeMonitor(config, database, runner, logs)
     const result = await monitor.check()
     expect(result).toEqual({ observed: 0, handled: 2, errors: [] })
     expect(runner.contextSizes).toEqual([1, 1])
     expect(database.status()).toEqual({ succeeded: 2 })
+    const records = (
+      await readFile(join(config.state.logs, "monitor.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as LogRecord)
+    expect(records.map((record) => record.type)).toEqual([
+      "process_start",
+      "queue_state",
+      "triage_start",
+      "triage_succeeded",
+      "triage_start",
+      "triage_succeeded",
+      "process_stop",
+    ])
+    expect(records[2]).toMatchObject({ eventId: 1, attempt: 1 })
+    expect(records[3]).toMatchObject({
+      eventId: 1,
+      attempt: 1,
+      queue: { pending: 1, succeeded: 1 },
+    })
   })
 })
 

@@ -13,6 +13,7 @@ import {
   loadConfig,
 } from "./config.ts"
 import { IntakeDatabase } from "./database.ts"
+import { DurableLogStore } from "./logging.ts"
 import { IntakeMonitor } from "./monitor.ts"
 
 const usage = `Usage: intake [--config PATH] COMMAND
@@ -99,8 +100,11 @@ async function main(argv: string[]): Promise<void> {
       )
     const roots = await canonicalRoots(config.project_roots)
     const policy = new CommandPolicy(config, roots)
-    const runner = new PiTriageRunner(config, database, policy)
-    const monitor = new IntakeMonitor(config, database, runner)
+    const logs = new DurableLogStore(config.state.logs, (value) =>
+      policy.filter(value),
+    )
+    const runner = new PiTriageRunner(config, database, policy, logs)
+    const monitor = new IntakeMonitor(config, database, runner, logs)
     if (command === "check") {
       const result = await monitor.check()
       process.stdout.write(

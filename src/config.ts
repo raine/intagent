@@ -40,9 +40,13 @@ export const configSchema = z
     state: z
       .object({
         database: z.string().default("~/.config/intake/state/intake.sqlite"),
+        logs: z.string().default("~/.config/intake/state/logs"),
       })
       .strict()
-      .default({ database: "~/.config/intake/state/intake.sqlite" }),
+      .default({
+        database: "~/.config/intake/state/intake.sqlite",
+        logs: "~/.config/intake/state/logs",
+      }),
     skills: z
       .object({
         directories: z.array(z.string()).min(1),
@@ -173,7 +177,10 @@ export async function initializePrivateConfig(
   const config = {
     version: 1,
     project_roots: ["~/code"],
-    state: { database: join(stateDirectory, "intake.sqlite") },
+    state: {
+      database: join(stateDirectory, "intake.sqlite"),
+      logs: join(stateDirectory, "logs"),
+    },
     skills: {
       directories: [applicationSkillsDirectory(), skillsDirectory],
       approved_roots: [

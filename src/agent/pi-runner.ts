@@ -18,6 +18,7 @@ import { Type } from "typebox"
 import type { IntakeConfig } from "../config.ts"
 import { configDirectory, errorMessage, expandPath } from "../config.ts"
 import type { EventRecord, IntakeDatabase } from "../database.ts"
+import { DurableLogStore, type TriageRunLog } from "../logging.ts"
 import { CommandPolicy } from "./command-policy.ts"
 import { TerminalTriageReporter } from "./terminal-reporter.ts"
 import { validateSkills } from "./skills.ts"
@@ -31,9 +32,29 @@ export class PiTriageRunner implements TriageRunner {
     private readonly config: IntakeConfig,
     private readonly database: IntakeDatabase,
     private readonly policy: CommandPolicy,
+    private readonly logs: DurableLogStore = new DurableLogStore(
+      config.state.logs,
+      (value) => policy.filter(value),
+    ),
   ) {}
 
   async run(event: EventRecord, outerSignal?: AbortSignal): Promise<void> {
+    const log = this.logs.triage(event)
+    await log.start()
+    try {
+      await this.runAttempt(event, log, outerSignal)
+      await log.finish("succeeded")
+    } catch (error) {
+      await log.finish("failed", { error })
+      throw error
+    }
+  }
+
+  private async runAttempt(
+    event: EventRecord,
+    log: TriageRunLog,
+    outerSignal?: AbortSignal,
+  ): Promise<void> {
     if (!event.payload)
       throw new Error("event content is unavailable for triage")
     const skillValidation = await validateSkills(this.config)
@@ -101,6 +122,23 @@ export class PiTriageRunner implements TriageRunner {
       tools: ["bash"],
       customTools: [tool],
     })
+    await log.metadata({
+      sessionId: session.sessionId,
+      sessionName: session.sessionName,
+      cwd,
+      model: session.model
+        ? {
+            id: session.model.id,
+            name: session.model.name,
+            provider: session.model.provider,
+            api: session.model.api,
+            contextWindow: session.model.contextWindow,
+            maxTokens: session.model.maxTokens,
+          }
+        : null,
+      thinkingLevel: session.thinkingLevel,
+      tools: session.getActiveToolNames(),
+    })
     if (
       session.model?.provider !== "openai-codex" ||
       session.model.api !== "openai-codex-responses"
@@ -129,6 +167,7 @@ export class PiTriageRunner implements TriageRunner {
     reporter.start(event)
     const unsubscribe = session.subscribe((agentEvent) => {
       reporter.event(agentEvent)
+      void log.event(agentEvent)
       if (agentEvent.type === "turn_end") {
         turns += 1
         if (turns >= this.config.triage.max_turns) void session.abort()
@@ -139,7 +178,9 @@ export class PiTriageRunner implements TriageRunner {
 
     let failure: unknown
     try {
-      await session.prompt(buildEventPrompt(event))
+      const prompt = buildEventPrompt(event)
+      await log.prompt(prompt)
+      await session.prompt(prompt)
       if (signal.aborted)
         throw signal.reason instanceof Error
           ? signal.reason

@@ -4,7 +4,7 @@ export function testConfig(root: string, bin: string): IntakeConfig {
   return {
     version: 1,
     project_roots: [root],
-    state: { database: ":memory:" },
+    state: { database: ":memory:", logs: `${root}/logs` },
     skills: { directories: [root], approved_roots: [root] },
     sources: [],
     triage: {
