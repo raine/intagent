@@ -115,6 +115,25 @@ describe("restricted read policy", () => {
     expect(result.text).toBe("1\tapproved")
   })
 
+  test("authorizes configured roots that are symlinks", async () => {
+    const target = join(skills, "private-skill.md")
+    const configuredRoot = join(outside, "configured-skills")
+    await writeFile(target, "private skill")
+    await symlink(skills, configuredRoot)
+    const aliasedPolicy = new ReadPolicy(
+      [configuredRoot, await realpath(configuredRoot)],
+      1024,
+    )
+
+    const result = await aliasedPolicy.read(
+      { path: join(configuredRoot, "private-skill.md") },
+      project,
+    )
+
+    expect(result.path).toBe(await realpath(target))
+    expect(result.text).toBe("1\tprivate skill")
+  })
+
   test("rejects canonical escapes and unavailable or non-file paths", async () => {
     const secret = join(outside, "secret.txt")
     await writeFile(secret, "sensitive")

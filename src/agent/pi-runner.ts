@@ -93,10 +93,16 @@ export class PiTriageRunner implements TriageRunner {
       )
     }
     const cwd = expandPath(this.config.project_roots[0] ?? configDirectory())
-    const readRoots = await canonicalRoots([
+    const configuredReadRoots = [
       ...this.config.project_roots,
       ...this.config.skills.approved_roots,
-    ])
+    ]
+    const readRoots = [
+      ...new Set([
+        ...configuredReadRoots.map((root) => expandPath(root)),
+        ...(await canonicalRoots(configuredReadRoots)),
+      ]),
+    ]
     const readPolicy = new ReadPolicy(
       readRoots,
       this.config.commands.max_output_bytes,
