@@ -19,6 +19,7 @@ import type { IntakeConfig } from "../config.ts"
 import { configDirectory, errorMessage, expandPath } from "../config.ts"
 import type { EventRecord, IntakeDatabase } from "../database.ts"
 import { CommandPolicy } from "./command-policy.ts"
+import { TerminalTriageReporter } from "./terminal-reporter.ts"
 import { validateSkills } from "./skills.ts"
 
 export interface TriageRunner {
@@ -122,7 +123,12 @@ export class PiTriageRunner implements TriageRunner {
       ? AbortSignal.any([outerSignal, timeoutController.signal])
       : timeoutController.signal
     let turns = 0
+    const reporter = new TerminalTriageReporter(process.stderr, (value) =>
+      this.policy.filter(value),
+    )
+    reporter.start(event)
     const unsubscribe = session.subscribe((agentEvent) => {
+      reporter.event(agentEvent)
       if (agentEvent.type === "turn_end") {
         turns += 1
         if (turns >= this.config.triage.maxTurns) void session.abort()
@@ -131,6 +137,7 @@ export class PiTriageRunner implements TriageRunner {
     const onAbort = () => void session.abort()
     signal.addEventListener("abort", onAbort, { once: true })
 
+    let failure: unknown
     try {
       await session.prompt(buildEventPrompt(event))
       if (signal.aborted)
@@ -139,11 +146,15 @@ export class PiTriageRunner implements TriageRunner {
           : new Error("triage aborted")
       if (turns >= this.config.triage.maxTurns)
         throw new Error("triage exceeded its turn limit")
+    } catch (error) {
+      failure = error
+      throw error
     } finally {
       clearTimeout(timeout)
       signal.removeEventListener("abort", onAbort)
       unsubscribe()
       session.dispose()
+      reporter.finish(failure)
     }
   }
 
