@@ -162,9 +162,13 @@ export class IntakeMonitor {
         continue
       }
       const result = await this.triage(event)
+      const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
       if (result.error)
-        process.stderr.write(`event ${event.id}: ${result.error}\n`)
-      else process.stdout.write(`event ${event.id}: handled ${event.title}\n`)
+        process.stderr.write(`${time}  event ${event.id}: ${result.error}\n`)
+      else
+        process.stdout.write(
+          `${time}  event ${event.id}: handled ${event.title}\n`,
+        )
     }
   }
 
