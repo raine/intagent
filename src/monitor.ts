@@ -61,7 +61,7 @@ export class IntakeMonitor {
     const schedules = this.config.sources
       .map(
         (source) =>
-          `${source.name} every ${source.intervalSeconds} second${source.intervalSeconds === 1 ? "" : "s"}`,
+          `${source.name} every ${source.interval_seconds} second${source.interval_seconds === 1 ? "" : "s"}`,
       )
       .join(", ")
     process.stdout.write(
