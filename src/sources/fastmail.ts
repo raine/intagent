@@ -14,6 +14,7 @@ interface JmapSession {
 interface Checkpoint {
   queryState: string
   mailboxId: string
+  sentMailboxId?: string | null
 }
 
 interface Email {
@@ -76,9 +77,22 @@ export async function pollFastmail(
     stringOption(request, "account_id") ??
     session.primaryAccounts[EMAIL_ACCOUNT_CAPABILITY]
   if (!accountId) throw new Error("Fastmail JMAP session has no mail account")
-  const mailboxId =
-    stringOption(request, "mailbox_id") ??
-    (await findInbox(session.apiUrl, accountId, token, fetcher))
+  const checkpoint = request.checkpoint
+    ? parseCheckpoint(request.checkpoint)
+    : undefined
+  let mailboxId = stringOption(request, "mailbox_id") ?? checkpoint?.mailboxId
+  let sentMailboxId = checkpoint?.sentMailboxId
+  if (!mailboxId || sentMailboxId === undefined) {
+    const mailboxes = await findMailboxes(
+      session.apiUrl,
+      accountId,
+      token,
+      fetcher,
+    )
+    mailboxId ??= mailboxes.inboxId
+    sentMailboxId = mailboxes.sentId
+  }
+  if (!mailboxId) throw new Error("Fastmail account has no inbox mailbox")
   const bootstrapLimit = Math.min(
     integerOption(request, "bootstrap_limit") ?? 0,
     request.itemLimit,
@@ -105,18 +119,18 @@ export async function pollFastmail(
         : []
     return {
       protocolVersion: 1,
-      checkpoint: { queryState: baseline.queryState, mailboxId },
+      checkpoint: { queryState: baseline.queryState, mailboxId, sentMailboxId },
       items: await normalizeMessages(
         session.apiUrl,
         accountId,
         token,
         messages,
+        sentMailboxId,
         fetcher,
       ),
     }
   }
 
-  const checkpoint = parseCheckpoint(request.checkpoint)
   if (!checkpoint || checkpoint.mailboxId !== mailboxId) {
     const baseline = await queryMailbox(
       session.apiUrl,
@@ -128,7 +142,7 @@ export async function pollFastmail(
     )
     return {
       protocolVersion: 1,
-      checkpoint: { queryState: baseline.queryState, mailboxId },
+      checkpoint: { queryState: baseline.queryState, mailboxId, sentMailboxId },
       items: [],
     }
   }
@@ -162,12 +176,13 @@ export async function pollFastmail(
 
   return {
     protocolVersion: 1,
-    checkpoint: { queryState: changes.newQueryState, mailboxId },
+    checkpoint: { queryState: changes.newQueryState, mailboxId, sentMailboxId },
     items: await normalizeMessages(
       session.apiUrl,
       accountId,
       token,
       messages,
+      sentMailboxId,
       fetcher,
     ),
   }
@@ -206,12 +221,13 @@ async function normalizeMessages(
   accountId: string,
   token: string,
   messages: Email[],
+  sentMailboxId: string | null,
   fetcher: typeof fetch,
 ): Promise<IntakeItem[]> {
   const threadCache = new Map<string, Email[]>()
   const items: IntakeItem[] = []
   const ordered = [...messages].sort((left, right) =>
-    left.receivedAt.localeCompare(right.receivedAt),
+    messageTimestamp(left).localeCompare(messageTimestamp(right)),
   )
   for (const email of ordered) {
     let thread = threadCache.get(email.threadId)
@@ -225,28 +241,33 @@ async function normalizeMessages(
       )
       threadCache.set(email.threadId, thread)
     }
+    const latest = thread.at(-1)
+    if (latest && sentMailboxId && latest.mailboxIds?.[sentMailboxId]) continue
     items.push(normalizeEmail(accountId, email, thread))
   }
   return items
 }
 
-async function findInbox(
+async function findMailboxes(
   apiUrl: string,
   accountId: string,
   token: string,
   fetcher: typeof fetch,
-): Promise<string> {
+): Promise<{ inboxId: string | undefined; sentId: string | null }> {
   const result = await jmapCall<any>(
     apiUrl,
     token,
     ["Mailbox/get", { accountId, properties: ["id", "role"] }, "mailboxes"],
     fetcher,
   )
-  const inbox = result.list?.find(
-    (mailbox: { role?: string }) => mailbox.role === "inbox",
-  )
-  if (!inbox?.id) throw new Error("Fastmail account has no inbox mailbox")
-  return inbox.id
+  const mailboxes = (result.list ?? []) as Array<{
+    id?: string
+    role?: string | null
+  }>
+  return {
+    inboxId: mailboxes.find((mailbox) => mailbox.role === "inbox")?.id,
+    sentId: mailboxes.find((mailbox) => mailbox.role === "sent")?.id ?? null,
+  }
 }
 
 async function getEmails(
@@ -308,7 +329,7 @@ async function getThread(
   const ids = (thread.list?.[0]?.emailIds ?? []).slice(-THREAD_MESSAGE_LIMIT)
   const emails = await getEmails(apiUrl, accountId, token, ids, fetcher)
   return emails.sort((left, right) =>
-    left.receivedAt.localeCompare(right.receivedAt),
+    messageTimestamp(left).localeCompare(messageTimestamp(right)),
   )
 }
 
@@ -341,6 +362,10 @@ async function jmapCall<T>(
   if (result[0] === "error")
     throw new Error(`Fastmail JMAP error: ${result[1].type ?? "unknown"}`)
   return result[1]
+}
+
+function messageTimestamp(email: Email): string {
+  return email.sentAt ?? email.receivedAt
 }
 
 function normalizeEmail(
@@ -428,7 +453,10 @@ function parseCheckpoint(value: unknown): Checkpoint | undefined {
   const checkpoint = value as Partial<Checkpoint>
   if (
     typeof checkpoint.queryState !== "string" ||
-    typeof checkpoint.mailboxId !== "string"
+    typeof checkpoint.mailboxId !== "string" ||
+    (checkpoint.sentMailboxId !== undefined &&
+      checkpoint.sentMailboxId !== null &&
+      typeof checkpoint.sentMailboxId !== "string")
   ) {
     return undefined
   }

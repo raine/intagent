@@ -39,9 +39,27 @@ describe("Fastmail source", () => {
       }
       const body = JSON.parse(init.body as string)
       calls.push(body)
+      const [method, , callId] = body.methodCalls[0]
+      if (method === "Mailbox/get") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                list: [
+                  { id: "inbox", role: "inbox" },
+                  { id: "sent", role: "sent" },
+                ],
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      expect(method).toBe("Email/query")
       return json({
         methodResponses: [
-          ["Email/query", { queryState: "query-state-1", ids: [] }, "query"],
+          [method, { queryState: "query-state-1", ids: [] }, callId],
         ],
       })
     }) as typeof fetch
@@ -50,8 +68,9 @@ describe("Fastmail source", () => {
     expect(result.checkpoint).toEqual({
       queryState: "query-state-1",
       mailboxId: "inbox",
+      sentMailboxId: "sent",
     })
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
   })
 
   test("emits stable message events with complete bounded threads and attachment metadata", async () => {
@@ -106,11 +125,15 @@ describe("Fastmail source", () => {
           arguments_.ids.length === 1
             ? [email("message-2", "2026-08-03T10:05:00.000Z", "Follow up")]
             : [
-                email(
-                  "message-1",
-                  "2026-08-03T10:00:00.000Z",
-                  "Initial request",
-                ),
+                {
+                  ...email(
+                    "message-1",
+                    "2026-08-03T10:00:00.000Z",
+                    "Initial request",
+                  ),
+                  sentAt: "2026-08-03T10:00:00.000Z",
+                  mailboxIds: { sent: true },
+                },
                 email("message-2", "2026-08-03T10:05:00.000Z", "Follow up"),
               ]
         return json({ methodResponses: [[method, { list: messages }, callId]] })
@@ -119,7 +142,11 @@ describe("Fastmail source", () => {
     }) as typeof fetch
 
     const result = await pollFastmail(
-      request({ queryState: "query-state-1", mailboxId: "inbox" }),
+      request({
+        queryState: "query-state-1",
+        mailboxId: "inbox",
+        sentMailboxId: "sent",
+      }),
       fetcher,
     )
     expect(result.items).toHaveLength(1)
@@ -152,6 +179,99 @@ describe("Fastmail source", () => {
     expect(result.checkpoint).toEqual({
       queryState: "query-state-2",
       mailboxId: "inbox",
+      sentMailboxId: "sent",
+    })
+  })
+
+  test("suppresses a thread when its newest message is sent mail", async () => {
+    process.env.FASTMAIL_API_TOKEN = "source-only-token"
+    const fetcher = (async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      if (!init?.method) {
+        return json({
+          apiUrl: "https://mail.test/jmap",
+          primaryAccounts: { "urn:ietf:params:jmap:mail": "account-1" },
+        })
+      }
+      const body = JSON.parse(init.body as string)
+      const [method, arguments_, callId] = body.methodCalls[0]
+      if (method === "Mailbox/get") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                list: [
+                  { id: "inbox", role: "inbox" },
+                  { id: "sent", role: "sent" },
+                ],
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Email/queryChanges") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                added: [{ id: "message-1", index: 0 }],
+                removed: [],
+                newQueryState: "query-state-2",
+                hasMoreChanges: false,
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Thread/get") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                list: [
+                  { id: "thread-1", emailIds: ["message-1", "message-2"] },
+                ],
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Email/get") {
+        const incoming = email(
+          "message-1",
+          "2026-08-03T10:00:00.000Z",
+          "Initial request",
+        )
+        const reply = {
+          ...email("message-2", "2026-08-03T10:05:00.000Z", "Sent reply"),
+          sentAt: "2026-08-03T10:06:00.000Z",
+          mailboxIds: { sent: true },
+        }
+        const messages =
+          arguments_.ids.length === 1 ? [incoming] : [incoming, reply]
+        return json({ methodResponses: [[method, { list: messages }, callId]] })
+      }
+      throw new Error(`unexpected method ${method}`)
+    }) as typeof fetch
+
+    const result = await pollFastmail(
+      request({ queryState: "query-state-1", mailboxId: "inbox" }),
+      fetcher,
+    )
+
+    expect(result.items).toEqual([])
+    expect(result.checkpoint).toEqual({
+      queryState: "query-state-2",
+      mailboxId: "inbox",
+      sentMailboxId: "sent",
     })
   })
 
@@ -187,13 +307,18 @@ describe("Fastmail source", () => {
     }) as typeof fetch
 
     const result = await pollFastmail(
-      request({ queryState: "query-state-1", mailboxId: "inbox" }),
+      request({
+        queryState: "query-state-1",
+        mailboxId: "inbox",
+        sentMailboxId: "sent",
+      }),
       fetcher,
     )
     expect(result.items).toEqual([])
     expect(result.checkpoint).toEqual({
       queryState: "query-state-2",
       mailboxId: "inbox",
+      sentMailboxId: "sent",
     })
   })
 })
