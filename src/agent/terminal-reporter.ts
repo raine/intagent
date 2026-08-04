@@ -1,10 +1,6 @@
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import type { EventRecord } from "../database.ts"
-
-interface WritableTerminal {
-  isTTY?: boolean
-  write(value: string): unknown
-}
+import { terminalLine, type WritableTerminal } from "../terminal.ts"
 
 export class TerminalTriageReporter {
   private pendingText = ""
@@ -129,8 +125,7 @@ export class TerminalTriageReporter {
   }
 
   private line(value: string): void {
-    const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
-    this.output.write(`${this.style("dim", time)}  ${value}\n`)
+    terminalLine(this.output, value)
   }
 
   private style(

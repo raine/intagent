@@ -16,6 +16,7 @@ import { IntakeDatabase } from "./database.ts"
 import { DurableLogStore } from "./logging.ts"
 import { IntakeMonitor } from "./monitor.ts"
 import { intakeItemSchema } from "./protocol.ts"
+import { terminalLine } from "./terminal.ts"
 
 const usage = `Usage: intake [--config PATH] COMMAND
 
@@ -142,12 +143,13 @@ async function main(argv: string[]): Promise<void> {
     const shutdown = () => {
       signals += 1
       if (signals === 1) {
-        process.stderr.write(
-          "Stopping schedules and waiting for active triage.\n",
+        terminalLine(
+          process.stderr,
+          "Stopping schedules and waiting for active triage.",
         )
         monitor.stop()
       } else {
-        process.stderr.write("Forced shutdown requested.\n")
+        terminalLine(process.stderr, "Forced shutdown requested.")
         process.exit(130)
       }
     }

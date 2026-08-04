@@ -3,6 +3,7 @@ import { errorMessage } from "./config.ts"
 import type { EventRecord, IntakeDatabase } from "./database.ts"
 import { DurableLogStore } from "./logging.ts"
 import { pollSource } from "./source-runner.ts"
+import { terminalLine } from "./terminal.ts"
 import type { TriageRunner } from "./agent/pi-runner.ts"
 
 const TRIAGE_RECOVERY_GRACE_MS = 60_000
@@ -83,8 +84,9 @@ export class IntakeMonitor {
           `${source.name} every ${source.interval_seconds} second${source.interval_seconds === 1 ? "" : "s"}`,
       )
       .join(", ")
-    process.stdout.write(
-      `Watching ${schedules || "no configured sources"}. Press Ctrl-C to stop.\n`,
+    terminalLine(
+      process.stdout,
+      `Watching ${schedules || "no configured sources"}. Press Ctrl-C to stop.`,
     )
     await this.logs.monitor("process_start", {
       mode: "watch",
@@ -143,31 +145,31 @@ export class IntakeMonitor {
       try {
         const observed = await this.poll(source)
         if (observed > 0) {
-          const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
-          process.stdout.write(
-            `${time}  ${source.name}: queued ${observed} event${observed === 1 ? "" : "s"}\n`,
+          terminalLine(
+            process.stdout,
+            `${source.name}: queued ${observed} event${observed === 1 ? "" : "s"}`,
           )
         }
       } catch (error) {
-        process.stderr.write(`${source.name}: ${errorMessage(error)}\n`)
+        terminalLine(process.stderr, `${source.name}: ${errorMessage(error)}`)
       }
     }
   }
 
   private async workerLoop(): Promise<void> {
     while (!this.stopping) {
-      const event = this.database.claimNext()
+      const event = this.claimNext()
       if (!event) {
         await sleep(500, this.scheduleAbort.signal)
         continue
       }
       const result = await this.triage(event)
-      const time = new Date().toLocaleTimeString("en-GB", { hour12: false })
       if (result.error)
-        process.stderr.write(`${time}  event ${event.id}: ${result.error}\n`)
+        terminalLine(process.stderr, `event ${event.id}: ${result.error}`)
       else
-        process.stdout.write(
-          `${time}  event ${event.id}: handled ${event.title}\n`,
+        terminalLine(
+          process.stdout,
+          `event ${event.id}: handled ${event.title}`,
         )
     }
   }
