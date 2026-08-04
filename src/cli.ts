@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { access } from "node:fs/promises"
+import { access, readFile } from "node:fs/promises"
 import { constants } from "node:fs"
 import { CommandPolicy } from "./agent/command-policy.ts"
 import { loginCodex, PiTriageRunner } from "./agent/pi-runner.ts"
@@ -15,6 +15,7 @@ import {
 import { IntakeDatabase } from "./database.ts"
 import { DurableLogStore } from "./logging.ts"
 import { IntakeMonitor } from "./monitor.ts"
+import { intakeItemSchema } from "./protocol.ts"
 
 const usage = `Usage: intake [--config PATH] COMMAND
 
@@ -22,6 +23,7 @@ Commands:
   watch                 monitor sources and triage continuously
   check                 poll every source once and drain ready triage events
   status                show source and queue state
+  inject FILE           queue one IntakeItem JSON fixture
   show ID               show one intake event
   retry ID              queue a retained event for another attempt
   ignore ID             mark an event handled without action
@@ -68,6 +70,25 @@ async function main(argv: string[]): Promise<void> {
   try {
     if (command === "status") {
       printStatus(database)
+      return
+    }
+    if (command === "inject") {
+      const fixturePath = args[0]
+      if (!fixturePath)
+        throw new Error("inject requires an IntakeItem JSON file")
+      const fixture = intakeItemSchema.parse(
+        JSON.parse(await readFile(expandPath(fixturePath), "utf8")),
+      )
+      const now = new Date().toISOString()
+      const queued = database.sourceSucceeded(
+        "manual-injection",
+        { injected_at: now },
+        [fixture],
+        now,
+      )
+      if (queued === 0)
+        throw new Error("fixture entity and revision are already queued")
+      process.stdout.write(`Queued fixture from ${fixturePath}.\n`)
       return
     }
     if (command === "show") {
