@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+version=${CHECKLE_VERSION:-v0.1.2}
+install_dir=${CHECKLE_INSTALL_DIR:-"$HOME/.local/bin"}
+
+if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  printf 'error: invalid checkle version: %s\n' "$version" >&2
+  exit 2
+fi
+
+case "$(uname -s)" in
+  Darwin) operating_system=darwin ;;
+  Linux) operating_system=linux ;;
+  *)
+    printf 'error: unsupported operating system: %s\n' "$(uname -s)" >&2
+    exit 2
+    ;;
+esac
+
+case "$(uname -m)" in
+  x86_64 | amd64) architecture=amd64 ;;
+  aarch64 | arm64) architecture=arm64 ;;
+  *)
+    printf 'error: unsupported architecture: %s\n' "$(uname -m)" >&2
+    exit 2
+    ;;
+esac
+
+archive="checkle-${operating_system}-${architecture}.tar.gz"
+checksum="checkle-${operating_system}-${architecture}.sha256"
+release_url="https://github.com/raine/checkle/releases/download/${version}"
+temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/checkle-install.XXXXXX")
+cleanup() {
+  rm -rf "$temporary_dir"
+}
+trap cleanup EXIT
+
+curl --fail --silent --show-error --location \
+  --retry 3 --retry-connrefused --connect-timeout 10 --max-time 120 \
+  --output "$temporary_dir/$archive" \
+  "$release_url/$archive"
+curl --fail --silent --show-error --location \
+  --retry 3 --retry-connrefused --connect-timeout 10 --max-time 120 \
+  --output "$temporary_dir/$checksum" \
+  "$release_url/$checksum"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$temporary_dir" && sha256sum --check "$checksum")
+elif command -v shasum >/dev/null 2>&1; then
+  (cd "$temporary_dir" && shasum -a 256 --check "$checksum")
+else
+  printf 'error: sha256sum or shasum is required\n' >&2
+  exit 1
+fi
+
+tar -xzf "$temporary_dir/$archive" -C "$temporary_dir"
+mkdir -p "$install_dir"
+install -m 0755 "$temporary_dir/checkle" "$install_dir/checkle"
+
+if [[ -n ${GITHUB_PATH:-} ]]; then
+  printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+fi
+
+printf 'installed checkle %s to %s/checkle\n' "$version" "$install_dir"

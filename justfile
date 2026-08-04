@@ -4,7 +4,8 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-check: format-check lint typecheck test build package-check scripts-check
+check mode="":
+    checkle run {{mode}} project
 
 check-ci: check
     #!/usr/bin/env bash
@@ -37,8 +38,8 @@ package-check:
     scripts/package-check
 
 scripts-check:
-    bash -n hooks/pre-commit scripts/install-git-hook-shims scripts/package-check
-    @if command -v shellcheck >/dev/null 2>&1; then shellcheck hooks/pre-commit scripts/install-git-hook-shims scripts/package-check; else printf '%s\n' 'shellcheck unavailable, bash syntax validation completed'; fi
+    bash -n hooks/pre-commit scripts/install scripts/install-checkle scripts/install-git-hook-shims scripts/package-check
+    @if command -v shellcheck >/dev/null 2>&1; then shellcheck hooks/pre-commit scripts/install-checkle scripts/install-git-hook-shims scripts/package-check; else printf '%s\n' 'shellcheck unavailable, bash syntax validation completed'; fi
 
 install-hooks:
     scripts/install-git-hook-shims

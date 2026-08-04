@@ -18,7 +18,7 @@
   "scripts": {
     "build": "bun build src/cli.ts src/sources/fastmail.ts src/sources/github.ts --outdir dist --target bun",
     "install:local": "scripts/install",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun run build && bun run package:check && bun run validate:scripts",
+    "check": "checkle run project",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint --type-aware .",
@@ -26,7 +26,7 @@
     "test": "bun test",
     "test:live": "bun run scripts/live-eval.ts",
     "package:check": "scripts/package-check",
-    "validate:scripts": "bash -n hooks/pre-commit scripts/install scripts/install-git-hook-shims scripts/package-check"
+    "validate:scripts": "bash -n hooks/pre-commit scripts/install scripts/install-checkle scripts/install-git-hook-shims scripts/package-check"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.83.0",

@@ -1,0 +1,35 @@
+[[check]]
+name = "format"
+command = ["bun", "run", "format:check"]
+
+[[check]]
+name = "lint"
+command = ["bun", "run", "lint"]
+
+[[check]]
+name = "types"
+command = ["bun", "run", "typecheck"]
+
+[[check]]
+name = "test"
+command = ["bun", "test"]
+
+[[check]]
+name = "build"
+command = ["bun", "run", "build"]
+
+[[check]]
+name = "package"
+command = ["scripts/package-check"]
+
+[[check]]
+name = "scripts"
+command = [
+  "bash",
+  "-c",
+  "bash -n hooks/pre-commit scripts/install scripts/install-checkle scripts/install-git-hook-shims scripts/package-check && if command -v shellcheck >/dev/null 2>&1; then shellcheck hooks/pre-commit scripts/install-checkle scripts/install-git-hook-shims scripts/package-check; else printf '%s\\n' 'shellcheck unavailable, bash syntax validation completed'; fi",
+]
+
+[[group]]
+name = "project"
+checks = ["format", "lint", "types", "test", "build", "package", "scripts"]
