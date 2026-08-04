@@ -20,6 +20,8 @@ export interface CommandResult {
   truncated: boolean
 }
 
+export const MAX_COMMAND_STDIN_BYTES = 256 * 1024
+
 export class CommandPolicy {
   private readonly workingRoots: string[]
   private readonly path: string[]
@@ -85,6 +87,7 @@ export class CommandPolicy {
     command: string,
     cwd: string,
     signal?: AbortSignal,
+    input?: string,
   ): Promise<CommandResult> {
     let canonicalCwd: string
     try {
@@ -93,7 +96,13 @@ export class CommandPolicy {
       throw new Error(`working directory is unavailable: ${cwd}`)
     }
     const parsed = this.parseAndAuthorize(command, canonicalCwd)
-    let stdin: Uint8Array | undefined
+    if (
+      input !== undefined &&
+      Buffer.byteLength(input) > MAX_COMMAND_STDIN_BYTES
+    )
+      throw new Error("command stdin exceeds policy bounds")
+    let stdin: Uint8Array | undefined =
+      input === undefined ? undefined : new TextEncoder().encode(input)
     let stderr = ""
     let truncated = false
     let exitCode = 0

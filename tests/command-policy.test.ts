@@ -26,7 +26,7 @@ beforeEach(async () => {
   await Bun.$`mkdir -p ${bin}`.quiet()
   for (const name of ["aven", "workmux", "tmux", "gh", "git", "rg", "fd"]) {
     const path = join(bin, name)
-    const body = `#!/bin/sh\nprintf '%s' '${name}' >> '${log}'\nfor argument in "$@"; do printf '|%s' "$argument" >> '${log}'; done\nprintf '\\n' >> '${log}'\nif [ "$1" = slow ]; then /bin/sleep 2; fi\nif [ "$1" = large ]; then i=0; while [ $i -lt 400 ]; do printf '0123456789'; i=$((i+1)); done; fi\nif [ '${name}' = aven ]; then printf 'Created APP-TEST\\n'; else while IFS= read -r line; do printf '%s\\n' "$line"; done; printf 'token=secret-value\\n'; fi\n`
+    const body = `#!/bin/sh\nprintf '%s' '${name}' >> '${log}'\nfor argument in "$@"; do printf '|%s' "$argument" >> '${log}'; done\nprintf '\\n' >> '${log}'\nif [ "$1" = slow ]; then /bin/sleep 2; fi\nif [ "$1" = large ]; then i=0; while [ $i -lt 400 ]; do printf '0123456789'; i=$((i+1)); done; fi\nif [ '${name}' = aven ]; then while IFS= read -r line || [ -n "$line" ]; do printf 'stdin:%s\\n' "$line" >> '${log}'; done; printf 'Created APP-TEST\\n'; else while IFS= read -r line; do printf '%s\\n' "$line"; done; printf 'token=secret-value\\n'; fi\n`
     await writeFile(path, body)
     await chmod(path, 0o755)
   }
@@ -55,6 +55,31 @@ describe("restricted command policy", () => {
     expect(result.stdout).toContain("Created APP-TEST")
     expect(result.stdout).toContain("[REDACTED]")
     expect(await readFile(log, "utf8")).toContain("aven|search|login issue")
+  })
+
+  test("passes bounded multiline stdin without shell syntax", async () => {
+    const input = "First paragraph.\n\nSecond paragraph."
+    const result = await policy.execute(
+      'aven add "Task title" --description-stdin',
+      root,
+      undefined,
+      input,
+    )
+    expect(result.exitCode).toBe(0)
+    expect(await readFile(log, "utf8")).toContain(
+      "stdin:First paragraph.\nstdin:\nstdin:Second paragraph.\n",
+    )
+  })
+
+  test("bounds command stdin", async () => {
+    await expect(
+      policy.execute(
+        "aven add Task --description-stdin",
+        root,
+        undefined,
+        "x".repeat(256 * 1024 + 1),
+      ),
+    ).rejects.toThrow("stdin exceeds policy bounds")
   })
 
   test.each([

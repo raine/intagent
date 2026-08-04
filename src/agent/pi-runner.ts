@@ -25,7 +25,7 @@ import {
 } from "../config.ts"
 import type { EventRecord, IntakeDatabase } from "../database.ts"
 import { DurableLogStore, type TriageRunLog } from "../logging.ts"
-import { CommandPolicy } from "./command-policy.ts"
+import { CommandPolicy, MAX_COMMAND_STDIN_BYTES } from "./command-policy.ts"
 import {
   MAX_READ_FILE_BYTES,
   MAX_READ_LINES,
@@ -236,12 +236,15 @@ export class PiTriageRunner implements TriageRunner {
       name: "bash",
       label: "Restricted Bash",
       description:
-        "Run one executable-allowlisted simple command or pipeline. Shell expansions, redirects, command lists, and unlisted executables are unavailable.",
+        "Run one executable-allowlisted simple command or pipeline. Pass multiline or untrusted command input separately through stdin. Shell expansions, redirects, command lists, and unlisted executables are unavailable.",
       promptSnippet:
-        "Run a command through the restricted local command policy",
+        "Run a command through the restricted local command policy, with optional stdin",
       parameters: Type.Object({
         command: Type.String({ minLength: 1, maxLength: 32768 }),
         cwd: Type.Optional(Type.String()),
+        stdin: Type.Optional(
+          Type.String({ maxLength: MAX_COMMAND_STDIN_BYTES }),
+        ),
       }),
       execute: async (_id, parameters, signal) => {
         const cwd = parameters.cwd ?? defaultCwd
@@ -250,6 +253,7 @@ export class PiTriageRunner implements TriageRunner {
             parameters.command,
             cwd,
             signal,
+            parameters.stdin,
           )
           const combined = [
             `exit code: ${result.exitCode}`,
