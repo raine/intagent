@@ -39,9 +39,9 @@ function request(root: string, checkpoint: unknown): PollRequest {
     now: "2026-08-03T11:00:00.000Z",
     itemLimit: 10,
     options: {
-      projectRoots: [root],
-      apiBaseUrl: "https://github.test",
-      maxPages: 3,
+      project_roots: [root],
+      api_base_url: "https://github.test",
+      max_pages: 3,
     },
   }
 }

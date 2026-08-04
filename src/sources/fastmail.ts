@@ -62,7 +62,7 @@ export async function pollFastmail(
   const token = process.env.FASTMAIL_API_TOKEN
   if (!token) throw new Error("FASTMAIL_API_TOKEN is required")
   const sessionUrl =
-    stringOption(request, "sessionUrl") ??
+    stringOption(request, "session_url") ??
     "https://api.fastmail.com/jmap/session"
   const sessionResponse = await fetcher(sessionUrl, {
     headers: { Authorization: `Bearer ${token}` },
@@ -73,14 +73,14 @@ export async function pollFastmail(
     )
   const session = (await sessionResponse.json()) as JmapSession
   const accountId =
-    stringOption(request, "accountId") ??
+    stringOption(request, "account_id") ??
     session.primaryAccounts[EMAIL_ACCOUNT_CAPABILITY]
   if (!accountId) throw new Error("Fastmail JMAP session has no mail account")
   const mailboxId =
-    stringOption(request, "mailboxId") ??
+    stringOption(request, "mailbox_id") ??
     (await findInbox(session.apiUrl, accountId, token, fetcher))
   const bootstrapLimit = Math.min(
-    integerOption(request, "bootstrapLimit") ?? 0,
+    integerOption(request, "bootstrap_limit") ?? 0,
     request.itemLimit,
   )
 

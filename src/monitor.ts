@@ -48,8 +48,8 @@ export class IntakeMonitor {
         this.database.fail(
           event.id,
           message,
-          this.config.triage.maxAttempts,
-          this.config.triage.retryBaseSeconds,
+          this.config.triage.max_attempts,
+          this.config.triage.retry_base_seconds,
         )
         errors.push(`event ${event.id}: ${message}`)
       }
@@ -76,7 +76,7 @@ export class IntakeMonitor {
     let first = true
     while (!this.stopping) {
       if (!first)
-        await sleep(source.intervalSeconds * 1000, this.scheduleAbort.signal)
+        await sleep(source.interval_seconds * 1000, this.scheduleAbort.signal)
       first = false
       if (this.stopping) break
       try {
@@ -107,8 +107,8 @@ export class IntakeMonitor {
         this.database.fail(
           event.id,
           message,
-          this.config.triage.maxAttempts,
-          this.config.triage.retryBaseSeconds,
+          this.config.triage.max_attempts,
+          this.config.triage.retry_base_seconds,
         )
         process.stderr.write(`event ${event.id}: ${message}\n`)
       }

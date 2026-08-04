@@ -11,7 +11,7 @@ export interface SkillValidation {
 export async function validateSkills(
   config: IntakeConfig,
 ): Promise<SkillValidation> {
-  const approvedRoots = await canonicalRoots(config.skills.approvedRoots)
+  const approvedRoots = await canonicalRoots(config.skills.approved_roots)
   const skillPaths: string[] = []
   const diagnostics: string[] = []
 

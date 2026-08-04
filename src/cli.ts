@@ -97,7 +97,7 @@ async function main(argv: string[]): Promise<void> {
       throw new Error(
         `Configuration validation failed:\n${diagnostics.join("\n")}`,
       )
-    const roots = await canonicalRoots(config.projectRoots)
+    const roots = await canonicalRoots(config.project_roots)
     const policy = new CommandPolicy(config, roots)
     const runner = new PiTriageRunner(config, database, policy)
     const monitor = new IntakeMonitor(config, database, runner)

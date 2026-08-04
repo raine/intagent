@@ -22,6 +22,29 @@ describe("configuration", () => {
     await expect(loadConfig(path)).rejects.toThrow("Map keys must be unique")
   })
 
+  test("rejects camelCase configuration and source option keys", async () => {
+    const root = await mkdtemp(join(tmpdir(), "intake-config-"))
+    paths.push(root)
+    const path = join(root, "config.yaml")
+    await initializePrivateConfig(path)
+    const contents = await readFile(path, "utf8")
+
+    await writeFile(path, contents.replace("project_roots:", "projectRoots:"))
+    await expect(loadConfig(path)).rejects.toThrow("projectRoots")
+
+    await writeFile(path, contents.replace("approved_roots:", "approvedRoots:"))
+    await expect(loadConfig(path)).rejects.toThrow("approvedRoots")
+
+    await writeFile(
+      path,
+      contents.replace(
+        "sources: []",
+        "sources:\n  - name: fastmail\n    command: intake-fastmail-source\n    options:\n      mailboxId: inbox",
+      ),
+    )
+    await expect(loadConfig(path)).rejects.toThrow("mailboxId")
+  })
+
   test("initializes generic private configuration with restrictive mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "intake-init-"))
     paths.push(root)
@@ -29,13 +52,14 @@ describe("configuration", () => {
     const result = await initializePrivateConfig(path)
     expect(result.created).toEqual([path])
     const contents = await readFile(path, "utf8")
-    expect(contents).toContain("projectRoots:")
+    expect(contents).toContain("project_roots:")
+    expect(contents).toContain("approved_roots:")
     expect(contents).toContain("sources: []")
     const config = await loadConfig(path)
     expect(config.triage).toMatchObject({
-      maxTurns: 50,
-      timeoutMinutes: 30,
-      maxAttempts: 3,
+      max_turns: 50,
+      timeout_minutes: 30,
+      max_attempts: 3,
     })
   })
 })

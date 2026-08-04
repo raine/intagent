@@ -34,13 +34,13 @@ export class CommandPolicy {
     this.rules = new Map(
       config.commands.rules.map((rule) => [rule.executable, rule]),
     )
-    this.timeoutMilliseconds = config.commands.timeoutSeconds * 1000
-    this.maxOutputBytes = config.commands.maxOutputBytes
+    this.timeoutMilliseconds = config.commands.timeout_seconds * 1000
+    this.maxOutputBytes = config.commands.max_output_bytes
     this.filters = [
       /(https?:\/\/)[^/\s:@]+:[^@\s/]+@/gi,
       /\b(?:sk-[a-zA-Z0-9_-]{16,}|gh[opurs]_[a-zA-Z0-9]{20,})\b/g,
       /\b(?:bearer|token|password|secret)\s*[:=]\s*\S+/gi,
-      ...config.commands.sensitivePatterns.map(
+      ...config.commands.sensitive_patterns.map(
         (pattern) => new RegExp(pattern, "gi"),
       ),
     ]

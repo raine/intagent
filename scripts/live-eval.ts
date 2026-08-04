@@ -40,8 +40,8 @@ try {
   if (!event)
     throw new Error("fixture already exists in the evaluation database")
   const roots = await canonicalRoots([
-    ...config.projectRoots,
-    ...config.skills.approvedRoots,
+    ...config.project_roots,
+    ...config.skills.approved_roots,
     configDirectory(),
   ])
   const runner = new PiTriageRunner(

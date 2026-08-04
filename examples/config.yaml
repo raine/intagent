@@ -1,5 +1,5 @@
 version: 1
-projectRoots:
+project_roots:
   - ~/code
 state:
   database: ~/.config/intake/state/intake.sqlite
@@ -7,41 +7,41 @@ skills:
   directories:
     - ./skills
     - ~/.config/intake/skills
-  approvedRoots:
+  approved_roots:
     - ./skills
     - ~/.config/intake/skills
     - ~/.claude/skills
 sources:
   - name: fastmail
     command: intake-fastmail-source
-    intervalSeconds: 60
-    timeoutSeconds: 60
-    itemLimit: 100
+    interval_seconds: 60
+    timeout_seconds: 60
+    item_limit: 100
     environment:
       - FASTMAIL_API_TOKEN
     options: {}
   - name: github
     command: intake-github-source
-    intervalSeconds: 60
-    timeoutSeconds: 60
-    itemLimit: 100
+    interval_seconds: 60
+    timeout_seconds: 60
+    item_limit: 100
     environment:
       - GITHUB_TOKEN
     options: {}
 triage:
-  maxTurns: 50
-  timeoutMinutes: 30
-  maxAttempts: 3
-  retryBaseSeconds: 60
+  max_turns: 50
+  timeout_minutes: 30
+  max_attempts: 3
+  retry_base_seconds: 60
 commands:
   path:
     - /opt/homebrew/bin
     - /usr/local/bin
     - /usr/bin
     - /bin
-  timeoutSeconds: 60
-  maxOutputBytes: 65536
-  sensitivePatterns: []
+  timeout_seconds: 60
+  max_output_bytes: 65536
+  sensitive_patterns: []
   rules:
     - executable: aven
     - executable: workmux

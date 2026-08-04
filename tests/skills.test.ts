@@ -34,7 +34,7 @@ describe("skill boundaries", () => {
     await mkdir(join(wrapper, "references"))
     await symlink(canonical, join(wrapper, "references", "workmux"))
     const config = testConfig(root, root)
-    config.skills = { directories: [wrappers], approvedRoots: [root] }
+    config.skills = { directories: [wrappers], approved_roots: [root] }
     const validation = await validateSkills(config)
     expect(validation.diagnostics).toEqual([])
     expect(validation.skillPaths).toEqual([wrapper])
@@ -73,7 +73,7 @@ describe("skill boundaries", () => {
     const config = testConfig(root, root)
     config.skills = {
       directories: [join(root, "wrappers")],
-      approvedRoots: [root],
+      approved_roots: [root],
     }
     const validation = await validateSkills(config)
     expect(validation.skillPaths).toEqual([])
@@ -98,7 +98,7 @@ describe("skill boundaries", () => {
     const config = testConfig(root, root)
     config.skills = {
       directories: [join(root, "wrappers")],
-      approvedRoots: [root],
+      approved_roots: [root],
     }
     const validation = await validateSkills(config)
     expect(validation.skillPaths).toEqual([])

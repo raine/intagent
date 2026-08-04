@@ -3,21 +3,21 @@ import type { IntakeConfig } from "../../src/config.ts"
 export function testConfig(root: string, bin: string): IntakeConfig {
   return {
     version: 1,
-    projectRoots: [root],
+    project_roots: [root],
     state: { database: ":memory:" },
-    skills: { directories: [root], approvedRoots: [root] },
+    skills: { directories: [root], approved_roots: [root] },
     sources: [],
     triage: {
-      maxTurns: 50,
-      timeoutMinutes: 30,
-      maxAttempts: 3,
-      retryBaseSeconds: 1,
+      max_turns: 50,
+      timeout_minutes: 30,
+      max_attempts: 3,
+      retry_base_seconds: 1,
     },
     commands: {
       path: [bin],
-      timeoutSeconds: 1,
-      maxOutputBytes: 1024,
-      sensitivePatterns: [],
+      timeout_seconds: 1,
+      max_output_bytes: 1024,
+      sensitive_patterns: [],
       rules: [
         { executable: "aven" },
         { executable: "rg" },

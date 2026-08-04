@@ -39,10 +39,10 @@ export async function pollGithub(
 ): Promise<PollResponse> {
   const token = process.env.GITHUB_TOKEN
   if (!token) throw new Error("GITHUB_TOKEN is required")
-  const roots = stringArrayOption(request, "projectRoots")
+  const roots = stringArrayOption(request, "project_roots")
   if (roots.length === 0)
     throw new Error(
-      "GitHub source options.projectRoots must contain at least one path",
+      "GitHub source options.project_roots must contain at least one path",
     )
   const repositories = await discoverGithubRepositories(roots)
   const previous = request.checkpoint
@@ -53,11 +53,11 @@ export async function pollGithub(
   }
   const items: IntakeItem[] = []
   const apiBase =
-    stringOption(request, "apiBaseUrl") ?? "https://api.github.com"
-  const maxPages = numberOption(request, "maxPages") ?? DEFAULT_MAX_PAGES
+    stringOption(request, "api_base_url") ?? "https://api.github.com"
+  const maxPages = numberOption(request, "max_pages") ?? DEFAULT_MAX_PAGES
   if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 1_000)
     throw new Error(
-      "GitHub source options.maxPages must be an integer from 1 to 1000",
+      "GitHub source options.max_pages must be an integer from 1 to 1000",
     )
 
   for (const repository of repositories.sort()) {

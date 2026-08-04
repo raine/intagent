@@ -5,7 +5,11 @@ import { parse, stringify } from "yaml"
 import { z } from "zod"
 
 const scalar = z.union([z.string(), z.number(), z.boolean(), z.null()])
-const sourceOptions = z.record(z.string(), z.union([scalar, z.array(scalar)]))
+const configurationKey = z.string().regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/)
+const sourceOptions = z.record(
+  configurationKey,
+  z.union([scalar, z.array(scalar)]),
+)
 
 const sourceSchema = z
   .object({
@@ -15,9 +19,9 @@ const sourceSchema = z
       .regex(/^[a-z0-9][a-z0-9-]*$/),
     command: z.string().min(1),
     args: z.array(z.string()).default([]),
-    intervalSeconds: z.number().int().min(10).default(60),
-    timeoutSeconds: z.number().int().min(1).max(300).default(60),
-    itemLimit: z.number().int().min(1).max(1000).default(100),
+    interval_seconds: z.number().int().min(10).default(60),
+    timeout_seconds: z.number().int().min(1).max(300).default(60),
+    item_limit: z.number().int().min(1).max(1000).default(100),
     environment: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)).default([]),
     options: sourceOptions.default({}),
   })
@@ -32,7 +36,7 @@ const commandRuleSchema = z
 export const configSchema = z
   .object({
     version: z.literal(1),
-    projectRoots: z.array(z.string()).min(1).default(["~/code"]),
+    project_roots: z.array(z.string()).min(1).default(["~/code"]),
     state: z
       .object({
         database: z.string().default("~/.config/intake/state/intake.sqlite"),
@@ -42,35 +46,35 @@ export const configSchema = z
     skills: z
       .object({
         directories: z.array(z.string()).min(1),
-        approvedRoots: z.array(z.string()).min(1),
+        approved_roots: z.array(z.string()).min(1),
       })
       .strict(),
     sources: z.array(sourceSchema),
     triage: z
       .object({
-        maxTurns: z.number().int().min(1).max(50).default(50),
-        timeoutMinutes: z.number().int().min(1).max(30).default(30),
-        maxAttempts: z.number().int().min(1).max(3).default(3),
-        retryBaseSeconds: z.number().int().min(1).max(3600).default(60),
+        max_turns: z.number().int().min(1).max(50).default(50),
+        timeout_minutes: z.number().int().min(1).max(30).default(30),
+        max_attempts: z.number().int().min(1).max(3).default(3),
+        retry_base_seconds: z.number().int().min(1).max(3600).default(60),
       })
       .strict()
       .default({
-        maxTurns: 50,
-        timeoutMinutes: 30,
-        maxAttempts: 3,
-        retryBaseSeconds: 60,
+        max_turns: 50,
+        timeout_minutes: 30,
+        max_attempts: 3,
+        retry_base_seconds: 60,
       }),
     commands: z
       .object({
         path: z.array(z.string()).min(1),
-        timeoutSeconds: z.number().int().min(1).max(300).default(60),
-        maxOutputBytes: z
+        timeout_seconds: z.number().int().min(1).max(300).default(60),
+        max_output_bytes: z
           .number()
           .int()
           .min(1024)
           .max(1_000_000)
           .default(65_536),
-        sensitivePatterns: z.array(z.string()).default([]),
+        sensitive_patterns: z.array(z.string()).default([]),
         rules: z.array(commandRuleSchema).min(1),
       })
       .strict(),
@@ -168,11 +172,11 @@ export async function initializePrivateConfig(
 
   const config = {
     version: 1,
-    projectRoots: ["~/code"],
+    project_roots: ["~/code"],
     state: { database: join(stateDirectory, "intake.sqlite") },
     skills: {
       directories: [applicationSkillsDirectory(), skillsDirectory],
-      approvedRoots: [
+      approved_roots: [
         applicationSkillsDirectory(),
         skillsDirectory,
         join(homedir(), ".claude", "skills"),
@@ -180,16 +184,16 @@ export async function initializePrivateConfig(
     },
     sources: [],
     triage: {
-      maxTurns: 50,
-      timeoutMinutes: 30,
-      maxAttempts: 3,
-      retryBaseSeconds: 60,
+      max_turns: 50,
+      timeout_minutes: 30,
+      max_attempts: 3,
+      retry_base_seconds: 60,
     },
     commands: {
       path: ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"],
-      timeoutSeconds: 60,
-      maxOutputBytes: 65_536,
-      sensitivePatterns: [],
+      timeout_seconds: 60,
+      max_output_bytes: 65_536,
+      sensitive_patterns: [],
       rules: defaultCommandRules,
     },
   }

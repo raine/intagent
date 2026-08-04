@@ -15,7 +15,7 @@ function request(checkpoint: unknown): PollRequest {
     checkpoint,
     now: "2026-08-03T10:10:00.000Z",
     itemLimit: 10,
-    options: { mailboxId: "inbox", sessionUrl: "https://mail.test/session" },
+    options: { mailbox_id: "inbox", session_url: "https://mail.test/session" },
   }
 }
 

@@ -46,8 +46,8 @@ export async function pollSource(
     source: source.name,
     checkpoint: database.sourceCheckpoint(source.name),
     now: now.toISOString(),
-    itemLimit: source.itemLimit,
-    options: { projectRoots: config.projectRoots, ...source.options },
+    itemLimit: source.item_limit,
+    options: { project_roots: config.project_roots, ...source.options },
   }
   const environment: Record<string, string> = {
     PATH: config.commands.path.join(":"),
@@ -88,7 +88,7 @@ export async function pollSource(
   const timeout = setTimeout(() => {
     timedOut = true
     terminate()
-  }, source.timeoutSeconds * 1000)
+  }, source.timeout_seconds * 1000)
   try {
     const stdoutPromise = boundedText(processHandle.stdout, SOURCE_OUTPUT_LIMIT)
     const stderrPromise = boundedText(processHandle.stderr, 65_536).catch(
@@ -114,9 +114,9 @@ export async function pollSource(
       )
     }
     const response = pollResponseSchema.parse(value)
-    if (response.items.length > source.itemLimit) {
+    if (response.items.length > source.item_limit) {
       throw new Error(
-        `source returned ${response.items.length} items for a limit of ${source.itemLimit}`,
+        `source returned ${response.items.length} items for a limit of ${source.item_limit}`,
       )
     }
     return database.sourceSucceeded(
