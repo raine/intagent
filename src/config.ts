@@ -39,13 +39,13 @@ export const configSchema = z
     project_roots: z.array(z.string()).min(1).default(["~/code"]),
     state: z
       .object({
-        database: z.string().default("~/.config/intake/state/intake.sqlite"),
-        logs: z.string().default("~/.config/intake/state/logs"),
+        database: z.string().default("~/.local/state/intake/intake.sqlite"),
+        logs: z.string().default("~/.local/state/intake/logs"),
       })
       .strict()
       .default({
-        database: "~/.config/intake/state/intake.sqlite",
-        logs: "~/.config/intake/state/logs",
+        database: "~/.local/state/intake/intake.sqlite",
+        logs: "~/.local/state/intake/logs",
       }),
     skills: z
       .object({
@@ -95,6 +95,14 @@ export function configDirectory(
   return env.XDG_CONFIG_HOME
     ? join(env.XDG_CONFIG_HOME, "intake")
     : join(homedir(), ".config", "intake")
+}
+
+export function stateDirectory(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.XDG_STATE_HOME
+    ? join(env.XDG_STATE_HOME, "intake")
+    : join(homedir(), ".local", "state", "intake")
 }
 
 export function applicationSkillsDirectory(): string {
@@ -170,19 +178,20 @@ export function isWithin(path: string, roots: string[]): boolean {
 
 export async function initializePrivateConfig(
   path = defaultConfigPath(),
+  env: Record<string, string | undefined> = process.env,
 ): Promise<{ configPath: string; created: string[] }> {
   const directory = dirname(path)
   const skillsDirectory = join(directory, "skills")
-  const stateDirectory = join(directory, "state")
+  const state = stateDirectory(env)
   await mkdir(skillsDirectory, { recursive: true, mode: 0o700 })
-  await mkdir(stateDirectory, { recursive: true, mode: 0o700 })
+  await mkdir(state, { recursive: true, mode: 0o700 })
 
   const config = {
     version: 1,
     project_roots: ["~/code"],
     state: {
-      database: join(stateDirectory, "intake.sqlite"),
-      logs: join(stateDirectory, "logs"),
+      database: join(state, "intake.sqlite"),
+      logs: join(state, "logs"),
     },
     skills: {
       directories: [applicationSkillsDirectory(), skillsDirectory],

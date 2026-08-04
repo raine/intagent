@@ -144,15 +144,7 @@ export class TriageRunLog {
   }
 
   event(event: AgentSessionEvent): Promise<void> {
-    if (event.type === "message_update") {
-      const update = event.assistantMessageEvent
-      const details: Record<string, unknown> = {
-        eventType: update.type,
-      }
-      if ("contentIndex" in update) details.contentIndex = update.contentIndex
-      if ("delta" in update) details.delta = update.delta
-      return this.record("message_update", details)
-    }
+    if (event.type === "message_update") return Promise.resolve()
     return this.record(event.type, event as unknown as Record<string, unknown>)
   }
 

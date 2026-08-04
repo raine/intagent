@@ -26,7 +26,7 @@ describe("configuration", () => {
     const root = await mkdtemp(join(tmpdir(), "intake-config-"))
     paths.push(root)
     const path = join(root, "config.yaml")
-    await initializePrivateConfig(path)
+    await initializePrivateConfig(path, { XDG_STATE_HOME: join(root, "state") })
     const contents = await readFile(path, "utf8")
 
     await writeFile(path, contents.replace("project_roots:", "projectRoots:"))
@@ -49,13 +49,19 @@ describe("configuration", () => {
     const root = await mkdtemp(join(tmpdir(), "intake-init-"))
     paths.push(root)
     const path = join(root, "private", "config.yaml")
-    const result = await initializePrivateConfig(path)
+    const result = await initializePrivateConfig(path, {
+      XDG_STATE_HOME: join(root, "state"),
+    })
     expect(result.created).toEqual([path])
     const contents = await readFile(path, "utf8")
     expect(contents).toContain("project_roots:")
     expect(contents).toContain("approved_roots:")
     expect(contents).toContain("sources: []")
     const config = await loadConfig(path)
+    expect(config.state).toEqual({
+      database: join(root, "state", "intake", "intake.sqlite"),
+      logs: join(root, "state", "intake", "logs"),
+    })
     expect(config.triage).toMatchObject({
       max_turns: 50,
       timeout_minutes: 30,

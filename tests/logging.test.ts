@@ -119,8 +119,6 @@ describe("durable logging", () => {
       "prompt",
       "agent_start",
       "turn_start",
-      "message_update",
-      "message_update",
       "tool_execution_start",
       "tool_execution_end",
       "message_end",
@@ -128,12 +126,9 @@ describe("durable logging", () => {
       "agent_end",
       "run_end",
     ])
-    expect(records[5]).toMatchObject({
-      eventType: "thinking_delta",
-      delta: "first ",
-    })
-    expect(records[5]).not.toHaveProperty("message")
-    expect(records[5]).not.toHaveProperty("partial")
+    expect(records.some((record) => record.type === "message_update")).toBe(
+      false,
+    )
     expect(JSON.stringify(records)).toContain("ordinary complete tool output")
     expect(JSON.stringify(records)).toContain("complete final answer")
     expect(JSON.stringify(records)).not.toContain("visible-secret")
