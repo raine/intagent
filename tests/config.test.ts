@@ -45,6 +45,24 @@ describe("configuration", () => {
     await expect(loadConfig(path)).rejects.toThrow("mailboxId")
   })
 
+  test("loads configured triage model and thinking level", async () => {
+    const root = await mkdtemp(join(tmpdir(), "intake-config-"))
+    paths.push(root)
+    const path = join(root, "config.yaml")
+    await initializePrivateConfig(path, { XDG_STATE_HOME: join(root, "state") })
+    const contents = await readFile(path, "utf8")
+    await writeFile(
+      path,
+      contents
+        .replace("model: gpt-5.6-luna", "model: gpt-5.6-sol")
+        .replace("thinking_level: max", "thinking_level: high"),
+    )
+
+    const config = await loadConfig(path)
+    expect(config.triage.model).toBe("gpt-5.6-sol")
+    expect(config.triage.thinking_level).toBe("high")
+  })
+
   test("initializes generic private configuration with restrictive mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "intake-init-"))
     paths.push(root)
@@ -63,6 +81,8 @@ describe("configuration", () => {
       logs: join(root, "state", "intake", "logs"),
     })
     expect(config.triage).toMatchObject({
+      model: "gpt-5.6-luna",
+      thinking_level: "max",
       max_turns: 50,
       timeout_minutes: 30,
       max_attempts: 3,

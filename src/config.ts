@@ -56,6 +56,10 @@ export const configSchema = z
     sources: z.array(sourceSchema),
     triage: z
       .object({
+        model: z.string().min(1).default("gpt-5.6-luna"),
+        thinking_level: z
+          .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+          .default("max"),
         max_turns: z.number().int().min(1).max(50).default(50),
         timeout_minutes: z.number().int().min(1).max(30).default(30),
         max_attempts: z.number().int().min(1).max(3).default(3),
@@ -63,6 +67,8 @@ export const configSchema = z
       })
       .strict()
       .default({
+        model: "gpt-5.6-luna",
+        thinking_level: "max",
         max_turns: 50,
         timeout_minutes: 30,
         max_attempts: 3,
@@ -203,6 +209,8 @@ export async function initializePrivateConfig(
     },
     sources: [],
     triage: {
+      model: "gpt-5.6-luna",
+      thinking_level: "max",
       max_turns: 50,
       timeout_minutes: 30,
       max_attempts: 3,

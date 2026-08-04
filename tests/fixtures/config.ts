@@ -8,6 +8,8 @@ export function testConfig(root: string, bin: string): IntakeConfig {
     skills: { directories: [root], approved_roots: [root] },
     sources: [],
     triage: {
+      model: "gpt-5.6-luna",
+      thinking_level: "max",
       max_turns: 50,
       timeout_minutes: 30,
       max_attempts: 3,

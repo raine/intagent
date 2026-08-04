@@ -87,9 +87,18 @@ export class PiTriageRunner implements TriageRunner {
       modelsPath: join(agentDirectory, "models.json"),
     })
     const codexRuntime = codexOnlyRuntime(runtime)
-    if ((await codexRuntime.getAvailable("openai-codex")).length === 0) {
+    const availableModels = await codexRuntime.getAvailable("openai-codex")
+    if (availableModels.length === 0) {
       throw new Error(
         "OpenAI Codex subscription authentication is required. Run `intake login`.",
+      )
+    }
+    const model = availableModels.find(
+      (candidate) => candidate.id === this.config.triage.model,
+    )
+    if (!model) {
+      throw new Error(
+        `Configured OpenAI Codex model is unavailable: ${this.config.triage.model}`,
       )
     }
     const cwd = expandPath(this.config.project_roots[0] ?? configDirectory())
@@ -145,6 +154,8 @@ export class PiTriageRunner implements TriageRunner {
       cwd,
       agentDir: agentDirectory,
       modelRuntime: codexRuntime,
+      model,
+      thinkingLevel: this.config.triage.thinking_level,
       resourceLoader,
       settingsManager: SettingsManager.inMemory(),
       sessionManager: SessionManager.inMemory(cwd),
