@@ -13,6 +13,7 @@ import {
   loadConfig,
 } from "./config.ts"
 import { IntakeDatabase } from "./database.ts"
+import { startDashboard } from "./dashboard.ts"
 import { DurableLogStore } from "./logging.ts"
 import { IntakeMonitor } from "./monitor.ts"
 import { intakeItemSchema } from "./protocol.ts"
@@ -24,6 +25,8 @@ Commands:
   watch                 monitor sources and triage continuously
   check                 poll every source once and drain ready triage events
   status                show source and queue state
+  dashboard [--host HOST] [--port PORT]
+                        serve the local monitoring dashboard
   inject FILE           queue one IntakeItem JSON fixture
   show ID               show one intake event
   retry ID              queue a retained event for another attempt
@@ -71,6 +74,13 @@ async function main(argv: string[]): Promise<void> {
   try {
     if (command === "status") {
       printStatus(database)
+      return
+    }
+    if (command === "dashboard") {
+      const { hostname, port } = parseDashboardOptions(args)
+      const server = startDashboard(database, hostname, port)
+      process.stdout.write(`Intake dashboard: ${server.url}\n`)
+      await waitForShutdown(server)
       return
     }
     if (command === "inject") {
@@ -213,6 +223,46 @@ function printStatus(database: IntakeDatabase): void {
         `  ${event.id} ${event.status} ${event.source}: ${event.title}\n`,
       )
   }
+}
+
+function parseDashboardOptions(args: string[]): {
+  hostname: string
+  port: number
+} {
+  let hostname = "127.0.0.1"
+  let port = 4545
+  const remaining = [...args]
+  while (remaining.length > 0) {
+    const option = remaining.shift()
+    const value = remaining.shift()
+    if (option === "--host" && value) {
+      hostname = value
+      continue
+    }
+    if (option === "--port" && value) {
+      port = Number(value)
+      if (!Number.isSafeInteger(port) || port < 1 || port > 65_535)
+        throw new Error("dashboard port must be between 1 and 65535")
+      continue
+    }
+    throw new Error(`Unknown dashboard option: ${option ?? ""}`)
+  }
+  return { hostname, port }
+}
+
+async function waitForShutdown(
+  server: ReturnType<typeof Bun.serve>,
+): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const shutdown = () => {
+      process.off("SIGINT", shutdown)
+      process.off("SIGTERM", shutdown)
+      server.stop(true)
+      resolve()
+    }
+    process.on("SIGINT", shutdown)
+    process.on("SIGTERM", shutdown)
+  })
 }
 
 function parseEventId(value: string | undefined): number {

@@ -361,6 +361,15 @@ export class IntakeDatabase {
       .all(limit) as EventRecord[]
   }
 
+  oldestOpenEventAt(): string | null {
+    const row = this.raw
+      .query(
+        "SELECT MIN(observed_at) AS observedAt FROM events WHERE status IN ('pending', 'processing', 'retryable')",
+      )
+      .get() as { observedAt: string | null }
+    return row.observedAt
+  }
+
   status(): Record<string, number> {
     const result: Record<string, number> = {}
     for (const row of this.raw
