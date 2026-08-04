@@ -20,6 +20,7 @@ export function testConfig(root: string, bin: string): IntakeConfig {
       sensitive_patterns: [],
       rules: [
         { executable: "aven" },
+        { executable: "workmux" },
         { executable: "rg" },
         { executable: "gh" },
       ],

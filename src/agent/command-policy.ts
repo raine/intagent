@@ -200,8 +200,6 @@ export class CommandPolicy {
     for (const word of words) {
       if (word.expansion?.length)
         throw new Error("shell expansions are forbidden")
-      if (/[\r\n]/.test(word.text))
-        throw new Error("newlines in arguments are forbidden")
       if (
         ["?", "*", "["].some((character) => word.text.includes(character)) &&
         !isFullyQuoted(word, source)
@@ -234,11 +232,12 @@ export class CommandPolicy {
 }
 
 function rejectUnsupportedTokens(source: string): void {
-  if (/[\r\n]/.test(source)) throw new Error("newlines are forbidden")
   let quote: "single" | "double" | null = null
   let escaped = false
   let wordStart = true
   for (const character of source) {
+    if (quote === null && /[\r\n]/.test(character))
+      throw new Error("newlines outside quoted arguments are forbidden")
     if (escaped) {
       escaped = false
       wordStart = false

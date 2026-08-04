@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { IntakeDatabase } from "../src/database.ts"
 import type { IntakeItem } from "../src/protocol.ts"
 
 const databases: IntakeDatabase[] = []
+const temporaryDirectories: string[] = []
 afterEach(() => {
   for (const database of databases.splice(0)) database.close()
+  for (const directory of temporaryDirectories.splice(0))
+    rmSync(directory, { recursive: true, force: true })
 })
 
 function item(revisionId = "message-1"): IntakeItem {
@@ -97,6 +103,37 @@ describe("intake persistence", () => {
     expect(database.claimNext(nextAttemptAt ?? undefined)?.revisionId).toBe(
       "message-1",
     )
+  })
+
+  test("keeps active triage processing across concurrent database opens", () => {
+    const directory = mkdtempSync(join(tmpdir(), "intake-database-"))
+    temporaryDirectories.push(directory)
+    const path = join(directory, "intake.sqlite")
+    const watcher = new IntakeDatabase(path)
+    const observer = new IntakeDatabase(path)
+    databases.push(watcher, observer)
+
+    watcher.sourceSucceeded("mail", {}, [item()], "2026-08-03T10:01:00.000Z")
+    const event = watcher.claimNext("2026-08-03T10:02:00.000Z")
+
+    expect(observer.event(event?.id ?? 0)?.status).toBe("processing")
+    expect(
+      observer.recoverInterrupted(
+        "2026-08-03T10:01:59.999Z",
+        "2026-08-03T10:03:00.000Z",
+      ),
+    ).toBe(0)
+    expect(observer.event(event?.id ?? 0)?.status).toBe("processing")
+    expect(
+      observer.recoverInterrupted(
+        "2026-08-03T10:02:00.000Z",
+        "2026-08-03T10:33:00.000Z",
+      ),
+    ).toBe(1)
+    expect(observer.event(event?.id ?? 0)).toMatchObject({
+      status: "retryable",
+      lastError: "triage interrupted by process exit",
+    })
   })
 
   test("derives durable Aven and investigation references", () => {

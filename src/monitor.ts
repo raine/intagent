@@ -5,9 +5,12 @@ import { DurableLogStore } from "./logging.ts"
 import { pollSource } from "./source-runner.ts"
 import type { TriageRunner } from "./agent/pi-runner.ts"
 
+const TRIAGE_RECOVERY_GRACE_MS = 60_000
+
 export class IntakeMonitor {
   private stopping = false
   private readonly scheduleAbort = new AbortController()
+  private nextRecoveryAt = 0
 
   constructor(
     private readonly config: IntakeConfig,
@@ -52,7 +55,7 @@ export class IntakeMonitor {
       })
       let handled = 0
       while (!this.stopping) {
-        const event = this.database.claimNext()
+        const event = this.claimNext()
         if (!event) break
         const result = await this.triage(event)
         if (result.error) errors.push(`event ${event.id}: ${result.error}`)
@@ -161,6 +164,20 @@ export class IntakeMonitor {
         process.stderr.write(`event ${event.id}: ${result.error}\n`)
       else process.stdout.write(`event ${event.id}: handled ${event.title}\n`)
     }
+  }
+
+  private claimNext(): EventRecord | null {
+    const now = Date.now()
+    if (now >= this.nextRecoveryAt) {
+      const staleBefore = new Date(
+        now -
+          this.config.triage.timeout_minutes * 60_000 -
+          TRIAGE_RECOVERY_GRACE_MS,
+      ).toISOString()
+      this.database.recoverInterrupted(staleBefore)
+      this.nextRecoveryAt = now + 60_000
+    }
+    return this.database.claimNext()
   }
 
   private async triage(event: EventRecord): Promise<{ error?: string }> {

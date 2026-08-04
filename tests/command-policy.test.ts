@@ -82,6 +82,23 @@ describe("restricted command policy", () => {
     ).rejects.toThrow("stdin exceeds policy bounds")
   })
 
+  test("preserves newlines inside quoted arguments", () => {
+    const command = `workmux add walkingmate-email -p "Investigate this email.
+
+<untrusted-email>
+Body text
+</untrusted-email>"`
+    expect(policy.parseAndAuthorize(command, root).stages).toEqual([
+      [
+        "workmux",
+        "add",
+        "walkingmate-email",
+        "-p",
+        "Investigate this email.\n\n<untrusted-email>\nBody text\n</untrusted-email>",
+      ],
+    ])
+  })
+
   test.each([
     "aven search x; rg y",
     "aven search x && rg y",

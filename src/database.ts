@@ -89,7 +89,6 @@ export class IntakeDatabase {
       "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
     )
     this.migrate()
-    this.recoverInterrupted()
   }
 
   close(): void {
@@ -120,13 +119,16 @@ export class IntakeDatabase {
     }
   }
 
-  private recoverInterrupted(): void {
-    const now = new Date().toISOString()
-    this.raw
+  recoverInterrupted(
+    staleBefore: string,
+    now = new Date().toISOString(),
+  ): number {
+    const result = this.raw
       .query(
-        "UPDATE events SET status = 'retryable', next_attempt_at = ?, last_error = 'triage interrupted by process exit', updated_at = ? WHERE status = 'processing'",
+        "UPDATE events SET status = 'retryable', next_attempt_at = ?, last_error = 'triage interrupted by process exit', updated_at = ? WHERE status = 'processing' AND updated_at <= ?",
       )
-      .run(now, now)
+      .run(now, now, staleBefore)
+    return Number(result.changes)
   }
 
   sourceCheckpoint(source: string): unknown {
