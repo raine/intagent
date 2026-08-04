@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/install [--prefix PATH]
+
+Compile and install standalone intake executables and application skills.
+The default prefix is ~/.local. INTAKE_INSTALL_PREFIX provides another default.
+EOF
+}
+
+prefix="${INTAKE_INSTALL_PREFIX:-$HOME/.local}"
+while (($# > 0)); do
+  case "$1" in
+    --prefix)
+      if (($# < 2)); then
+        printf '%s\n' 'scripts/install: --prefix requires a path' >&2
+        exit 2
+      fi
+      prefix="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'scripts/install: unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$prefix" in
+  '~') prefix="$HOME" ;;
+  '~/'*) prefix="$HOME/${prefix#\~/}" ;;
+esac
+if [[ "$prefix" != /* ]]; then
+  prefix="$PWD/$prefix"
+fi
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bin_directory="$prefix/bin"
+skills_directory="$prefix/share/intake/skills"
+temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/intake-install.XXXXXX")"
+cleanup() {
+  rm -rf "$temporary_directory"
+}
+trap cleanup EXIT
+
+cd "$repository_root"
+printf 'Compiling standalone executables with %s...\n' "$(bun --version)"
+bun build --compile src/cli.ts \
+  --outfile "$temporary_directory/intake" >/dev/null
+bun build --compile src/sources/fastmail.ts \
+  --outfile "$temporary_directory/intake-fastmail-source" >/dev/null
+bun build --compile src/sources/github.ts \
+  --outfile "$temporary_directory/intake-github-source" >/dev/null
+
+install -d -m 755 "$bin_directory" "$(dirname "$skills_directory")"
+install -m 755 "$temporary_directory/intake" "$bin_directory/intake"
+install -m 755 "$temporary_directory/intake-fastmail-source" \
+  "$bin_directory/intake-fastmail-source"
+install -m 755 "$temporary_directory/intake-github-source" \
+  "$bin_directory/intake-github-source"
+
+rm -rf "$skills_directory"
+install -d -m 755 "$skills_directory"
+cp -R skills/. "$skills_directory/"
+find "$skills_directory" -type d -exec chmod 755 {} +
+find "$skills_directory" -type f -exec chmod 644 {} +
+
+"$bin_directory/intake" --help >/dev/null
+printf 'Installed intake to %s\n' "$bin_directory"
+printf 'Installed application skills to %s\n' "$skills_directory"
+if [[ ":$PATH:" != *":$bin_directory:"* ]]; then
+  printf 'Add %s to PATH to run intake by name.\n' "$bin_directory"
+fi
+printf 'Configure sources with:\n'
+printf '  command: %s\n' "$bin_directory/intake-fastmail-source"

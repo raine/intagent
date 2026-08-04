@@ -98,6 +98,9 @@ export function configDirectory(
 }
 
 export function applicationSkillsDirectory(): string {
+  if (import.meta.dir.startsWith("/$bunfs/")) {
+    return resolve(dirname(process.execPath), "..", "share", "intake", "skills")
+  }
   return resolve(import.meta.dir, "..", "skills")
 }
 

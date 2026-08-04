@@ -7,10 +7,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+prefix="$temporary_dir/prefix"
+bin_directory="$prefix/bin"
+skills_directory="$prefix/share/intake/skills"
+config_directory="$temporary_dir/config"
+mkdir -p "$bin_directory" "$skills_directory"
+cp -R skills/. "$skills_directory/"
+
 bun pm pack --dry-run >/dev/null
-bun build --compile src/cli.ts --outfile "$temporary_dir/intake" >/dev/null
+bun build --compile src/cli.ts --outfile "$bin_directory/intake" >/dev/null
 bun build --compile src/sources/fastmail.ts \
-  --outfile "$temporary_dir/intake-fastmail-source" >/dev/null
+  --outfile "$bin_directory/intake-fastmail-source" >/dev/null
 bun build --compile src/sources/github.ts \
-  --outfile "$temporary_dir/intake-github-source" >/dev/null
-"$temporary_dir/intake" --help >/dev/null
+  --outfile "$bin_directory/intake-github-source" >/dev/null
+"$bin_directory/intake" --help >/dev/null
+XDG_CONFIG_HOME="$config_directory" "$bin_directory/intake" init >/dev/null
+XDG_CONFIG_HOME="$config_directory" \
+  "$bin_directory/intake" validate-config >/dev/null
