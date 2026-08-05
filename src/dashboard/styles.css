@@ -463,21 +463,6 @@
     background: color-mix(in srgb, var(--blue) 8%, var(--surface));
   }
 
-  .activity-row:hover::after,
-  .activity-row:focus-visible::after {
-    background: var(--ink);
-    border: 1px solid var(--edge);
-    bottom: calc(100% + 4px);
-    color: var(--page);
-    content: attr(data-tooltip);
-    font-size: 10px;
-    left: 90px;
-    max-width: min(420px, 80vw);
-    padding: 6px 8px;
-    position: absolute;
-    z-index: 20;
-  }
-
   .activity-clock,
   .activity-turn {
     color: var(--faint);

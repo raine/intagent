@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import {
   ActiveRunCard,
+  EventRow,
   RunInspector,
   SourceList,
 } from "../src/dashboard/app.tsx"
@@ -34,6 +35,23 @@ const run: Parameters<typeof RunInspector>[0]["run"] = {
       state: "succeeded",
     },
   ],
+}
+
+const event: Parameters<typeof EventRow>[0]["event"] = {
+  id: 11,
+  source: "github",
+  entityId: "issue-11",
+  kind: "github-issue",
+  title: "Inspect the dashboard timeline",
+  url: "https://github.com/example/repo/issues/11",
+  occurredAt: "2026-08-05T09:59:00.000Z",
+  observedAt: "2026-08-05T10:00:00.000Z",
+  status: "succeeded",
+  attemptCount: 2,
+  nextAttemptAt: null,
+  lastError: null,
+  avenRef: null,
+  investigationHandle: "dashboard-timeline",
 }
 
 describe("React dashboard components", () => {
@@ -81,6 +99,38 @@ describe("React dashboard components", () => {
     expect(html).toContain("active-run is-stalled")
     expect(html).toContain("active-run-activity is-expanded")
     expect(html).toContain('class="privacy-inline"')
+  })
+
+  test("opens the matching run directly from an event row", () => {
+    const html = renderToStaticMarkup(
+      <EventRow
+        event={event}
+        now={Date.parse(event.observedAt)}
+        run={run}
+        openRun={() => {}}
+      />,
+    )
+
+    expect(html).toContain(
+      "Open run inspector for Inspect the dashboard timeline",
+    )
+    expect(html).not.toContain("event-detail")
+    expect(html).not.toContain("Open event inspector")
+  })
+
+  test("renders events without runs as static rows", () => {
+    const html = renderToStaticMarkup(
+      <EventRow
+        event={event}
+        now={Date.parse(event.observedAt)}
+        run={null}
+        openRun={() => {}}
+      />,
+    )
+
+    expect(html).toContain('class="event-summary"')
+    expect(html).not.toContain("<button")
+    expect(html).not.toContain("event-detail")
   })
 
   test("renders the dedicated run inspector", () => {

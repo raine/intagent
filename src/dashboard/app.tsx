@@ -74,7 +74,7 @@ interface DashboardSnapshot {
 }
 
 type Filter = "all" | "open" | "attention" | "handled"
-type Route = { kind: "run" | "event"; id: number } | null
+type Route = { kind: "run"; id: number } | null
 
 const eventStates: Record<
   EventStatus,
@@ -137,22 +137,6 @@ function relativeTime(value: string, now: number): string {
 
 function clockTime(value: string): string {
   return new Date(value).toLocaleTimeString([], { hour12: false })
-}
-
-function absoluteTime(value: string): string {
-  return new Date(value).toLocaleString()
-}
-
-function safeExternalUrl(value: string | null): string | null {
-  if (!value) return null
-  try {
-    const url = new URL(value)
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.href
-      : null
-  } catch {
-    return null
-  }
 }
 
 function useClock(): number {
@@ -225,10 +209,8 @@ function useSnapshot(): {
 
 function useRoute(): [Route, (route: Route) => void] {
   const parse = (): Route => {
-    const match = location.hash.match(/^#\/(run|event)\/(\d+)$/)
-    return match
-      ? { kind: match[1] as "run" | "event", id: Number(match[2]) }
-      : null
+    const match = location.hash.match(/^#\/run\/(\d+)$/)
+    return match ? { kind: "run", id: Number(match[1]) } : null
   }
   const [route, setRoute] = useState<Route>(parse)
   useEffect(() => {
@@ -297,47 +279,6 @@ function DetailField({
   )
 }
 
-function EventFacts({
-  event,
-  now,
-}: {
-  event: DashboardEvent
-  now: number
-}): JSX.Element {
-  const externalUrl = safeExternalUrl(event.url)
-  return (
-    <>
-      {event.lastError ? (
-        <p className="callout callout-error">
-          ✕ {event.lastError}
-          {event.nextAttemptAt
-            ? ` · retry ${relativeTime(event.nextAttemptAt, now)}`
-            : ""}
-        </p>
-      ) : null}
-      <dl className="detail-grid">
-        <DetailField label="Entity" value={event.entityId} />
-        <DetailField label="Status" value={eventStates[event.status].label} />
-        <DetailField label="Occurred" value={absoluteTime(event.occurredAt)} />
-        <DetailField label="Observed" value={absoluteTime(event.observedAt)} />
-        <DetailField label="Attempts" value={event.attemptCount} />
-        <DetailField label="Task" value={event.avenRef} />
-        <DetailField label="Investigation" value={event.investigationHandle} />
-      </dl>
-      {externalUrl ? (
-        <a
-          className="external-link"
-          href={externalUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open in {event.source} ↗
-        </a>
-      ) : null}
-    </>
-  )
-}
-
 function ActivityList({
   run,
   limit,
@@ -378,12 +319,13 @@ function ActivityList({
         const liveDuration = step.endedAt
           ? duration
           : now - parseTime(step.startedAt)
+        const description = `${label}, ${definition.label}, ${formatDuration(liveDuration)}`
         return (
           <div
             className={`activity-row activity-${kind} activity-${step.state}`}
             key={step.id}
             tabIndex={0}
-            aria-label={`${label}, ${definition.label}, ${formatDuration(liveDuration)}`}
+            aria-label={description}
           >
             <time className="activity-clock">{clockTime(step.startedAt)}</time>
             <span className="activity-turn">{kind}</span>
@@ -461,54 +403,51 @@ export function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
   )
 }
 
-function EventRow({
+export function EventRow({
   event,
   now,
-  openInspector,
+  run,
+  openRun,
 }: {
   event: DashboardEvent
   now: number
-  openInspector: () => void
+  run: DashboardRun | null
+  openRun: () => void
 }): JSX.Element {
-  const [expanded, setExpanded] = useState(false)
+  const summary = (
+    <>
+      <Status status={event.status} />
+      <strong>{event.title}</strong>
+      <small>
+        {event.source}/{event.kind}
+      </small>
+      <span className="event-attempt">
+        {event.attemptCount ? `att ${event.attemptCount}` : "-"}
+      </span>
+      <time>
+        {event.status === "retryable" && event.nextAttemptAt
+          ? `retry ${relativeTime(event.nextAttemptAt, now)}`
+          : relativeTime(event.observedAt, now)}
+      </time>
+      <span className="event-disclosure" aria-hidden="true">
+        {run ? "→" : ""}
+      </span>
+    </>
+  )
   return (
     <article className={`event-row event-${event.status}`}>
-      <button
-        className="event-summary"
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Hide" : "Show"} details for ${event.title}`}
-      >
-        <Status status={event.status} />
-        <strong>{event.title}</strong>
-        <small>
-          {event.source}/{event.kind}
-        </small>
-        <span className="event-attempt">
-          {event.attemptCount ? `att ${event.attemptCount}` : "-"}
-        </span>
-        <time>
-          {event.status === "retryable" && event.nextAttemptAt
-            ? `retry ${relativeTime(event.nextAttemptAt, now)}`
-            : relativeTime(event.observedAt, now)}
-        </time>
-        <span className="event-disclosure" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
-        </span>
-      </button>
-      {expanded ? (
-        <div className="event-detail">
-          <EventFacts event={event} now={now} />
-          <button
-            className="event-route-button"
-            type="button"
-            onClick={openInspector}
-          >
-            Open event inspector →
-          </button>
-        </div>
-      ) : null}
+      {run ? (
+        <button
+          className="event-summary"
+          type="button"
+          onClick={openRun}
+          aria-label={`Open run inspector for ${event.title}`}
+        >
+          {summary}
+        </button>
+      ) : (
+        <div className="event-summary">{summary}</div>
+      )}
     </article>
   )
 }
@@ -657,49 +596,16 @@ export function RunInspector({ run }: { run: DashboardRun }): JSX.Element {
   )
 }
 
-function EventInspector({
-  event,
-  runs,
-  now,
-  openRun,
-}: {
-  event: DashboardEvent
-  runs: DashboardRun[]
-  now: number
-  openRun: (run: DashboardRun) => void
-}): JSX.Element {
-  return (
-    <div className="event-inspector">
-      <section className="event-inspector-facts">
-        <h2 className="section-label">EVENT</h2>
-        <div className="event-inspector-body">
-          <EventFacts event={event} now={now} />
-        </div>
-      </section>
-      <section className="event-attempts">
-        <h2 className="section-label">TRIAGE RUNS</h2>
-        <RecentRuns
-          runs={runs.filter((run) => run.eventId === event.id)}
-          now={now}
-          open={openRun}
-        />
-      </section>
-    </div>
-  )
-}
-
 function RouteLayer({
   route,
   snapshot,
   now,
   close,
-  openRun,
 }: {
   route: Route
   snapshot: DashboardSnapshot
   now: number
   close: () => void
-  openRun: (run: DashboardRun) => void
 }): JSX.Element | null {
   const panel = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -738,21 +644,9 @@ function RouteLayer({
     return () => document.removeEventListener("keydown", onKey)
   }, [route, close])
   if (!route) return null
-  const record =
-    route.kind === "run"
-      ? snapshot.runs.find((run) => run.id === route.id)
-      : snapshot.events.find((event) => event.id === route.id)
+  const record = snapshot.runs.find((run) => run.id === route.id)
   if (!record) return null
-  const isRun = route.kind === "run"
-  const title = isRun
-    ? (record as DashboardRun).eventTitle
-    : (record as DashboardEvent).title
-  const status = isRun
-    ? (record as DashboardRun).state
-    : (record as DashboardEvent).status
-  const finished = isRun
-    ? (record as DashboardRun).endedAt
-    : (record as DashboardEvent).observedAt
+  const finished = record.endedAt
   return (
     <div id="route-layer">
       <section
@@ -765,29 +659,20 @@ function RouteLayer({
       >
         <header className="route-header">
           <button className="back-button" type="button" onClick={close}>
-            ← {isRun ? "runs" : "events"}
+            ← runs
           </button>
           <span aria-hidden="true">/</span>
-          <strong id="route-title">{title}</strong>
-          <Status status={status} run={isRun} />
+          <strong id="route-title">{record.eventTitle}</strong>
+          <Status status={record.state} run />
           <span className="route-spacer" />
           <time id="route-finished">
-            {isRun && !(record as DashboardRun).endedAt
-              ? `started ${relativeTime((record as DashboardRun).startedAt, now)}`
-              : `${isRun ? "finished" : "observed"} ${clockTime(finished!)} · ${relativeTime(finished!, now)}`}
+            {finished
+              ? `finished ${clockTime(finished)} · ${relativeTime(finished, now)}`
+              : `started ${relativeTime(record.startedAt, now)}`}
           </time>
         </header>
         <div id="route-content">
-          {isRun ? (
-            <RunInspector run={record as DashboardRun} />
-          ) : (
-            <EventInspector
-              event={record as DashboardEvent}
-              runs={snapshot.runs}
-              now={now}
-              openRun={openRun}
-            />
-          )}
+          <RunInspector run={record} />
         </div>
       </section>
     </div>
@@ -994,16 +879,23 @@ export function App(): JSX.Element {
                     </div>
                   </header>
                   <div className="events-list">
-                    {filtered.map((event) => (
-                      <EventRow
-                        event={event}
-                        now={now}
-                        key={event.id}
-                        openInspector={() =>
-                          navigate({ kind: "event", id: event.id })
-                        }
-                      />
-                    ))}
+                    {filtered.map((event) => {
+                      const run =
+                        snapshot.runs.find(
+                          (candidate) => candidate.eventId === event.id,
+                        ) ?? null
+                      return (
+                        <EventRow
+                          event={event}
+                          now={now}
+                          run={run}
+                          key={event.id}
+                          openRun={() => {
+                            if (run) navigate({ kind: "run", id: run.id })
+                          }}
+                        />
+                      )
+                    })}
                     {!filtered.length ? (
                       <p className="empty-state">No events in this view</p>
                     ) : null}
@@ -1048,7 +940,6 @@ export function App(): JSX.Element {
           snapshot={snapshot}
           now={now}
           close={() => navigate(null)}
-          openRun={(run) => navigate({ kind: "run", id: run.id })}
         />
       ) : null}
     </>
