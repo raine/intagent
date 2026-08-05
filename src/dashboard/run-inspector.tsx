@@ -7,11 +7,13 @@ import {
   groupTimeline,
   matchesFilter,
   runEnd,
+  runSummaryCounts,
   timeBudget,
   type CompactionEntry,
   type GroupedSpan,
   type PhaseEntry,
   type RetryEntry,
+  type SummaryCount,
   type TimelineFilter,
   type TurnGroup,
 } from "./run-inspector-data.ts"
@@ -310,19 +312,7 @@ function attentionItems(
   title: string
   body: string
 }> {
-  const failedTools =
-    detail.metrics.failedToolCount ??
-    detail.timeline.entries.filter(
-      (entry) =>
-        entry.type === "span" &&
-        entry.kind === "tool" &&
-        entry.state === "failed",
-    ).length
-  const failedCompactions = detail.timeline.entries.filter(
-    (entry) =>
-      entry.type === "compaction" &&
-      ["failed", "aborted", "interrupted"].includes(entry.state),
-  ).length
+  const counts = runSummaryCounts(detail)
   const items: Array<{
     tone: "critical" | "warning" | "info"
     title: string
@@ -344,25 +334,25 @@ function attentionItems(
         ? `Termination reason: ${stateLabel(detail.run.terminationReason)}.`
         : "Execution ended before a normal terminal outcome.",
     })
-  if (failedTools > 0)
+  if (counts.failedTools.value > 0)
     items.push({
       tone: detail.run.state === "succeeded" ? "warning" : "critical",
-      title: `${failedTools} tool ${failedTools === 1 ? "failure" : "failures"}`,
+      title: `${countQualifier(counts.failedTools)} tool ${counts.failedTools.value === 1 ? "failure" : "failures"}`,
       body:
         detail.run.state === "succeeded"
           ? "The run recovered and reached a successful outcome."
           : "Review the failed tool phases in the timeline.",
     })
-  if ((detail.metrics.retryCount ?? 0) > 0)
+  if (counts.retries.value > 0)
     items.push({
       tone: "warning",
-      title: `${detail.metrics.retryCount} model ${detail.metrics.retryCount === 1 ? "retry" : "retries"}`,
+      title: `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`,
       body: "Model retries are separate from event-level attempts.",
     })
-  if (failedCompactions > 0)
+  if (counts.incompleteCompactions.value > 0)
     items.push({
       tone: "warning",
-      title: `${failedCompactions} incomplete ${failedCompactions === 1 ? "compaction" : "compactions"}`,
+      title: `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`,
       body: "A compaction failed, was aborted, or was interrupted.",
     })
   if (
@@ -398,31 +388,31 @@ function attentionItems(
   return items
 }
 
+function countQualifier(count: SummaryCount): string {
+  return count.exact ? `${count.value}` : `at least ${count.value}`
+}
+
 function outcomeVerdict(detail: RunDetail): {
   title: string
   health: string
   tone: string
 } {
-  const failedTools = detail.metrics.failedToolCount ?? 0
-  const retries = detail.metrics.retryCount ?? 0
-  const incompleteCompactions = detail.timeline.entries.filter(
-    (entry) =>
-      entry.type === "compaction" &&
-      ["failed", "aborted", "interrupted"].includes(entry.state),
-  ).length
+  const counts = runSummaryCounts(detail)
   if (
     detail.run.state === "succeeded" &&
-    (failedTools > 0 || retries > 0 || incompleteCompactions > 0)
+    (counts.failedTools.value > 0 ||
+      counts.retries.value > 0 ||
+      counts.incompleteCompactions.value > 0)
   ) {
     const recoveries = [
-      failedTools > 0
-        ? `${failedTools} failed ${failedTools === 1 ? "tool call" : "tool calls"}`
+      counts.failedTools.value > 0
+        ? `${countQualifier(counts.failedTools)} failed ${counts.failedTools.value === 1 ? "tool call" : "tool calls"}`
         : null,
-      retries > 0
-        ? `${retries} model ${retries === 1 ? "retry" : "retries"}`
+      counts.retries.value > 0
+        ? `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`
         : null,
-      incompleteCompactions > 0
-        ? `${incompleteCompactions} incomplete ${incompleteCompactions === 1 ? "compaction" : "compactions"}`
+      counts.incompleteCompactions.value > 0
+        ? `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`
         : null,
     ].filter((value): value is string => value !== null)
     return {
@@ -431,11 +421,22 @@ function outcomeVerdict(detail: RunDetail): {
       tone: "warning",
     }
   }
-  if (detail.run.state === "succeeded")
+  if (
+    detail.run.state === "succeeded" &&
+    counts.failedTools.exact &&
+    counts.retries.exact &&
+    counts.incompleteCompactions.exact
+  )
     return {
       title: "Succeeded cleanly",
       health: "No recorded failures",
       tone: "good",
+    }
+  if (detail.run.state === "succeeded")
+    return {
+      title: "Succeeded",
+      health: "Recovery status unavailable",
+      tone: "info",
     }
   if (detail.run.state === "active")
     return {
@@ -477,6 +478,7 @@ export function RunInspector({
   const grouped = useMemo(() => groupTimeline(detail), [detail])
   const notices = useMemo(() => attentionItems(detail, now), [detail, now])
   const verdict = useMemo(() => outcomeVerdict(detail), [detail])
+  const counts = useMemo(() => runSummaryCounts(detail), [detail])
   const budget = useMemo(() => timeBudget(detail.metrics), [detail.metrics])
   const [filter, setFilter] = useState<TimelineFilter>("all")
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
@@ -634,19 +636,19 @@ export function RunInspector({
           />
           <VerdictFact
             label="Tools"
-            value={nullableCount(detail.metrics.toolCallCount)}
+            value={summaryCountLabel(counts.toolCalls)}
           />
           <VerdictFact
             label="Recovered failures"
-            value={nullableCount(detail.metrics.failedToolCount)}
+            value={summaryCountLabel(counts.failedTools)}
           />
           <VerdictFact
             label="Model retries"
-            value={nullableCount(detail.metrics.retryCount)}
+            value={summaryCountLabel(counts.retries)}
           />
           <VerdictFact
             label="Compactions"
-            value={nullableCount(detail.metrics.compactionCount)}
+            value={summaryCountLabel(counts.compactions)}
           />
           <div className="verdict-disposition">
             <span>Disposition</span>
@@ -731,6 +733,11 @@ function nullableCount(value: number | null): string {
   return value === null ? "unavailable" : formatNumber(value)
 }
 
+function summaryCountLabel(count: SummaryCount): string {
+  if (!count.exact && count.value === 0) return "unavailable"
+  return `${formatNumber(count.value)}${count.exact ? "" : "+"}`
+}
+
 function MetricGrid({
   detail,
   wall,
@@ -741,6 +748,7 @@ function MetricGrid({
   attentionCount: number
 }): JSX.Element {
   const metrics = detail.metrics
+  const counts = runSummaryCounts(detail)
   const usageBreakdown = [
     metrics.usage.inputTokens === null
       ? null
@@ -750,12 +758,12 @@ function MetricGrid({
       : `${formatNumber(metrics.usage.outputTokens)} out`,
   ].filter((value): value is string => value !== null)
   const turnSignals = [
-    metrics.retryCount === null
-      ? null
-      : `${metrics.retryCount} model ${metrics.retryCount === 1 ? "retry" : "retries"}`,
-    metrics.compactionCount === null
-      ? null
-      : `${metrics.compactionCount} ${metrics.compactionCount === 1 ? "compaction" : "compactions"}`,
+    counts.retries.exact || counts.retries.value > 0
+      ? `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`
+      : null,
+    counts.compactions.exact || counts.compactions.value > 0
+      ? `${countQualifier(counts.compactions)} ${counts.compactions.value === 1 ? "compaction" : "compactions"}`
+      : null,
   ].filter((value): value is string => value !== null)
   const cards: Array<{
     label: string
@@ -781,12 +789,10 @@ function MetricGrid({
       label: "Tool wall time",
       value: formatDuration(metrics.durationMs.tool),
       note:
-        metrics.failedToolCount === null
-          ? "failure count unavailable · overlap counted once"
-          : `${metrics.failedToolCount} failed · overlap counted once`,
-      ...(metrics.failedToolCount !== null && metrics.failedToolCount > 0
-        ? { tone: "warning" }
-        : {}),
+        counts.failedTools.exact || counts.failedTools.value > 0
+          ? `${countQualifier(counts.failedTools)} failed · overlap counted once`
+          : "failure count unavailable · overlap counted once",
+      ...(counts.failedTools.value > 0 ? { tone: "warning" } : {}),
     })
   if (metrics.turnCount !== null)
     cards.push({

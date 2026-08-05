@@ -136,6 +136,48 @@ export function runDetailFixture(options: FixtureOptions = {}): RunDetail {
   }
 }
 
+export function legacyRecoveredRunDetailFixture(): RunDetail {
+  return runDetailFixture({
+    run: { telemetry: { schemaVersion: null, completeness: "legacy" } },
+    entries: [
+      span(
+        1,
+        null,
+        "tool",
+        "Read",
+        "2026-08-05T10:00:01.000Z",
+        "2026-08-05T10:00:03.000Z",
+        "failed",
+      ),
+      span(
+        2,
+        null,
+        "tool",
+        "Aven",
+        "2026-08-05T10:00:06.000Z",
+        "2026-08-05T10:00:10.000Z",
+      ),
+    ],
+    metrics: {
+      durationMs: {
+        wall: 12_000,
+        setup: null,
+        thinking: null,
+        tool: null,
+        compaction: null,
+        retryWait: null,
+        gaps: null,
+        finalization: null,
+      },
+      toolCallCount: null,
+      failedToolCount: null,
+      turnCount: null,
+      retryCount: null,
+      compactionCount: null,
+    },
+  })
+}
+
 export function cleanEntries(): RunTimelineEntry[] {
   return [
     turn(1, "2026-08-05T10:00:01.000Z", "2026-08-05T10:00:06.000Z"),

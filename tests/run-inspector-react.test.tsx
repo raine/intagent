@@ -9,6 +9,7 @@ import {
 import {
   cleanEntries,
   compaction,
+  legacyRecoveredRunDetailFixture,
   retry,
   runDetailFixture,
   span,
@@ -49,6 +50,22 @@ describe("turn-centric run inspector", () => {
     expect(html).toContain("Succeeded with recovered error")
     expect(html).toContain("1 tool failure")
     expect(html).toContain("The run recovered")
+  })
+
+  test("derives a recovered legacy verdict from safe timeline spans", () => {
+    const html = render(legacyRecoveredRunDetailFixture())
+
+    expect(html).toContain("Succeeded with recovered error")
+    expect(html).toContain("1 failed tool call recovered")
+    expect(html).toContain("1 tool failure")
+    expect(html).toContain("Tools</span><strong>2")
+    expect(html).toContain("Recovered failures</span><strong>1")
+    expect(html).toContain("Turns</span><strong>unavailable")
+    expect(html).toContain("Time categories are unavailable")
+    expect(html).not.toContain("Succeeded cleanly")
+    expect(html).not.toContain("No recorded failures")
+    expect(html).not.toContain("Tools</span><strong>unavailable")
+    expect(html).not.toContain("Recovered failures</span><strong>unavailable")
   })
 
   test("renders a failed run and model retry as separate concerns", () => {

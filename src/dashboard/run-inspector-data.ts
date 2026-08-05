@@ -27,6 +27,19 @@ export interface TurnGroup {
   needsAttention: boolean
 }
 
+export interface SummaryCount {
+  value: number
+  exact: boolean
+}
+
+export interface RunSummaryCounts {
+  toolCalls: SummaryCount
+  failedTools: SummaryCount
+  retries: SummaryCount
+  compactions: SummaryCount
+  incompleteCompactions: SummaryCount
+}
+
 export interface TimeBudgetPart {
   key:
     | "setup"
@@ -48,6 +61,57 @@ const budgetLabels: Record<TimeBudgetPart["key"], string> = {
   compaction: "Compaction",
   gaps: "Gaps / other",
   finalization: "Finalization",
+}
+
+function summaryCount(
+  reported: number | null,
+  observed: number,
+  timelineComplete: boolean,
+): SummaryCount {
+  return {
+    value: Math.max(reported ?? 0, observed),
+    exact: timelineComplete || (reported !== null && reported >= observed),
+  }
+}
+
+export function runSummaryCounts(detail: RunDetail): RunSummaryCounts {
+  const timelineComplete = !detail.timeline.page.hasMore
+  const toolSpans = detail.timeline.entries.filter(
+    (entry): entry is SpanEntry =>
+      entry.type === "span" && entry.kind === "tool",
+  )
+  const retries = detail.timeline.entries.filter(
+    (entry) => entry.type === "retry",
+  ).length
+  const compactions = detail.timeline.entries.filter(
+    (entry) => entry.type === "compaction",
+  )
+  const incompleteCompactions = compactions.filter((entry) =>
+    ["failed", "aborted", "interrupted"].includes(entry.state),
+  ).length
+
+  return {
+    toolCalls: summaryCount(
+      detail.metrics.toolCallCount,
+      toolSpans.length,
+      timelineComplete,
+    ),
+    failedTools: summaryCount(
+      detail.metrics.failedToolCount,
+      toolSpans.filter((entry) => entry.state === "failed").length,
+      timelineComplete,
+    ),
+    retries: summaryCount(detail.metrics.retryCount, retries, timelineComplete),
+    compactions: summaryCount(
+      detail.metrics.compactionCount,
+      compactions.length,
+      timelineComplete,
+    ),
+    incompleteCompactions: {
+      value: incompleteCompactions,
+      exact: timelineComplete || detail.metrics.compactionCount === 0,
+    },
+  }
 }
 
 export function timeBudget(
