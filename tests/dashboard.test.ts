@@ -35,7 +35,12 @@ describe("intake dashboard", () => {
       "2026-08-04T09:01:00.000Z",
     )
     const event = database.claimNext("2026-08-04T09:02:00.000Z")
-    database.fail(event?.id ?? 0, "model unavailable", 3, 60)
+    database.fail(event?.id ?? 0, "Authorization: Bearer private-token", 3, 60)
+    database.sourceFailed(
+      "fastmail",
+      "password=private-source-secret",
+      "2026-08-04T09:02:30.000Z",
+    )
 
     const snapshot = dashboardSnapshot(
       database,
@@ -57,10 +62,14 @@ describe("intake dashboard", () => {
           url: "https://github.example/example/intake/issues/42",
           status: "retryable",
           attemptCount: 1,
+          lastError: "Authentication failed",
         },
       ],
     })
-    expect(JSON.stringify(snapshot)).not.toContain("Private event content")
+    const serialized = JSON.stringify(snapshot)
+    expect(serialized).not.toContain("Private event content")
+    expect(serialized).not.toContain("private-token")
+    expect(serialized).not.toContain("private-source-secret")
   })
 
   test("projects structured active and completed run history", () => {
@@ -111,8 +120,10 @@ describe("intake dashboard", () => {
         steps: [expect.objectContaining({ label: "bash", state: "active" })],
       }),
     ])
-    expect(JSON.stringify(active.runs)).not.toContain("secret-call-id")
-    expect(JSON.stringify(active.runs)).not.toContain("Private event content")
+    const serializedRuns = JSON.stringify(active.runs)
+    expect(serializedRuns).not.toContain("secret-call-id")
+    expect(serializedRuns).not.toContain("toolCallId")
+    expect(serializedRuns).not.toContain("Private event content")
 
     database.recordTriageRunEvent(
       runId,
@@ -150,10 +161,15 @@ describe("intake dashboard", () => {
       "default-src 'none'",
     )
     const html = await page.text()
-    expect(html).toContain("Every signal,")
-    expect(html).toContain('id="theme-select"')
-    expect(html).toContain('id="run-rows"')
+    expect(html).toContain("Intake events")
+    expect(html).toContain('data-theme-choice="system"')
+    expect(html).toContain('localStorage.getItem("im-theme")')
+    expect(html).toContain('id="active-runs"')
+    expect(html).toContain('id="run-detail-view"')
     expect(html).toContain('name="color-scheme" content="light dark"')
+    expect(html).toContain("@media (max-width: 680px)")
+    expect(html).toContain("@media (prefers-reduced-motion: reduce)")
+    expect(html).toContain('aria-pressed="true"')
 
     const api = handler(new Request("http://localhost/api/snapshot"))
     expect(api.status).toBe(200)

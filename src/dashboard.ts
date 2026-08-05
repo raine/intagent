@@ -81,6 +81,30 @@ function eventUrl(event: EventRecord): string | null {
   }
 }
 
+function publicError(error: string | null): string | null {
+  if (!error) return null
+  const value = error.toLowerCase()
+  if (
+    value.includes("auth") ||
+    value.includes("credential") ||
+    value.includes("token") ||
+    value.includes("unauthorized") ||
+    value.includes("forbidden")
+  )
+    return "Authentication failed"
+  if (value.includes("rate limit") || value.includes("too many requests"))
+    return "Rate limited"
+  if (value.includes("timeout") || value.includes("timed out"))
+    return "Request timed out"
+  if (value.includes("connection reset")) return "Connection reset"
+  if (value.includes("not found") || value.includes("404"))
+    return "Resource not found (404)"
+  if (value.includes("model") && value.includes("unavailable"))
+    return "Model unavailable"
+  if (value.includes("interrupt")) return "Triage interrupted"
+  return "Operation failed"
+}
+
 export function dashboardSnapshot(
   database: IntakeDatabase,
   now = new Date(),
@@ -101,7 +125,7 @@ export function dashboardSnapshot(
     status: event.status,
     attemptCount: event.attemptCount,
     nextAttemptAt: event.nextAttemptAt,
-    lastError: event.lastError,
+    lastError: publicError(event.lastError),
     avenRef: event.avenRef,
     investigationHandle: event.investigationHandle,
   }))
@@ -110,7 +134,10 @@ export function dashboardSnapshot(
     source: String(source.source),
     lastSuccessAt:
       typeof source.lastSuccessAt === "string" ? source.lastSuccessAt : null,
-    lastError: typeof source.lastError === "string" ? source.lastError : null,
+    lastError:
+      typeof source.lastError === "string"
+        ? publicError(source.lastError)
+        : null,
     updatedAt: String(source.updatedAt),
   }))
   const runs = database.listTriageRuns(50).flatMap((run): DashboardRun[] => {
@@ -174,13 +201,13 @@ const page = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Intake monitor</title>
+  <title>Intake Monitor</title>
   <script>
     (() => {
       try {
-        const choice = localStorage.getItem("intake-theme") || "system"
+        const choice = localStorage.getItem("im-theme") || "system"
         const resolved = choice === "system"
-          ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
           : choice
         document.documentElement.dataset.theme = resolved
         document.documentElement.dataset.themeChoice = choice
@@ -190,110 +217,103 @@ const page = `<!doctype html>
   <style>${dashboardStyles}</style>
 </head>
 <body>
-  <a class="skip-link" href="#activity">Skip to activity</a>
-  <div class="shell">
-    <header class="topbar">
-      <div class="brand" aria-label="Intake monitor">
-        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M5 7h22v18H5z"/><path d="M9 11h14M9 16h9M9 21h6"/>
-          <path class="brand-pulse" d="M22 17v4h4"/>
-        </svg>
-        <span class="brand-name">intake</span><span class="brand-divider"></span><span class="brand-section">monitor</span>
-      </div>
-      <div class="connection" role="status"><span class="live-dot"></span><span id="connection-label">connecting</span></div>
-      <label class="theme-control"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-      <time id="updated-at" class="updated-at"></time>
-    </header>
+  <a class="skip-link" href="#dashboard-content">Skip to dashboard</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">▤</span>
+      <span class="brand-copy">
+        <strong>Intake Monitor</strong>
+        <span id="daemon-label">local intake daemon</span>
+      </span>
+    </div>
+    <span class="topbar-spacer"></span>
+    <div id="connection" class="connection connection-connecting" role="status" aria-live="polite">
+      <span class="connection-dot" aria-hidden="true"></span>
+      <strong id="connection-label">Connecting</strong>
+      <span id="connection-note">waiting for data</span>
+    </div>
+    <div class="theme-control" role="group" aria-label="Theme">
+      <button type="button" data-theme-choice="system" title="Follow system theme">auto</button>
+      <button type="button" data-theme-choice="light" title="Light theme">light</button>
+      <button type="button" data-theme-choice="dark" title="Dark theme">dark</button>
+    </div>
+  </header>
 
-    <main>
-      <section class="hero" aria-labelledby="page-title">
-        <div class="hero-copy">
-          <p class="eyebrow">Triage control</p>
-          <h1 id="page-title">Every signal,<br><span>accounted for.</span></h1>
-          <p id="hero-summary" class="hero-summary">Reading intake state...</p>
-        </div>
-        <div class="hero-status" aria-live="polite">
-          <div class="readout">
-            <span class="readout-label">Open queue</span>
-            <strong id="open-count">0</strong>
-            <span id="queue-age" class="readout-note">No waiting items</span>
-          </div>
-          <div id="attention-card" class="attention-card">
-            <span class="attention-icon" aria-hidden="true">!</span>
-            <span><strong id="attention-count">0</strong><small>need attention</small></span>
-          </div>
-        </div>
+  <div id="connection-banner" class="connection-banner" role="alert" hidden>
+    <strong id="banner-heading"></strong>
+    <span id="banner-copy"></span>
+  </div>
+
+  <main id="dashboard-content" class="page-main">
+    <section id="loading-view" class="loading-view" aria-label="Loading">
+      <div class="skeleton-stats"><i></i><i></i><i></i><i></i><i></i></div>
+      <i class="skeleton-block skeleton-runs"></i>
+      <i class="skeleton-block skeleton-events"></i>
+      <p>Connecting to intake daemon...</p>
+    </section>
+
+    <div id="dashboard-view" class="dashboard-view" hidden>
+      <section class="overview" aria-label="Overview">
+        <article class="stat stat-info"><span>Open</span><strong id="stat-open">0</strong><small id="stat-open-note">queue is clear</small></article>
+        <article id="attention-stat" class="stat"><span>Needs attention</span><strong id="stat-attention">0</strong><small id="stat-attention-note">nothing to review</small></article>
+        <article class="stat stat-ok"><span>Active runs</span><strong id="stat-active">0</strong><small id="stat-active-note">idle</small></article>
+        <article class="stat"><span>Handled</span><strong id="stat-handled">0</strong><small>succeeded + ignored</small></article>
+        <article class="stat"><span>Oldest open</span><strong id="stat-oldest">-</strong><small id="stat-oldest-note"></small></article>
       </section>
 
-      <section class="flow-panel" aria-labelledby="flow-title">
-        <header class="section-heading">
-          <div><p class="eyebrow">Queue flow</p><h2 id="flow-title">From observed to handled</h2></div>
-          <p id="flow-total" class="section-meta"></p>
-        </header>
-        <ol class="flowline">
-          <li data-stage="pending"><span class="stage-index">01</span><span class="stage-mark"></span><span class="stage-label">Pending</span><strong data-count="pending">0</strong></li>
-          <li data-stage="processing"><span class="stage-index">02</span><span class="stage-mark"></span><span class="stage-label">Processing</span><strong data-count="processing">0</strong></li>
-          <li data-stage="retryable"><span class="stage-index">03</span><span class="stage-mark"></span><span class="stage-label">Retrying</span><strong data-count="retryable">0</strong></li>
-          <li data-stage="handled"><span class="stage-index">04</span><span class="stage-mark"></span><span class="stage-label">Handled</span><strong data-count="handled">0</strong></li>
-        </ol>
-        <div class="outcome-key" aria-label="Handled outcome breakdown">
-          <span><i class="key-mark succeeded"></i>Succeeded <strong data-count="succeeded">0</strong></span>
-          <span><i class="key-mark ignored"></i>Ignored <strong data-count="ignored">0</strong></span>
-          <span><i class="key-mark failed"></i>Failed <strong data-count="failed">0</strong></span>
-        </div>
-      </section>
+      <div class="dashboard-columns">
+        <div class="primary-column">
+          <section aria-labelledby="active-runs-title">
+            <header class="section-title">
+              <h2 id="active-runs-title">Active runs</h2>
+              <span>refreshes every 1.5s</span>
+            </header>
+            <div id="active-runs" class="active-runs"></div>
+          </section>
 
-      <section class="runs-panel" aria-labelledby="runs-title">
-        <header class="section-heading runs-heading">
-          <div><p class="eyebrow">Run observability</p><h2 id="runs-title">Triage runs</h2></div>
-          <p id="runs-summary" class="section-meta">No runs recorded</p>
-        </header>
-        <div id="active-runs" class="active-runs" aria-live="polite"></div>
-        <div class="run-table-wrap">
-          <table class="run-table">
-            <thead><tr><th>State</th><th>Run</th><th>Activity</th><th>Duration</th><th><span class="sr-only">Details</span></th></tr></thead>
-            <tbody id="run-rows"></tbody>
-          </table>
-          <div id="runs-empty" class="empty-state"><strong>No triage history yet</strong><span>Run activity appears here when an intake item enters triage.</span></div>
-        </div>
-      </section>
-
-      <div class="workspace">
-        <section id="activity" class="activity-panel" aria-labelledby="activity-title">
-          <header class="section-heading activity-heading">
-            <div><p class="eyebrow">Activity ledger</p><h2 id="activity-title">Recent intake</h2></div>
-            <div class="filter-wrap">
-              <label for="status-filter">Show</label>
-              <select id="status-filter">
-                <option value="all">All statuses</option>
-                <option value="open">Open queue</option>
-                <option value="attention">Needs attention</option>
-                <option value="succeeded">Succeeded</option>
-                <option value="ignored">Ignored</option>
-              </select>
+          <section aria-labelledby="events-title">
+            <header class="section-title events-heading">
+              <h2 id="events-title">Intake events</h2>
+              <div id="event-filters" class="filter-tabs" role="group" aria-label="Filter events">
+                <button type="button" data-filter="all" aria-pressed="true">Recent <b>0</b></button>
+                <button type="button" data-filter="open" aria-pressed="false">Open <b>0</b></button>
+                <button type="button" data-filter="attention" aria-pressed="false">Attention <b>0</b></button>
+                <button type="button" data-filter="handled" aria-pressed="false">Handled <b>0</b></button>
+              </div>
+            </header>
+            <div class="event-panel">
+              <div id="event-list"></div>
+              <p id="event-list-note" class="list-note"></p>
             </div>
-          </header>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Status</th><th>Item</th><th>Source</th><th>Observed</th><th><span class="sr-only">Details</span></th></tr></thead>
-              <tbody id="event-rows"></tbody>
-            </table>
-            <div id="activity-empty" class="empty-state" hidden><strong>No matching activity</strong><span>Choose another status to see recent intake.</span></div>
-          </div>
-        </section>
+          </section>
+        </div>
 
-        <aside class="sources-panel" aria-labelledby="sources-title">
-          <header class="section-heading">
-            <div><p class="eyebrow">Connectors</p><h2 id="sources-title">Source pulse</h2></div>
-            <span id="source-count" class="source-count">0</span>
-          </header>
-          <div id="source-list" class="source-list"></div>
+        <aside class="rail">
+          <section aria-labelledby="sources-title">
+            <header class="section-title"><h2 id="sources-title">Sources</h2></header>
+            <div id="source-list" class="rail-panel"></div>
+          </section>
+          <section aria-labelledby="history-title">
+            <header class="section-title"><h2 id="history-title">Run history</h2></header>
+            <div id="run-history" class="rail-panel"></div>
+          </section>
         </aside>
       </div>
-    </main>
-  </div>
-  <template id="event-detail-template"><tr class="detail-row"><td colspan="5"><div class="event-detail"></div></td></tr></template>
-  <template id="run-detail-template"><tr class="run-detail-row"><td colspan="5"><div class="run-detail"></div></td></tr></template>
+      <footer class="page-footer">
+        <span>events + sources refresh every 5s - active runs every 1.5s</span>
+        <span id="refresh-note"></span>
+      </footer>
+    </div>
+
+    <section id="run-detail-view" class="run-detail-view" aria-label="Run detail" hidden>
+      <button id="back-to-dashboard" class="back-button" type="button"><span aria-hidden="true">←</span> Back to dashboard</button>
+      <div id="run-detail"></div>
+      <footer class="page-footer">
+        <span>events + sources refresh every 5s - active runs every 1.5s</span>
+        <span id="detail-refresh-note"></span>
+      </footer>
+    </section>
+  </main>
   <script>${dashboardScript}</script>
 </body>
 </html>`
