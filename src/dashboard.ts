@@ -1,5 +1,5 @@
-import dashboardScript from "./dashboard/client.js" with { type: "text" }
-import dashboardStyles from "./dashboard/styles.css" with { type: "text" }
+import dashboardScript from "./dashboard/generated/app.js" with { type: "text" }
+import dashboardStyles from "./dashboard/generated/app.css" with { type: "text" }
 import type { EventRecord, EventStatus, IntakeDatabase } from "./database.ts"
 
 const allStatuses: EventStatus[] = [
@@ -33,6 +33,7 @@ export interface DashboardRun {
   eventId: number
   eventTitle: string
   source: string
+  eventKind: string
   attempt: number
   startedAt: string
   endedAt: string | null
@@ -76,7 +77,11 @@ export interface DashboardSnapshot {
 function eventUrl(event: EventRecord): string | null {
   try {
     const metadata = JSON.parse(event.operationalMetadata) as { url?: unknown }
-    return typeof metadata.url === "string" ? metadata.url : null
+    if (typeof metadata.url !== "string") return null
+    const url = new URL(metadata.url)
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.href
+      : null
   } catch {
     return null
   }
@@ -131,16 +136,19 @@ export function dashboardSnapshot(
     investigationHandle: event.investigationHandle,
   }))
   const oldestOpenAt = database.oldestOpenEventAt()
-  const sources = database.sourceStatuses().map((source) => ({
-    source: String(source.source),
-    lastSuccessAt:
-      typeof source.lastSuccessAt === "string" ? source.lastSuccessAt : null,
-    lastError:
-      typeof source.lastError === "string"
-        ? publicError(source.lastError)
-        : null,
-    updatedAt: String(source.updatedAt),
-  }))
+  const sources = database
+    .sourceStatuses()
+    .filter((source) => source.source !== "manual-injection")
+    .map((source) => ({
+      source: String(source.source),
+      lastSuccessAt:
+        typeof source.lastSuccessAt === "string" ? source.lastSuccessAt : null,
+      lastError:
+        typeof source.lastError === "string"
+          ? publicError(source.lastError)
+          : null,
+      updatedAt: String(source.updatedAt),
+    }))
   const runs = database.listTriageRuns(50).flatMap((run): DashboardRun[] => {
     const event = database.event(run.eventId)
     if (!event) return []
@@ -155,6 +163,7 @@ export function dashboardSnapshot(
         eventId: run.eventId,
         eventTitle: event.title,
         source: event.source,
+        eventKind: event.kind,
         attempt: run.attempt,
         startedAt: run.startedAt,
         endedAt: run.endedAt,
@@ -206,66 +215,20 @@ function dashboardPage(): string {
   <meta name="color-scheme" content="light dark">
   <title>Intake Monitor</title>
   <script>
-    (() => {
-      try {
-        const storedTheme = localStorage.getItem("im-theme")
-        const theme = storedTheme === "light" || storedTheme === "dark"
-          ? storedTheme
-          : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
-        document.documentElement.dataset.theme = theme
-      } catch {
-        document.documentElement.dataset.theme = "dark"
-      }
-    })()
+    try {
+      const stored = localStorage.getItem("im-theme")
+      document.documentElement.dataset.theme = stored === "light" || stored === "dark"
+        ? stored
+        : matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+    } catch {
+      document.documentElement.dataset.theme = "dark"
+    }
   </script>
   <style>${dashboardStyles}</style>
 </head>
 <body>
-  <a class="skip-link" href="#dashboard-content">Skip to dashboard</a>
-  <header class="topbar">
-    <a class="brand" href="#/" aria-label="Intake Monitor dashboard">intake-monitor</a>
-    <span class="topbar-separator" aria-hidden="true">·</span>
-    <div id="connection" class="connection connection-connecting" role="status" aria-live="polite">
-      <span class="connection-dot" aria-hidden="true"></span>
-      <strong id="connection-label">Connecting</strong>
-      <span id="connection-note">waiting for data</span>
-    </div>
-    <span class="topbar-spacer"></span>
-    <time id="dashboard-clock" class="dashboard-clock"></time>
-    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch color theme"></button>
-  </header>
-
-  <div id="connection-banner" class="connection-banner" role="alert" hidden>
-    <strong id="banner-heading"></strong>
-    <span id="banner-copy"></span>
-  </div>
-
-  <main id="dashboard-content" tabindex="-1">
-    <section id="loading-view" class="loading-view" aria-label="Loading dashboard">
-      <div class="skeleton-line skeleton-short"></div>
-      <div class="skeleton-line"></div>
-      <div class="skeleton-grid"><i></i><i></i><i></i><i></i></div>
-      <p>Connecting to the intake daemon...</p>
-    </section>
-    <div id="dashboard-root" hidden></div>
-  </main>
-
-  <div id="route-layer" hidden>
-    <section id="route-panel" class="route-panel" role="dialog" aria-modal="true" aria-labelledby="route-title">
-      <header class="route-header">
-        <button id="route-back" class="back-button" type="button"><span aria-hidden="true">←</span> dashboard</button>
-        <span aria-hidden="true">/</span>
-        <strong id="route-title"></strong>
-        <span id="route-status"></span>
-        <span class="route-spacer"></span>
-        <time id="route-finished"></time>
-      </header>
-      <div id="route-content"></div>
-    </section>
-  </div>
-
-  <p id="announcer" class="visually-hidden" aria-live="polite"></p>
-  <script>${dashboardScript}</script>
+  <div id="root"></div>
+  <script type="module">${dashboardScript}</script>
 </body>
 </html>`
 }

@@ -41,6 +41,12 @@ describe("intake dashboard", () => {
       "password=private-source-secret",
       "2026-08-04T09:02:30.000Z",
     )
+    database.sourceSucceeded(
+      "manual-injection",
+      { injected_at: "2026-08-04T09:02:45.000Z" },
+      [],
+      "2026-08-04T09:02:45.000Z",
+    )
 
     const snapshot = dashboardSnapshot(
       database,
@@ -66,6 +72,9 @@ describe("intake dashboard", () => {
         },
       ],
     })
+    expect(snapshot.sources.map((source) => source.source)).not.toContain(
+      "manual-injection",
+    )
     const serialized = JSON.stringify(snapshot)
     expect(serialized).not.toContain("Private event content")
     expect(serialized).not.toContain("private-token")
@@ -218,7 +227,7 @@ describe("intake dashboard", () => {
     expect(JSON.stringify(run)).not.toContain("contentIndex")
   })
 
-  test("serves the responsive Wire dashboard through the shared core", async () => {
+  test("serves the bundled React dashboard", async () => {
     const handler = createDashboardHandler(createDatabase())
     const page = handler(new Request("http://localhost/"))
 
@@ -228,28 +237,20 @@ describe("intake dashboard", () => {
       "default-src 'none'",
     )
     const html = await page.text()
-    expect(html).toContain('class="stat-strip"')
+    expect(html).toContain('<div id="root"></div>')
+    expect(html).toContain('<script type="module">')
     expect(html).toContain("ACTIVE RUNS")
     expect(html).toContain("RECENT EVENTS")
     expect(html).toContain("RECENT RUNS")
-    expect(html).toContain('id="theme-toggle"')
     expect(html).toContain('localStorage.getItem("im-theme")')
     expect(html).toContain('name="color-scheme" content="light dark"')
-    expect(html).toContain('id="dashboard-content"')
-    expect(html).toContain('id="route-layer"')
-    expect(html).toContain("function keyedList(")
-    expect(html).toContain("function windowCounts(")
-    expect(html).toContain("function setConnection(")
-    expect(html).toContain("function safeExternalUrl(")
     expect(html).toContain("Tool arguments, commands, output")
     expect(html).toContain("Thinking content is not retained")
-    expect(html).toContain("@media (max-width: 700px)")
-    expect(html).toContain("@media (prefers-reduced-motion: reduce)")
-    expect(html).toContain("@media (forced-colors: active)")
-    expect(html).toContain('aria-pressed="true"')
+    expect(html).toContain("@media (width<=700px)")
+    expect(html).toContain("@media (prefers-reduced-motion:reduce)")
+    expect(html).toContain("@media (forced-colors:active)")
+    expect(html).not.toContain("function keyedList(")
     expect(html).not.toContain('id="design-select"')
-    expect(html).not.toContain("ledgerMount")
-    expect(html).not.toContain("pipelineMount")
   })
 
   test("ignores obsolete design query parameters", async () => {

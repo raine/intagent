@@ -1,6 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": ["dist/**", "history/**", "node_modules/**"],
+  "ignorePatterns": [
+    "dist/**",
+    "history/**",
+    "node_modules/**",
+    "src/dashboard/generated/**"
+  ],
   "options": {
     "typeAware": true
   },

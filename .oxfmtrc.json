@@ -1,6 +1,12 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["dist/**", "history/**", "node_modules/**", "bun.lock"],
+  "ignorePatterns": [
+    "dist/**",
+    "history/**",
+    "node_modules/**",
+    "src/dashboard/generated/**",
+    "bun.lock"
+  ],
   "printWidth": 80,
   "semi": false,
   "proseWrap": "always",

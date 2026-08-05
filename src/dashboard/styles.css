@@ -667,9 +667,9 @@
 
   .detail-field {
     align-items: baseline;
-    display: flex;
+    display: grid;
     gap: 10px;
-    justify-content: space-between;
+    grid-template-columns: max-content minmax(0, 1fr);
     min-width: 0;
     padding: 4px 0;
   }
@@ -681,6 +681,8 @@
 
   .detail-field dd {
     color: var(--ink-2);
+    margin: 0;
+    min-width: 0;
     overflow-wrap: anywhere;
     text-align: right;
   }
@@ -935,9 +937,9 @@
     background: var(--bar);
     border-bottom: 1px solid var(--edge);
     display: flex;
-    gap: 10px;
+    gap: 12px;
     min-height: 44px;
-    padding: 7px 20px;
+    padding: 10px 20px;
     position: sticky;
     top: 0;
     z-index: 20;
@@ -976,6 +978,10 @@
 
   .inspector-meta {
     border-right: 1px solid var(--edge);
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    gap: 8px;
     padding: 16px 20px;
   }
 
@@ -985,6 +991,19 @@
 
   .inspector-facts .detail-field {
     padding: 3px 0;
+  }
+
+  .inspector-facts [data-label="duration"] dd {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .inspector-facts [data-label="compactions"] dd {
+    color: var(--yellow);
+  }
+
+  .inspector-facts [data-label="handle"] dd {
+    color: var(--blue);
   }
 
   .inspector-divider {

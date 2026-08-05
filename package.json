@@ -16,7 +16,9 @@
     "intake-github-source": "src/sources/github.ts"
   },
   "scripts": {
-    "build": "bun build src/cli.ts src/sources/fastmail.ts src/sources/github.ts --outdir dist --target bun",
+    "build": "bun run dashboard:build && bun build src/cli.ts src/sources/fastmail.ts src/sources/github.ts --outdir dist --target bun",
+    "dashboard:build": "vite build",
+    "dashboard:dev": "vite",
     "install:local": "scripts/install",
     "check": "checkle run project",
     "format": "oxfmt --write .",
@@ -33,16 +35,22 @@
     "@earendil-works/pi-ai": "0.83.0",
     "@earendil-works/pi-coding-agent": "0.83.0",
     "bash-parser": "0.5.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typebox": "1.3.7",
     "yaml": "2.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^6.0.2",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "^8.0.16"
   },
   "engines": {
     "bun": ">=1.3.13"
