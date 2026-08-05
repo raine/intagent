@@ -226,6 +226,7 @@ describe("run detail telemetry", () => {
         expect.objectContaining({ type: "turn", ordinal: 1 }),
         expect.objectContaining({
           type: "retry",
+          turnOrdinal: 1,
           errorCategory: "rate_limit",
         }),
         expect.objectContaining({
@@ -369,6 +370,71 @@ describe("run detail telemetry", () => {
     )
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ run: { id: runId } })
+  })
+
+  test("clamps orphaned telemetry when its event is terminal", () => {
+    const database = createDatabase()
+    const { eventId, runId } = startRun(database)
+    record(database, runId, "2026-08-05T10:00:01.000Z", {
+      type: "turn_start",
+    })
+    record(database, runId, "2026-08-05T10:00:02.000Z", {
+      type: "tool_execution_start",
+      toolName: "read",
+    })
+    database.raw
+      .query("UPDATE events SET status = 'failed', updated_at = ? WHERE id = ?")
+      .run("2026-08-05T10:00:03.000Z", eventId)
+
+    const detail = runDetail(database, runId, {
+      now: new Date("2026-08-05T12:00:00.000Z"),
+    })!
+    expect(detail.run).toMatchObject({
+      state: "interrupted",
+      endedAt: "2026-08-05T10:00:02.000Z",
+    })
+    expect(detail.metrics.durationMs.wall).toBe(2_000)
+    expect(detail.timeline.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "span",
+          state: "interrupted",
+          endedAt: "2026-08-05T10:00:02.000Z",
+        }),
+      ]),
+    )
+  })
+
+  test("keeps timing partitions bounded under overlap, clock skew, and zero duration", () => {
+    const database = createDatabase()
+    const { runId } = startRun(database)
+    record(database, runId, "2026-08-05T09:59:59.000Z", {
+      type: "turn_start",
+    })
+    record(database, runId, "2026-08-05T10:00:00.000Z", {
+      type: "tool_execution_start",
+      toolName: "read",
+    })
+    record(database, runId, "2026-08-05T10:00:00.000Z", {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_start" },
+    })
+    database.finishTriageRun(runId, "succeeded", "2026-08-05T10:00:00.000Z")
+
+    const detail = runDetail(database, runId)!
+    const parts = detail.metrics.durationMs
+    expect(parts.wall).toBe(0)
+    expect(
+      [
+        parts.setup,
+        parts.thinking,
+        parts.tool,
+        parts.compaction,
+        parts.retryWait,
+        parts.gaps,
+        parts.finalization,
+      ].reduce<number>((sum, value) => sum + (value ?? 0), 0),
+    ).toBe(0)
   })
 
   test("returns not found for unknown run ids", () => {

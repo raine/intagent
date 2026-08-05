@@ -235,7 +235,7 @@ describe("intake persistence", () => {
       database.raw
         .query("SELECT MAX(version) AS version FROM schema_migrations")
         .get(),
-    ).toEqual({ version: 4 })
+    ).toEqual({ version: 5 })
     expect(
       database.raw
         .query("SELECT name FROM pragma_table_info('triage_runs')")
@@ -254,9 +254,14 @@ describe("intake persistence", () => {
     ).toEqual({ count: 1 })
     expect(
       database.raw
-        .query("SELECT event_id AS eventId FROM command_events ORDER BY id")
+        .query(
+          "SELECT event_id AS eventId, command, output_summary AS outputSummary FROM command_events ORDER BY id",
+        )
         .all(),
-    ).toEqual([{ eventId: 1 }, { eventId: 1 }])
+    ).toEqual([
+      { eventId: 1, command: "tool=legacy", outputSummary: "unavailable" },
+      { eventId: 1, command: "tool=legacy", outputSummary: "unavailable" },
+    ])
   })
 
   test("keeps active triage processing across concurrent database opens", () => {
@@ -359,6 +364,14 @@ describe("intake persistence", () => {
         (3, '2026-08-03T00:00:00Z');
       CREATE TABLE events (id INTEGER PRIMARY KEY, status TEXT NOT NULL);
       INSERT INTO events VALUES (1, 'failed');
+      CREATE TABLE command_events (
+        id INTEGER PRIMARY KEY,
+        event_id INTEGER NOT NULL REFERENCES events(id),
+        command TEXT NOT NULL,
+        exit_code INTEGER NOT NULL,
+        output_summary TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
       CREATE TABLE triage_runs (
         id INTEGER PRIMARY KEY,
         event_id INTEGER NOT NULL REFERENCES events(id),
@@ -423,6 +436,112 @@ describe("intake persistence", () => {
     })
   })
 
+  test("matches concurrent same-name tools without persisting call identifiers", () => {
+    const database = new IntakeDatabase(":memory:")
+    databases.push(database)
+    database.sourceSucceeded("mail", {}, [item()], "2026-08-03T10:01:00.000Z")
+    const event = database.claimNext("2026-08-03T10:02:00.000Z")!
+    const runId = database.startTriageRun(
+      event.id,
+      1,
+      "2026-08-03T10:02:00.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "turn_start" },
+      "2026-08-03T10:02:01.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "tool_execution_start",
+        toolName: "read",
+        toolCallId: "private-a",
+      },
+      "2026-08-03T10:02:02.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "tool_execution_start",
+        toolName: "read",
+        toolCallId: "private-b",
+      },
+      "2026-08-03T10:02:03.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "tool_execution_end",
+        toolName: "read",
+        toolCallId: "private-b",
+        isError: false,
+      },
+      "2026-08-03T10:02:04.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "tool_execution_end",
+        toolName: "read",
+        toolCallId: "private-a",
+        isError: true,
+      },
+      "2026-08-03T10:02:05.000Z",
+    )
+
+    expect(database.triageRun(runId)?.steps).toMatchObject([
+      {
+        startedAt: "2026-08-03T10:02:02.000Z",
+        endedAt: "2026-08-03T10:02:05.000Z",
+        outcome: "failed",
+      },
+      {
+        startedAt: "2026-08-03T10:02:03.000Z",
+        endedAt: "2026-08-03T10:02:04.000Z",
+        outcome: "succeeded",
+      },
+    ])
+    expect(
+      JSON.stringify(
+        database.raw
+          .query("SELECT * FROM triage_run_steps WHERE run_id = ?")
+          .all(runId),
+      ),
+    ).not.toContain("private-")
+  })
+
+  test("associates retries after turn completion with their originating turn", () => {
+    const database = new IntakeDatabase(":memory:")
+    databases.push(database)
+    database.sourceSucceeded("mail", {}, [item()], "2026-08-03T10:01:00.000Z")
+    const event = database.claimNext("2026-08-03T10:02:00.000Z")!
+    const runId = database.startTriageRun(
+      event.id,
+      1,
+      "2026-08-03T10:02:00.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "turn_start" },
+      "2026-08-03T10:02:01.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "turn_end", message: { role: "assistant", stopReason: "error" } },
+      "2026-08-03T10:02:02.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 1000 },
+      "2026-08-03T10:02:02.000Z",
+    )
+
+    expect(database.triageRunRetries(runId)[0]?.turnId).toBe(
+      database.triageRunTurns(runId)[0]?.id,
+    )
+  })
+
   test("derives durable Aven and investigation references", () => {
     const database = new IntakeDatabase(":memory:")
     databases.push(database)
@@ -459,6 +578,23 @@ describe("intake persistence", () => {
         "SELECT command, output_summary AS outputSummary FROM command_events",
       )
       .all() as Array<{ command: string; outputSummary: string }>
-    expect(JSON.stringify(commandRows)).not.toContain("Complete content")
+    const serializedCommands = JSON.stringify(commandRows)
+    expect(serializedCommands).not.toContain("Complete content")
+    expect(serializedCommands).not.toContain("/tmp/project__worktrees")
+    expect(serializedCommands).not.toContain("sha256")
+    expect(commandRows).toEqual([
+      {
+        command: "tool=rg",
+        outputSummary: expect.stringMatching(/^bytes=\d+$/),
+      },
+      {
+        command: "tool=aven",
+        outputSummary: expect.stringMatching(/^bytes=\d+$/),
+      },
+      {
+        command: "tool=workmux",
+        outputSummary: expect.stringMatching(/^bytes=\d+$/),
+      },
+    ])
   })
 })

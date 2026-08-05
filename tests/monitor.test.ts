@@ -106,6 +106,44 @@ describe("monitor scheduling", () => {
       attempt: 1,
       queue: { pending: 1, succeeded: 1 },
     })
+    expect(JSON.stringify(records)).not.toContain("entity-1")
+    expect(JSON.stringify(records)).not.toContain("entity-2")
+  })
+
+  test("categorizes triage failures without retaining raw errors", async () => {
+    const database = new IntakeDatabase(":memory:")
+    databases.push(database)
+    database.sourceSucceeded(
+      "fake",
+      {},
+      [intake("private-title", "revision-1")],
+      "2026-08-03T12:00:00.000Z",
+    )
+    const root = await mkdtemp(join(tmpdir(), "intake-monitor-"))
+    temporaryDirectories.push(root)
+    const config: IntakeConfig = testConfig(root, "/bin")
+    const monitor = new IntakeMonitor(
+      config,
+      database,
+      {
+        async run() {
+          throw new Error("timeout reading /private/project/file")
+        },
+      },
+      new DurableLogStore(config.state.logs),
+    )
+
+    const result = await monitor.check()
+    expect(result.errors).toEqual([
+      "event 1: timeout reading /private/project/file",
+    ])
+    const contents = await readFile(
+      join(config.state.logs, "monitor.jsonl"),
+      "utf8",
+    )
+    expect(contents).toContain('"failureCategory":"timeout"')
+    expect(contents).not.toContain("private-title")
+    expect(contents).not.toContain("/private/project/file")
   })
 })
 

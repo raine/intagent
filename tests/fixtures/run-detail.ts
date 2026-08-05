@@ -222,6 +222,7 @@ export function retry(
   return {
     type: "retry",
     id: 20,
+    turnOrdinal: 1,
     attempt: 1,
     maxAttempts: 3,
     delayMs: 1000,
@@ -244,6 +245,7 @@ export function compaction(
   return {
     type: "compaction",
     id: 30,
+    turnOrdinal: 1,
     reason: "threshold",
     startedAt: "2026-08-05T10:00:05.000Z",
     endedAt: "2026-08-05T10:00:06.000Z",

@@ -1,6 +1,10 @@
 import type { IntakeConfig, SourceConfig } from "./config.ts"
 import { errorMessage } from "./config.ts"
-import type { EventRecord, IntakeDatabase } from "./database.ts"
+import {
+  safeErrorCategory,
+  type EventRecord,
+  type IntakeDatabase,
+} from "./database.ts"
 import { DurableLogStore } from "./logging.ts"
 import { pollSource } from "./source-runner.ts"
 import { terminalLine } from "./terminal.ts"
@@ -194,7 +198,6 @@ export class IntakeMonitor {
       eventId: event.id,
       attempt: event.attemptCount,
       source: event.source,
-      title: event.title,
       queue: this.database.status(),
     })
     try {
@@ -220,7 +223,7 @@ export class IntakeMonitor {
         eventId: event.id,
         attempt: event.attemptCount,
         durationMs: Date.now() - startedAt,
-        error,
+        failureCategory: safeErrorCategory(message) ?? "unknown",
         outcome: failed?.status,
         retry: failed?.status === "retryable",
         nextAttemptAt: failed?.nextAttemptAt,

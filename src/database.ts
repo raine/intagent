@@ -141,6 +141,10 @@ export interface TriageRunRecord {
   steps: TriageRunStepRecord[]
 }
 
+export interface TriageRunSummary extends Omit<TriageRunRecord, "steps"> {
+  stepCount: number
+}
+
 export interface TriageTelemetryEvent {
   type: string
   toolCallId?: string
@@ -465,10 +469,15 @@ const migrations = [
   WHERE ended_at IS NULL
     AND run_id IN (SELECT id FROM triage_runs WHERE ended_at IS NOT NULL);
   `,
+  `
+  UPDATE command_events
+  SET command = 'tool=legacy', output_summary = 'unavailable';
+  `,
 ]
 
 export class IntakeDatabase {
   readonly raw: Database
+  private readonly toolSteps = new Map<string, number>()
 
   constructor(path: string) {
     if (path !== ":memory:")
@@ -767,6 +776,13 @@ export class IntakeDatabase {
              WHERE run_id = ? AND ended_at IS NULL ORDER BY ordinal DESC LIMIT 1`,
           )
           .get(runId) as { id: number } | null
+      const latestTurn = () =>
+        this.raw
+          .query(
+            `SELECT id FROM triage_run_turns
+             WHERE run_id = ? ORDER BY ordinal DESC LIMIT 1`,
+          )
+          .get(runId) as { id: number } | null
 
       if (event.type === "turn_start") {
         this.raw
@@ -838,7 +854,7 @@ export class IntakeDatabase {
             )
         }
       } else if (event.type === "tool_execution_start" && event.toolName) {
-        this.raw
+        const result = this.raw
           .query(
             `INSERT INTO triage_run_steps(
                run_id, step_key, turn_id, kind, label, started_at
@@ -850,20 +866,39 @@ export class IntakeDatabase {
             safeToolName(event.toolName),
             now,
           )
+        if (event.toolCallId)
+          this.toolSteps.set(
+            toolStepKey(runId, event.toolCallId),
+            Number(result.lastInsertRowid),
+          )
       } else if (event.type === "tool_execution_end" && event.toolName) {
-        this.raw
-          .query(
-            `UPDATE triage_run_steps SET ended_at = ?, outcome = ?
-             WHERE id = (SELECT id FROM triage_run_steps
-               WHERE run_id = ? AND kind = 'tool' AND label = ? AND ended_at IS NULL
-               ORDER BY started_at, id LIMIT 1)`,
-          )
-          .run(
-            now,
-            event.isError ? "failed" : "succeeded",
-            runId,
-            safeToolName(event.toolName),
-          )
+        const mappedKey = event.toolCallId
+          ? toolStepKey(runId, event.toolCallId)
+          : null
+        const stepId = mappedKey ? this.toolSteps.get(mappedKey) : undefined
+        if (mappedKey) this.toolSteps.delete(mappedKey)
+        if (stepId !== undefined) {
+          this.raw
+            .query(
+              `UPDATE triage_run_steps SET ended_at = ?, outcome = ?
+               WHERE id = ? AND run_id = ? AND ended_at IS NULL`,
+            )
+            .run(now, event.isError ? "failed" : "succeeded", stepId, runId)
+        } else {
+          this.raw
+            .query(
+              `UPDATE triage_run_steps SET ended_at = ?, outcome = ?
+               WHERE id = (SELECT id FROM triage_run_steps
+                 WHERE run_id = ? AND kind = 'tool' AND label = ? AND ended_at IS NULL
+                 ORDER BY started_at DESC, id DESC LIMIT 1)`,
+            )
+            .run(
+              now,
+              event.isError ? "failed" : "succeeded",
+              runId,
+              safeToolName(event.toolName),
+            )
+        }
       } else if (
         event.type === "message_update" &&
         event.assistantMessageEvent?.type === "thinking_start"
@@ -898,7 +933,7 @@ export class IntakeDatabase {
           )
           .run(
             runId,
-            currentTurn()?.id ?? null,
+            currentTurn()?.id ?? latestTurn()?.id ?? null,
             Math.max(1, finiteNumber(event.attempt) ?? 1),
             Math.max(1, finiteNumber(event.maxAttempts) ?? 1),
             delayMs,
@@ -926,7 +961,7 @@ export class IntakeDatabase {
             runId,
           )
       } else if (event.type === "compaction_start") {
-        const turnId = currentTurn()?.id ?? null
+        const turnId = currentTurn()?.id ?? latestTurn()?.id ?? null
         this.raw
           .query(
             `INSERT INTO triage_run_compactions(run_id, turn_id, reason, started_at)
@@ -1016,8 +1051,10 @@ export class IntakeDatabase {
           now,
           now,
           outcome,
-          details.terminationReason ??
-            (outcome === "succeeded" ? "completed" : "failed"),
+          safeTerminationReason(
+            details.terminationReason ??
+              (outcome === "succeeded" ? "completed" : "failed"),
+          ),
           details.failureCategory ?? null,
           runId,
         )
@@ -1027,6 +1064,8 @@ export class IntakeDatabase {
   }
 
   private closeOpenTelemetry(runId: number, endedAt: string): void {
+    for (const key of this.toolSteps.keys())
+      if (key.startsWith(`${runId}:`)) this.toolSteps.delete(key)
     this.raw
       .query(
         `UPDATE triage_run_steps SET ended_at = ?, outcome = 'interrupted'
@@ -1078,6 +1117,47 @@ export class IntakeDatabase {
       )
       .run(endedAt, endedAt, terminationReason, ...runIds)
     for (const runId of runIds) this.closeOpenTelemetry(runId, endedAt)
+  }
+
+  listTriageRunSummaries(limit = 50): TriageRunSummary[] {
+    return this.raw
+      .query(
+        `SELECT run.id, run.event_id AS eventId, run.attempt,
+           run.started_at AS startedAt, run.ended_at AS endedAt,
+           run.last_activity_at AS lastActivityAt, run.outcome,
+           run.termination_reason AS terminationReason,
+           run.failure_category AS failureCategory,
+           run.model_id AS modelId, run.model_provider AS modelProvider,
+           run.thinking_level AS thinkingLevel,
+           run.context_window AS contextWindow, run.max_tokens AS maxTokens,
+           run.telemetry_version AS telemetryVersion,
+           run.telemetry_completeness AS telemetryCompleteness,
+           run.turn_count AS turnCount, run.retry_count AS retryCount,
+           run.compaction_count AS compactionCount,
+           (SELECT COUNT(*) FROM triage_run_steps step
+            WHERE step.run_id = run.id) AS stepCount
+         FROM triage_runs run ORDER BY run.started_at DESC, run.id DESC LIMIT ?`,
+      )
+      .all(limit) as TriageRunSummary[]
+  }
+
+  recentTriageRunSteps(runId: number, limit = 12): TriageRunStepRecord[] {
+    return this.raw
+      .query(
+        `SELECT recent.id, recent.turnId, recent.turnOrdinal, recent.kind,
+           recent.label, recent.startedAt, recent.endedAt, recent.outcome
+         FROM (
+           SELECT step.id, step.turn_id AS turnId, turn.ordinal AS turnOrdinal,
+             step.kind, step.label, step.started_at AS startedAt,
+             step.ended_at AS endedAt, step.outcome
+           FROM triage_run_steps step
+           LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
+           WHERE step.run_id = ?
+           ORDER BY step.started_at DESC, step.id DESC LIMIT ?
+         ) recent
+         ORDER BY recent.startedAt, recent.id`,
+      )
+      .all(runId, limit) as TriageRunStepRecord[]
   }
 
   listTriageRuns(limit = 50): TriageRunRecord[] {
@@ -1312,30 +1392,20 @@ export class IntakeDatabase {
     exitCode: number,
     output: string,
   ): void {
-    const commandPrefix =
-      command
-        .match(/^\s*[a-zA-Z0-9._+-]+(?:\s+[a-zA-Z0-9._+-]+)?/)?.[0]
-        .trim() ?? "command"
-    const commandDigest = new Bun.CryptoHasher("sha256")
-      .update(command)
-      .digest("hex")
-    const outputDigest = new Bun.CryptoHasher("sha256")
-      .update(output)
-      .digest("hex")
+    const executable = command.match(/^\s*([a-zA-Z0-9._+-]+)/)?.[1]
     this.raw
       .query(
         "INSERT INTO command_events(event_id, command, exit_code, output_summary, created_at) VALUES (?, ?, ?, ?, ?)",
       )
       .run(
         id,
-        `${commandPrefix} sha256=${commandDigest}`,
+        `tool=${safeToolName(executable ?? "unknown")}`,
         exitCode,
-        `bytes=${Buffer.byteLength(output)} sha256=${outputDigest}`,
+        `bytes=${Buffer.byteLength(output)}`,
         new Date().toISOString(),
       )
 
     if (exitCode !== 0) return
-    const executable = command.match(/^\s*([a-zA-Z0-9._+-]+)/)?.[1]
     const aven =
       executable === "aven"
         ? output.match(/\b([A-Z][A-Z0-9]*-[A-Z0-9]{3,})\b/)
@@ -1348,8 +1418,12 @@ export class IntakeDatabase {
       executable === "workmux"
         ? output.match(/^\s*Worktree:\s*(\S+)/im)?.[1]
         : undefined
-    const workmux =
+    const workmuxCandidate =
       explicitHandle ?? (worktreePath ? basename(worktreePath) : null)
+    const workmux =
+      workmuxCandidate && /^[a-z0-9][a-z0-9._-]{0,127}$/i.test(workmuxCandidate)
+        ? workmuxCandidate
+        : null
     if (aven) this.updateEntityReference(id, "aven_ref", aven[1] ?? null)
     if (workmux) this.updateEntityReference(id, "investigation_handle", workmux)
   }
@@ -1382,13 +1456,30 @@ export class IntakeDatabase {
   }
 }
 
+function toolStepKey(runId: number, toolCallId: string): string {
+  return `${runId}:${toolCallId}`
+}
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
 
+function safeTerminationReason(value: string): string {
+  return [
+    "completed",
+    "failed",
+    "model_error",
+    "wall_timeout",
+    "turn_limit",
+    "aborted",
+    "context_limit",
+  ].includes(value)
+    ? value
+    : "failed"
+}
+
 function safeToolName(value: string): string {
-  const normalized = value.replace(/[^a-zA-Z0-9_.:-]/g, "_").slice(0, 80)
-  return normalized || "tool"
+  return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,79}$/.test(value) ? value : "tool"
 }
 
 function safeStopReason(value: string | undefined): string | null {

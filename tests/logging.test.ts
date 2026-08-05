@@ -31,7 +31,9 @@ describe("durable logging", () => {
     await run.start()
     await run.metadata({
       sessionId: "session-1",
+      cwd: "/private/project",
       model: { provider: "openai-codex", id: "gpt-test" },
+      tools: ["bash", "/private/tool"],
     })
     await run.prompt("inspect token=visible-secret")
     await run.event(
@@ -72,7 +74,7 @@ describe("durable logging", () => {
       sessionEvent({
         type: "tool_execution_start",
         toolCallId: "call-1",
-        toolName: "bash",
+        toolName: "/private/tool",
         args: { command: "rg token=visible-secret" },
       }),
     )
@@ -80,7 +82,7 @@ describe("durable logging", () => {
       sessionEvent({
         type: "tool_execution_end",
         toolCallId: "call-1",
-        toolName: "bash",
+        toolName: "/private/tool",
         result: {
           content: [{ type: "text", text: "ordinary complete tool output" }],
         },
@@ -110,7 +112,10 @@ describe("durable logging", () => {
         willRetry: false,
       }),
     )
-    await run.finish("succeeded", { turns: 1 })
+    await run.finish("succeeded", {
+      turns: 1,
+      terminationReason: "/private/project/raw failure",
+    })
 
     const records = await readRecords(run.path)
     expect(records.map((record) => record.type)).toEqual([
@@ -135,6 +140,8 @@ describe("durable logging", () => {
     expect(serialized).not.toContain("visible-secret")
     expect(serialized).not.toContain("call-1")
     expect(serialized).not.toContain("session-1")
+    expect(serialized).not.toContain("/private")
+    expect(serialized).not.toContain("raw failure")
     expect(serialized).not.toContain("A human title")
     expect(serialized).not.toContain("sha256")
     expect(records.at(-1)).toMatchObject({

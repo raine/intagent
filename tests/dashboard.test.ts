@@ -186,6 +186,31 @@ describe("intake dashboard", () => {
     })
   })
 
+  test("bounds orphaned runs when their event is terminal", () => {
+    const database = createDatabase()
+    database.sourceSucceeded("github", {}, [item], "2026-08-04T09:01:00.000Z")
+    const event = database.claimNext("2026-08-04T09:02:00.000Z")!
+    const runId = database.startTriageRun(
+      event.id,
+      1,
+      "2026-08-04T09:02:01.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "turn_start" },
+      "2026-08-04T09:02:02.000Z",
+    )
+    database.raw
+      .query("UPDATE events SET status = 'failed' WHERE id = ?")
+      .run(event.id)
+
+    expect(dashboardSnapshot(database).runs[0]).toMatchObject({
+      state: "interrupted",
+      endedAt: "2026-08-04T09:02:02.000Z",
+      steps: [],
+    })
+  })
+
   test("records privacy-safe thinking and compaction timing", () => {
     const database = createDatabase()
     database.sourceSucceeded(
@@ -268,6 +293,9 @@ describe("intake dashboard", () => {
     expect(page.headers.get("content-security-policy")).toContain(
       "default-src 'none'",
     )
+    expect(page.headers.get("cache-control")).toBe("no-store")
+    expect(page.headers.get("cross-origin-resource-policy")).toBe("same-origin")
+    expect(page.headers.get("permissions-policy")).toContain("camera=()")
     const html = await page.text()
     expect(html).toContain('<div id="root"></div>')
     expect(html).toContain('<script type="module">')
@@ -276,8 +304,8 @@ describe("intake dashboard", () => {
     expect(html).toContain("RECENT RUNS")
     expect(html).toContain('localStorage.getItem("im-theme")')
     expect(html).toContain('name="color-scheme" content="light dark"')
-    expect(html).toContain("Tool arguments, commands, output")
-    expect(html).toContain("Thinking content is not retained")
+    expect(html).toContain("Event identity, title, source link")
+    expect(html).toContain("intake bodies, thinking text")
     expect(html).toContain("@media (width<=700px)")
     expect(html).toContain("@media (prefers-reduced-motion:reduce)")
     expect(html).toContain("@media (forced-colors:active)")
@@ -294,6 +322,51 @@ describe("intake dashboard", () => {
 
     expect(queried).toBe(regular)
     expect(queried).not.toContain("untrusted")
+  })
+
+  test("rejects credential-bearing source links and invalid run routes", async () => {
+    const database = createDatabase()
+    database.sourceSucceeded(
+      "github",
+      {},
+      [
+        {
+          ...item,
+          url: "https://user:private-password@github.example/example/intake/issues/42",
+        },
+      ],
+      "2026-08-04T09:01:00.000Z",
+    )
+    const event = database.claimNext("2026-08-04T09:02:00.000Z")!
+    const runId = database.startTriageRun(event.id, 1)
+    const handler = createDashboardHandler(database)
+
+    expect(dashboardSnapshot(database).events[0]?.url).toBeNull()
+    expect(
+      (await handler(new Request(`http://localhost/api/runs/${runId}`)).json())
+        .event.url,
+    ).toBeNull()
+    database.raw.query("UPDATE entities SET operational_metadata = ?").run(
+      JSON.stringify({
+        url: "https://github.example/example/intake/issues/42?access_token=private#secret",
+      }),
+    )
+    expect(dashboardSnapshot(database).events[0]?.url).toBe(
+      "https://github.example/example/intake/issues/42",
+    )
+    expect(
+      JSON.stringify(
+        await handler(new Request(`http://localhost/api/runs/${runId}`)).json(),
+      ),
+    ).not.toContain("private")
+    for (const path of [
+      "/api/runs/0",
+      "/api/runs/-1",
+      "/api/runs/1.5",
+      "/api/runs/9007199254740992",
+      "/api/runs/1/extra",
+    ])
+      expect(handler(new Request(`http://localhost${path}`)).status).toBe(404)
   })
 
   test("serves a read-only snapshot API", async () => {

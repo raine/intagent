@@ -88,9 +88,15 @@ function eventUrl(event: EventRecord): string | null {
     const metadata = JSON.parse(event.operationalMetadata) as { url?: unknown }
     if (typeof metadata.url !== "string") return null
     const url = new URL(metadata.url)
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.href
-      : null
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password
+    )
+      return null
+    url.search = ""
+    url.hash = ""
+    return url.href
   } catch {
     return null
   }
@@ -158,52 +164,53 @@ export function dashboardSnapshot(
           : null,
       updatedAt: String(source.updatedAt),
     }))
-  const runs = database.listTriageRuns(50).flatMap((run): DashboardRun[] => {
-    const event = database.event(run.eventId)
-    if (!event) return []
-    const state = run.outcome
-      ? run.outcome
-      : event.status === "processing"
-        ? "active"
-        : "interrupted"
-    const activitySteps = state === "active" ? run.steps.slice(-12) : []
-    return [
-      {
-        id: run.id,
-        eventId: run.eventId,
-        eventTitle: event.title,
-        source: event.source,
-        eventKind: event.kind,
-        attempt: run.attempt,
-        startedAt: run.startedAt,
-        endedAt: run.endedAt,
-        lastActivityAt: run.lastActivityAt,
-        state,
-        modelId: run.modelId,
-        modelProvider: run.modelProvider,
-        thinkingLevel: run.thinkingLevel,
-        turnCount: run.turnCount,
-        retryCount: run.retryCount,
-        compactionCount: run.compactionCount,
-        telemetryCompleteness: run.telemetryCompleteness,
-        timelineTruncated: run.steps.length > activitySteps.length,
-        investigationHandle: event.investigationHandle,
-        steps: activitySteps.map((step) => ({
-          id: step.id,
-          turnOrdinal: step.turnOrdinal,
-          kind: step.kind,
-          label: step.label,
-          startedAt: step.startedAt,
-          endedAt: step.endedAt ?? (state === "active" ? null : run.endedAt),
-          state: step.outcome
-            ? step.outcome
-            : state === "active"
-              ? "active"
-              : "interrupted",
-        })),
-      },
-    ]
-  })
+  const runs = database
+    .listTriageRunSummaries(50)
+    .flatMap((run): DashboardRun[] => {
+      const event = database.event(run.eventId)
+      if (!event) return []
+      const state = run.outcome
+        ? run.outcome
+        : event.status === "processing"
+          ? "active"
+          : "interrupted"
+      const activitySteps =
+        state === "active" ? database.recentTriageRunSteps(run.id, 12) : []
+      return [
+        {
+          id: run.id,
+          eventId: run.eventId,
+          eventTitle: event.title,
+          source: event.source,
+          eventKind: event.kind,
+          attempt: run.attempt,
+          startedAt: run.startedAt,
+          endedAt:
+            run.endedAt ??
+            (state === "interrupted" ? run.lastActivityAt : null),
+          lastActivityAt: run.lastActivityAt,
+          state,
+          modelId: run.modelId,
+          modelProvider: run.modelProvider,
+          thinkingLevel: run.thinkingLevel,
+          turnCount: run.turnCount,
+          retryCount: run.retryCount,
+          compactionCount: run.compactionCount,
+          telemetryCompleteness: run.telemetryCompleteness,
+          timelineTruncated: run.stepCount > activitySteps.length,
+          investigationHandle: event.investigationHandle,
+          steps: activitySteps.map((step) => ({
+            id: step.id,
+            turnOrdinal: step.turnOrdinal,
+            kind: step.kind,
+            label: step.label,
+            startedAt: step.startedAt,
+            endedAt: step.endedAt,
+            state: step.outcome ?? "active",
+          })),
+        },
+      ]
+    })
 
   return {
     generatedAt: now.toISOString(),
@@ -250,6 +257,8 @@ const securityHeaders = {
   "Cache-Control": "no-store",
   "Content-Security-Policy":
     "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
@@ -276,8 +285,9 @@ export function createDashboardHandler(
         headers: securityHeaders,
       })
     const runMatch = url.pathname.match(/^\/api\/runs\/(\d+)$/)
-    if (runMatch) {
-      const detail = runDetail(database, Number(runMatch[1]), {
+    const runId = runMatch ? positiveSafeInteger(runMatch[1] ?? null) : null
+    if (runId !== null) {
+      const detail = runDetail(database, runId, {
         offset: queryInteger(url.searchParams.get("offset")) ?? 0,
         limit: queryInteger(url.searchParams.get("limit")) ?? 200,
         maxTurns: limits.maxTurns,
@@ -302,6 +312,12 @@ function queryInteger(value: string | null): number | undefined {
   if (value === null || !/^\d+$/.test(value)) return undefined
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) ? parsed : undefined
+}
+
+function positiveSafeInteger(value: string | null): number | null {
+  if (value === null || !/^[1-9]\d*$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : null
 }
 
 export function startDashboard(

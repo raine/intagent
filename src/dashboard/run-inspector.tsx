@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { RunDetail, RunTimelineEntry } from "../run-detail.ts"
 import {
+  entryEnd,
   entryPosition,
   eventRunDisagree,
   groupTimeline,
@@ -16,7 +17,7 @@ import {
 } from "./run-inspector-data.ts"
 
 const privacyNote =
-  "Safe timing, state, counts, tool names, and categorized failures are retained. Prompts, thinking text, arguments, commands, output, raw errors, tool call identifiers, paths, and logs are excluded."
+  "Run telemetry and durable triage logs retain safe timing, state, counts, tool names, and categorized failures. They exclude prompt text, intake bodies, thinking text, arguments, commands, output, raw errors, session and tool call identifiers, cwd, and file paths."
 const staleThreshold = 120_000
 const pageSize = 200
 
@@ -30,15 +31,34 @@ const filterLabels: Record<TimelineFilter, string> = {
   gaps: "Gaps",
 }
 
+function safeExternalUrl(value: string | null): string | null {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password
+    )
+      return null
+    url.search = ""
+    url.hash = ""
+    return url.href
+  } catch {
+    return null
+  }
+}
+
 function parseTime(value: string): number {
   return Date.parse(value)
 }
 
-function duration(start: string, end: string | null, now: number): number {
-  return Math.max(
-    0,
-    Date.parse(end ?? new Date(now).toISOString()) - parseTime(start),
-  )
+function timelineDuration(
+  detail: RunDetail,
+  entry: RunTimelineEntry,
+  now: number,
+): number {
+  return Math.max(0, entryEnd(detail, entry, now) - parseTime(entry.startedAt))
 }
 
 function formatDuration(value: number): string {
@@ -384,12 +404,33 @@ function outcomeVerdict(detail: RunDetail): {
   tone: string
 } {
   const failedTools = detail.metrics.failedToolCount ?? 0
-  if (detail.run.state === "succeeded" && failedTools > 0)
+  const retries = detail.metrics.retryCount ?? 0
+  const incompleteCompactions = detail.timeline.entries.filter(
+    (entry) =>
+      entry.type === "compaction" &&
+      ["failed", "aborted", "interrupted"].includes(entry.state),
+  ).length
+  if (
+    detail.run.state === "succeeded" &&
+    (failedTools > 0 || retries > 0 || incompleteCompactions > 0)
+  ) {
+    const recoveries = [
+      failedTools > 0
+        ? `${failedTools} failed ${failedTools === 1 ? "tool call" : "tool calls"}`
+        : null,
+      retries > 0
+        ? `${retries} model ${retries === 1 ? "retry" : "retries"}`
+        : null,
+      incompleteCompactions > 0
+        ? `${incompleteCompactions} incomplete ${incompleteCompactions === 1 ? "compaction" : "compactions"}`
+        : null,
+    ].filter((value): value is string => value !== null)
     return {
       title: "Succeeded with recovered error",
-      health: `${failedTools} failed ${failedTools === 1 ? "tool call was" : "tool calls were"} recovered`,
+      health: `${recoveries.join(", ")} recovered`,
       tone: "warning",
     }
+  }
   if (detail.run.state === "succeeded")
     return {
       title: "Succeeded cleanly",
@@ -442,6 +483,7 @@ export function RunInspector({
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [following, setFollowing] = useState(detail.run.state === "active")
   const currentTurn = grouped.turns.at(-1)?.turn.ordinal ?? null
+  const [rovingTurn, setRovingTurn] = useState(currentTurn)
   const timelineRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -476,6 +518,7 @@ export function RunInspector({
     }
   }
   const focusTurn = (ordinal: number): void => {
+    setRovingTurn(ordinal)
     setCollapsed((values) => without(values, ordinal))
     setExpanded((values) => withValue(values, ordinal))
     requestAnimationFrame(() => {
@@ -484,8 +527,17 @@ export function RunInspector({
       target?.querySelector<HTMLButtonElement>(".turn-disclosure")?.focus()
     })
   }
-  const firstFailure = grouped.turns.find((group) =>
-    group.spans.some((span) => span.state === "failed"),
+  const firstFailure = grouped.turns.find(
+    (group) =>
+      group.turn.state === "interrupted" ||
+      group.turn.stopReason === "error" ||
+      group.spans.some((span) => span.state === "failed") ||
+      group.phases.some(
+        (phase) =>
+          phase.state === "failed" ||
+          phase.state === "aborted" ||
+          phase.state === "interrupted",
+      ),
   )
   const wall = Math.max(
     0,
@@ -499,6 +551,11 @@ export function RunInspector({
       matchesFilter(entry, filter),
     )
   })
+  const tabbableTurn = visibleTurns.some(
+    (group) => group.turn.ordinal === rovingTurn,
+  )
+    ? rovingTurn
+    : (visibleTurns[0]?.turn.ordinal ?? null)
 
   return (
     <div className="run-inspector">
@@ -601,11 +658,7 @@ export function RunInspector({
         </section>
 
         {notices.length ? (
-          <section
-            className="attention-stack"
-            aria-label="Run attention"
-            aria-live="polite"
-          >
+          <section className="attention-stack" aria-label="Run attention">
             {notices.map((notice, index) => (
               <article
                 className={`attention-banner attention-${notice.tone}`}
@@ -645,6 +698,8 @@ export function RunInspector({
           toggleTurn={toggleTurn}
           focusTurn={focusTurn}
           firstFailure={firstFailure?.turn.ordinal ?? null}
+          rovingTurn={tabbableTurn}
+          setRovingTurn={setRovingTurn}
           following={following}
           setFollowing={setFollowing}
           timelineRef={timelineRef}
@@ -868,6 +923,8 @@ interface TimelineProps {
   toggleTurn: (group: TurnGroup, index: number) => void
   focusTurn: (ordinal: number) => void
   firstFailure: number | null
+  rovingTurn: number | null
+  setRovingTurn: (ordinal: number) => void
   following: boolean
   setFollowing: (value: boolean) => void
   timelineRef: React.RefObject<HTMLElement>
@@ -984,9 +1041,21 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
               detail={detail}
               now={props.now}
               group={group}
-              index={originalIndex}
               expanded={props.isExpanded(group, originalIndex)}
               toggle={() => props.toggleTurn(group, originalIndex)}
+              tabIndex={group.turn.ordinal === props.rovingTurn ? 0 : -1}
+              onFocus={() => props.setRovingTurn(group.turn.ordinal)}
+              onMove={(direction) => {
+                const currentIndex = visibleTurns.indexOf(group)
+                const targetIndex =
+                  direction === "first"
+                    ? 0
+                    : direction === "last"
+                      ? visibleTurns.length - 1
+                      : currentIndex + direction
+                const target = visibleTurns[targetIndex]
+                if (target) props.focusTurn(target.turn.ordinal)
+              }}
               filter={filter}
               key={group.turn.id}
             />
@@ -1086,7 +1155,7 @@ function RunMinimap({
                   move(groups.length - 1)
                 }
               }}
-              aria-label={`Turn ${group.turn.ordinal}, ${offsetTime(detail, group.turn.startedAt)}, ${formatDuration(duration(group.turn.startedAt, group.turn.endedAt, now))}`}
+              aria-label={`Turn ${group.turn.ordinal}, ${offsetTime(detail, group.turn.startedAt)}, ${formatDuration(timelineDuration(detail, group.turn, now))}`}
             >
               {position.marker ? <i aria-hidden="true" /> : null}
               <span aria-hidden="true">{group.turn.ordinal}</span>
@@ -1102,17 +1171,21 @@ function TurnSection({
   detail,
   now,
   group,
-  index,
   expanded,
   toggle,
+  tabIndex,
+  onFocus,
+  onMove,
   filter,
 }: {
   detail: RunDetail
   now: number
   group: TurnGroup
-  index: number
   expanded: boolean
   toggle: () => void
+  tabIndex: 0 | -1
+  onFocus: () => void
+  onMove: (direction: -1 | 1 | "first" | "last") => void
   filter: TimelineFilter
 }): JSX.Element {
   const entries = [...group.spans, ...group.phases]
@@ -1128,7 +1201,7 @@ function TurnSection({
   const compactionCount = group.phases.filter(
     (phase) => phase.type === "compaction",
   ).length
-  const turnDuration = duration(group.turn.startedAt, group.turn.endedAt, now)
+  const turnDuration = timelineDuration(detail, group.turn, now)
   return (
     <article
       className={`turn turn-${group.turn.state}${group.needsAttention ? " turn-attention" : ""}`}
@@ -1138,6 +1211,23 @@ function TurnSection({
         className="turn-disclosure"
         type="button"
         onClick={toggle}
+        tabIndex={tabIndex}
+        onFocus={onFocus}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault()
+            onMove(1)
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault()
+            onMove(-1)
+          } else if (event.key === "Home") {
+            event.preventDefault()
+            onMove("first")
+          } else if (event.key === "End") {
+            event.preventDefault()
+            onMove("last")
+          }
+        }}
         aria-expanded={expanded}
         aria-controls={`turn-body-${group.turn.id}`}
       >
@@ -1240,7 +1330,7 @@ function PhaseRow({
         position={position}
       />
     )
-  const elapsed = duration(entry.startedAt, entry.endedAt, now)
+  const elapsed = timelineDuration(detail, entry, now)
   const interrupted = entry.state === "interrupted"
   return (
     <div className={`phase-row phase-${entry.kind} phase-${entry.state}`}>
@@ -1354,7 +1444,7 @@ function CompactionRow({
       </div>
       <time>{offsetTime(detail, entry.startedAt)}</time>
       <span className="phase-value">
-        {formatDuration(duration(entry.startedAt, entry.endedAt, now))}
+        {formatDuration(timelineDuration(detail, entry, now))}
       </span>
       <WallTrack
         position={position}
@@ -1436,6 +1526,7 @@ function LegacyTimeline({
 }
 
 function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
+  const eventUrl = safeExternalUrl(detail.event.url)
   return (
     <details className="run-details">
       <summary>Diagnostic details, effects, and privacy</summary>
@@ -1517,8 +1608,8 @@ function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
             <Detail
               label="Event link"
               value={
-                detail.event.url ? (
-                  <a href={detail.event.url} rel="noreferrer">
+                eventUrl ? (
+                  <a href={eventUrl} rel="noreferrer">
                     Open source event
                   </a>
                 ) : null

@@ -134,6 +134,48 @@ describe("turn-centric run inspector", () => {
     expect(html).not.toContain("No telemetry for")
   })
 
+  test("does not call a succeeded retry run clean", () => {
+    const html = render(
+      runDetailFixture({
+        entries: [...cleanEntries(), retry()],
+        metrics: { retryCount: 1 },
+      }),
+    )
+
+    expect(html).toContain("Succeeded with recovered error")
+    expect(html).toContain("1 model retry recovered")
+    expect(html).not.toContain("Succeeded cleanly")
+  })
+
+  test("renders an active stalled warning separately from connection state", () => {
+    const html = render(
+      runDetailFixture({
+        run: {
+          state: "active",
+          endedAt: null,
+          lastActivityAt: "2020-01-01T00:00:00.000Z",
+        },
+        event: { status: "processing" },
+      }),
+    )
+
+    expect(html).toContain("No telemetry for")
+    expect(html).toContain("Dashboard connection health is reported separately")
+  })
+
+  test("renders a bounded empty terminal timeline", () => {
+    const html = render(
+      runDetailFixture({
+        entries: [],
+        page: { returned: 0, total: 0 },
+      }),
+    )
+
+    expect(html).toContain(
+      "No structured activity was recorded for this terminal run",
+    )
+  })
+
   test("renders compactions and retries as first-class phases", () => {
     const html = render(
       runDetailFixture({
@@ -266,6 +308,54 @@ describe("turn-centric run inspector", () => {
     expect(html).not.toContain("$0.00")
   })
 
+  test("uses roving tab stops for long turn lists and the minimap", () => {
+    const entries = Array.from({ length: 100 }, (_, index) =>
+      turn(
+        index + 1,
+        new Date(
+          Date.parse("2026-08-05T10:00:00.000Z") + index * 100,
+        ).toISOString(),
+        new Date(
+          Date.parse("2026-08-05T10:00:00.000Z") + index * 100 + 50,
+        ).toISOString(),
+      ),
+    )
+    const html = render(
+      runDetailFixture({
+        entries,
+        metrics: { turnCount: 100 },
+        page: { returned: 100, total: 100 },
+      }),
+    )
+
+    expect(html.match(/tabindex="0"/g)).toHaveLength(2)
+    expect(html.match(/tabindex="-1"/g)).toHaveLength(198)
+  })
+
+  test("escapes structured labels and rejects unsafe source links", () => {
+    const html = render(
+      runDetailFixture({
+        event: {
+          title: '<img src=x onerror="alert(1)">',
+          url: "javascript:alert(1)",
+        },
+        effects: [
+          {
+            type: "investigation_handle",
+            value: "<script>alert(2)</script>",
+            recordedAt: "2026-08-05T10:00:11.500Z",
+          },
+        ],
+      }),
+    )
+
+    expect(html).toContain("&lt;img")
+    expect(html).toContain("&lt;script&gt;")
+    expect(html).not.toContain("<img src=x")
+    expect(html).not.toContain("<script>alert")
+    expect(html).not.toContain('href="javascript:')
+  })
+
   test("never renders excluded telemetry content", () => {
     const html = render()
     for (const excluded of [
@@ -339,6 +429,49 @@ describe("run inspector derivation", () => {
     expect(merged).toHaveLength(2)
     expect(merged[0]?.blockCount).toBe(2)
     expect(merged[0]?.endedAt).toBe("2026-08-05T10:00:03.000Z")
+  })
+
+  test("keeps unterminated thinking spans separate", () => {
+    const spans = [
+      span(
+        1,
+        1,
+        "thinking",
+        "thinking",
+        "2026-08-05T10:00:01.000Z",
+        null,
+        "active",
+      ),
+      span(
+        2,
+        1,
+        "thinking",
+        "thinking",
+        "2026-08-05T10:00:05.000Z",
+        null,
+        "active",
+      ),
+    ]
+
+    expect(mergeThinkingSpans(spans)).toHaveLength(2)
+  })
+
+  test("uses explicit turn association for retries and compactions", () => {
+    const assignedRetry = { ...retry(), turnOrdinal: 2 }
+    const unassignedCompaction = { ...compaction(), turnOrdinal: null }
+    const detail = runDetailFixture({
+      entries: [
+        turn(1, "2026-08-05T10:00:01.000Z", "2026-08-05T10:00:05.000Z"),
+        turn(2, "2026-08-05T10:00:06.000Z", "2026-08-05T10:00:10.000Z"),
+        assignedRetry,
+        unassignedCompaction,
+      ],
+    })
+
+    const grouped = groupTimeline(detail)
+    expect(grouped.turns[0]?.phases).toHaveLength(0)
+    expect(grouped.turns[1]?.phases).toEqual([assignedRetry])
+    expect(grouped.unassigned).toEqual([unassignedCompaction])
   })
 
   test("keeps spans with unknown turn membership unassigned", () => {

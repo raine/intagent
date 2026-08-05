@@ -7,7 +7,6 @@ import type {
   TriageCompactionRecord,
   TriageRetryRecord,
   TriageRunRecord,
-  TriageRunStepRecord,
   TriageTurnRecord,
 } from "./database.ts"
 
@@ -76,6 +75,7 @@ export type RunTimelineEntry =
   | {
       type: "retry"
       id: number
+      turnOrdinal: number | null
       attempt: number
       maxAttempts: number
       delayMs: number
@@ -88,6 +88,7 @@ export type RunTimelineEntry =
   | {
       type: "compaction"
       id: number
+      turnOrdinal: number | null
       reason: "manual" | "threshold" | "overflow" | null
       startedAt: string
       endedAt: string | null
@@ -184,10 +185,11 @@ export function runDetail(
   runId: number,
   options: RunDetailOptions = {},
 ): RunDetail | null {
-  const run = database.triageRun(runId)
-  if (!run) return null
-  const event = database.event(run.eventId)
+  const storedRun = database.triageRun(runId)
+  if (!storedRun) return null
+  const event = database.event(storedRun.eventId)
   if (!event) return null
+  const run = displayRun(storedRun, event)
   const now = options.now ?? new Date()
   const turns = database.triageRunTurns(run.id)
   const retries = database.triageRunRetries(run.id)
@@ -237,15 +239,20 @@ export function runDetail(
       avenRef: event.avenRef,
       investigationHandle: event.investigationHandle,
     },
-    siblingAttempts: database.triageRunsForEvent(event.id).map((sibling) => ({
-      id: sibling.id,
-      attempt: sibling.attempt,
-      startedAt: sibling.startedAt,
-      endedAt: sibling.endedAt,
-      state: sibling.outcome ?? "active",
-      failureCategory: sibling.failureCategory,
-      telemetryCompleteness: sibling.telemetryCompleteness,
-    })),
+    siblingAttempts: database
+      .triageRunsForEvent(event.id)
+      .map((storedSibling) => {
+        const sibling = displayRun(storedSibling, event)
+        return {
+          id: sibling.id,
+          attempt: sibling.attempt,
+          startedAt: sibling.startedAt,
+          endedAt: sibling.endedAt,
+          state: sibling.outcome ?? "active",
+          failureCategory: sibling.failureCategory,
+          telemetryCompleteness: sibling.telemetryCompleteness,
+        }
+      }),
     metrics,
     effects: database
       .triageRunEffects(run.id)
@@ -478,13 +485,14 @@ function timelineEntries(
   retries: TriageRetryRecord[],
   compactions: TriageCompactionRecord[],
 ): RunTimelineEntry[] {
+  const turnOrdinals = new Map(turns.map((turn) => [turn.id, turn.ordinal]))
   const entries: RunTimelineEntry[] = [
     ...turns.map((turn): RunTimelineEntry => ({
       type: "turn",
       id: turn.id,
       ordinal: turn.ordinal,
       startedAt: turn.startedAt,
-      endedAt: turn.endedAt,
+      endedAt: turn.endedAt ?? (run.outcome ? run.endedAt : null),
       state:
         run.outcome && turn.stopReason === "aborted"
           ? "interrupted"
@@ -517,30 +525,36 @@ function timelineEntries(
               kind: step.kind,
               label: step.label,
               startedAt: step.startedAt,
-              endedAt: step.endedAt,
-              state: step.outcome ?? "active",
+              endedAt: step.endedAt ?? (run.outcome ? run.endedAt : null),
+              state: step.outcome ?? (run.outcome ? "interrupted" : "active"),
             },
           ],
     ),
     ...retries.map((retry): RunTimelineEntry => ({
       type: "retry",
       id: retry.id,
+      turnOrdinal:
+        retry.turnId === null ? null : (turnOrdinals.get(retry.turnId) ?? null),
       attempt: retry.attempt,
       maxAttempts: retry.maxAttempts,
       delayMs: retry.delayMs,
       startedAt: retry.startedAt,
       waitEndedAt: retry.waitEndedAt,
-      endedAt: retry.endedAt,
-      state: retry.outcome ?? "active",
+      endedAt: retry.endedAt ?? (run.outcome ? run.endedAt : null),
+      state: retry.outcome ?? (run.outcome ? "interrupted" : "active"),
       errorCategory: retry.errorCategory,
     })),
     ...compactions.map((compaction): RunTimelineEntry => ({
       type: "compaction",
       id: compaction.id,
+      turnOrdinal:
+        compaction.turnId === null
+          ? null
+          : (turnOrdinals.get(compaction.turnId) ?? null),
       reason: compaction.reason,
       startedAt: compaction.startedAt,
-      endedAt: compaction.endedAt,
-      state: compaction.outcome ?? "active",
+      endedAt: compaction.endedAt ?? (run.outcome ? run.endedAt : null),
+      state: compaction.outcome ?? (run.outcome ? "interrupted" : "active"),
       aborted: compaction.aborted,
       willRetry: compaction.willRetry,
       tokensBefore: compaction.tokensBefore,
@@ -598,14 +612,29 @@ function boundedInteger(
     : fallback
 }
 
+function displayRun(run: TriageRunRecord, event: EventRecord): TriageRunRecord {
+  if (run.outcome || event.status === "processing") return run
+  return {
+    ...run,
+    endedAt: run.endedAt ?? run.lastActivityAt,
+    outcome: "interrupted",
+  }
+}
+
 function eventUrl(event: EventRecord): string | null {
   try {
     const metadata = JSON.parse(event.operationalMetadata) as { url?: unknown }
     if (typeof metadata.url !== "string") return null
     const url = new URL(metadata.url)
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.href
-      : null
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password
+    )
+      return null
+    url.search = ""
+    url.hash = ""
+    return url.href
   } catch {
     return null
   }

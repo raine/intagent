@@ -102,7 +102,10 @@ export class DurableLogStore {
       `warning: intake logging failed for ${path}: ${message}\n`,
     )
     if (!path.endsWith("monitor.jsonl"))
-      void this.monitor("logging_error", { path, error: message })
+      void this.monitor("logging_error", {
+        target: "triage",
+        failureCategory: safeErrorCategory(message) ?? "unknown",
+      })
   }
 }
 
@@ -144,9 +147,9 @@ export class TriageRunLog {
         : null,
       thinkingLevel: stringValue(details.thinkingLevel),
       tools: Array.isArray(details.tools)
-        ? details.tools.filter(
-            (tool): tool is string => typeof tool === "string",
-          )
+        ? details.tools
+            .filter((tool): tool is string => typeof tool === "string")
+            .map(safeToolName)
         : [],
     })
   }
@@ -170,7 +173,7 @@ export class TriageRunLog {
       outcome,
       durationMs: Date.now() - this.startedAt,
       failureCategory: safeErrorCategory(errorString(details.error)),
-      terminationReason: stringValue(details.terminationReason),
+      terminationReason: safeTerminationReason(details.terminationReason),
     })
   }
 
@@ -220,9 +223,9 @@ function safeAgentEvent(
         ? { phase: event.assistantMessageEvent.type }
         : null
     case "tool_execution_start":
-      return { toolName: event.toolName }
+      return { toolName: safeToolName(event.toolName) }
     case "tool_execution_end":
-      return { toolName: event.toolName, isError: event.isError }
+      return { toolName: safeToolName(event.toolName), isError: event.isError }
     case "tool_execution_update":
     case "bash_execution_update":
     case "entry_appended":
@@ -302,6 +305,28 @@ function safeUsage(value: unknown): Record<string, unknown> | null {
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object"
     ? (value as Record<string, unknown>)
+    : null
+}
+
+function safeToolName(value: string): string {
+  return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,79}$/.test(value) ? value : "tool"
+}
+
+function safeTerminationReason(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  return [
+    "completed",
+    "failed",
+    "model_error",
+    "wall_timeout",
+    "turn_limit",
+    "aborted",
+    "context_limit",
+    "process_exit",
+    "superseded_attempt",
+    "legacy_interruption",
+  ].includes(value)
+    ? value
     : null
 }
 

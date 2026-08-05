@@ -85,10 +85,9 @@ export function mergeThinkingSpans(spans: SpanEntry[]): GroupedSpan[] {
   const result: GroupedSpan[] = []
   for (const span of ordered) {
     const previous = result.at(-1)
-    const previousEnd = previous?.endedAt
-      ? Date.parse(previous.endedAt)
-      : Number.POSITIVE_INFINITY
-    const adjacent = Date.parse(span.startedAt) - previousEnd <= 100
+    const previousEnd = previous?.endedAt ? Date.parse(previous.endedAt) : null
+    const adjacent =
+      previousEnd !== null && Date.parse(span.startedAt) - previousEnd <= 100
     if (
       previous?.kind === "thinking" &&
       span.kind === "thinking" &&
@@ -133,19 +132,13 @@ export function groupTimeline(detail: RunDetail): {
 
   const groupedPhases = new Map<number, PhaseEntry[]>()
   for (const phase of phases) {
-    const started = Date.parse(phase.startedAt)
-    const owner = turns.find((turn) => {
-      const end = Date.parse(
-        turn.endedAt ?? detail.run.endedAt ?? detail.generatedAt,
-      )
-      return started >= Date.parse(turn.startedAt) && started <= end
-    })
-    if (!owner) unassigned.push(phase)
-    else {
-      const entries = groupedPhases.get(owner.ordinal) ?? []
-      entries.push(phase)
-      groupedPhases.set(owner.ordinal, entries)
+    if (phase.turnOrdinal === null) {
+      unassigned.push(phase)
+      continue
     }
+    const entries = groupedPhases.get(phase.turnOrdinal) ?? []
+    entries.push(phase)
+    groupedPhases.set(phase.turnOrdinal, entries)
   }
 
   return {

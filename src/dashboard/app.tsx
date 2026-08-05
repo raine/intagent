@@ -103,7 +103,13 @@ const runStates: Record<
 }
 
 const privacyNote =
-  "Tool arguments, commands, output, call identifiers, and intake content are not sent to the dashboard. Thinking content is not retained."
+  "Event identity, title, source link, and typed effects are shown. Prompt text, intake bodies, thinking text, tool arguments, commands, output, raw errors, call identifiers, cwd, and file paths are excluded."
+
+function positiveSafeInteger(value: string | null): number | null {
+  if (value === null || !/^[1-9]\d*$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
 
 function parseTime(value: string | null): number {
   return value ? Date.parse(value) : Date.now()
@@ -214,7 +220,8 @@ function useSnapshot(): {
 function useRoute(): [Route, (route: Route) => void] {
   const parse = (): Route => {
     const match = location.hash.match(/^#\/run\/(\d+)$/)
-    return match ? { kind: "run", id: Number(match[1]) } : null
+    const id = match ? positiveSafeInteger(match[1] ?? null) : null
+    return id === null ? null : { kind: "run", id }
   }
   const [route, setRoute] = useState<Route>(parse)
   useEffect(() => {
@@ -524,9 +531,11 @@ function RouteLayer({
   navigate: (runId: number) => void
 }): JSX.Element | null {
   const panel = useRef<HTMLElement>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const isOpen = route !== null
   useEffect(() => {
-    if (!route) return
-    const previous = document.activeElement as HTMLElement | null
+    if (!isOpen) return
+    opener.current = document.activeElement as HTMLElement | null
     const background = document.querySelectorAll<HTMLElement>(
       ".skip-link, .topbar, .connection-banner, #dashboard-content",
     )
@@ -535,18 +544,22 @@ function RouteLayer({
       element.setAttribute("inert", "")
       element.setAttribute("aria-hidden", "true")
     }
-    requestAnimationFrame(() =>
-      panel.current?.querySelector<HTMLButtonElement>(".back-button")?.focus(),
-    )
+    requestAnimationFrame(() => {
+      const target =
+        panel.current?.querySelector<HTMLButtonElement>(".back-button") ??
+        panel.current
+      target?.focus()
+    })
     return () => {
       document.body.classList.remove("route-open")
       for (const element of background) {
         element.removeAttribute("inert")
         element.removeAttribute("aria-hidden")
       }
-      if (previous?.isConnected) previous.focus()
+      if (opener.current?.isConnected) opener.current.focus()
+      opener.current = null
     }
-  }, [route])
+  }, [isOpen])
   useEffect(() => {
     if (!route) return
     const onKey = (event: KeyboardEvent): void => {
@@ -584,6 +597,7 @@ function RouteLayer({
         role="dialog"
         aria-modal="true"
         aria-label={`Run ${route.id} inspector`}
+        tabIndex={-1}
       >
         <RunDetailRoute runId={route.id} close={close} navigate={navigate} />
       </section>
@@ -661,13 +675,9 @@ export function App(): JSX.Element {
         <span className="topbar-separator" aria-hidden="true">
           ·
         </span>
-        <div
-          className={`connection connection-${connection}`}
-          role="status"
-          aria-live="polite"
-        >
+        <div className={`connection connection-${connection}`}>
           <span className="connection-dot" aria-hidden="true" />
-          <strong>
+          <strong role="status" aria-live="polite">
             {connection === "live" ? "LIVE" : connection.toUpperCase()}
           </strong>
           <span className="connection-note">
