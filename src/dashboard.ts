@@ -1,6 +1,12 @@
 import dashboardScript from "./dashboard/generated/app.js" with { type: "text" }
 import dashboardStyles from "./dashboard/generated/app.css" with { type: "text" }
-import type { EventRecord, EventStatus, IntakeDatabase } from "./database.ts"
+import type {
+  EventRecord,
+  EventStatus,
+  IntakeDatabase,
+  TelemetryCompleteness,
+} from "./database.ts"
+import { runDetail } from "./run-detail.ts"
 
 const allStatuses: EventStatus[] = [
   "pending",
@@ -45,9 +51,12 @@ export interface DashboardRun {
   turnCount: number
   retryCount: number
   compactionCount: number
+  telemetryCompleteness: TelemetryCompleteness
+  timelineTruncated: boolean
   investigationHandle: string | null
   steps: Array<{
     id: number
+    turnOrdinal: number | null
     kind: "tool" | "thinking" | "compaction"
     label: string
     startedAt: string
@@ -157,6 +166,7 @@ export function dashboardSnapshot(
       : event.status === "processing"
         ? "active"
         : "interrupted"
+    const activitySteps = state === "active" ? run.steps.slice(-12) : []
     return [
       {
         id: run.id,
@@ -175,13 +185,16 @@ export function dashboardSnapshot(
         turnCount: run.turnCount,
         retryCount: run.retryCount,
         compactionCount: run.compactionCount,
+        telemetryCompleteness: run.telemetryCompleteness,
+        timelineTruncated: run.steps.length > activitySteps.length,
         investigationHandle: event.investigationHandle,
-        steps: run.steps.map((step) => ({
+        steps: activitySteps.map((step) => ({
           id: step.id,
+          turnOrdinal: step.turnOrdinal,
           kind: step.kind,
           label: step.label,
           startedAt: step.startedAt,
-          endedAt: step.endedAt,
+          endedAt: step.endedAt ?? (state === "active" ? null : run.endedAt),
           state: step.outcome
             ? step.outcome
             : state === "active"
@@ -242,8 +255,14 @@ const securityHeaders = {
   "X-Frame-Options": "DENY",
 }
 
+export interface DashboardRunLimits {
+  maxTurns: number | null
+  wallTimeoutMs: number | null
+}
+
 export function createDashboardHandler(
   database: IntakeDatabase,
+  limits: DashboardRunLimits = { maxTurns: null, wallTimeoutMs: null },
 ): (request: Request) => Response {
   return (request) => {
     const url = new URL(request.url)
@@ -256,6 +275,18 @@ export function createDashboardHandler(
       return Response.json(dashboardSnapshot(database), {
         headers: securityHeaders,
       })
+    const runMatch = url.pathname.match(/^\/api\/runs\/(\d+)$/)
+    if (runMatch) {
+      const detail = runDetail(database, Number(runMatch[1]), {
+        offset: queryInteger(url.searchParams.get("offset")) ?? 0,
+        limit: queryInteger(url.searchParams.get("limit")) ?? 200,
+        maxTurns: limits.maxTurns,
+        wallTimeoutMs: limits.wallTimeoutMs,
+      })
+      return detail
+        ? Response.json(detail, { headers: securityHeaders })
+        : new Response("Not found", { status: 404, headers: securityHeaders })
+    }
     if (url.pathname === "/" || url.pathname === "/index.html")
       return new Response(dashboardPage(), {
         headers: {
@@ -267,10 +298,21 @@ export function createDashboardHandler(
   }
 }
 
+function queryInteger(value: string | null): number | undefined {
+  if (value === null || !/^\d+$/.test(value)) return undefined
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : undefined
+}
+
 export function startDashboard(
   database: IntakeDatabase,
   hostname: string,
   port: number,
+  limits: DashboardRunLimits = { maxTurns: null, wallTimeoutMs: null },
 ): ReturnType<typeof Bun.serve> {
-  return Bun.serve({ hostname, port, fetch: createDashboardHandler(database) })
+  return Bun.serve({
+    hostname,
+    port,
+    fetch: createDashboardHandler(database, limits),
+  })
 }

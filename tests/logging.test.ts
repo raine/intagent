@@ -116,7 +116,7 @@ describe("durable logging", () => {
     expect(records.map((record) => record.type)).toEqual([
       "run_start",
       "session_metadata",
-      "prompt",
+      "prompt_submitted",
       "agent_start",
       "turn_start",
       "tool_execution_start",
@@ -129,15 +129,18 @@ describe("durable logging", () => {
     expect(records.some((record) => record.type === "message_update")).toBe(
       false,
     )
-    expect(JSON.stringify(records)).toContain("ordinary complete tool output")
-    expect(JSON.stringify(records)).toContain("complete final answer")
-    expect(JSON.stringify(records)).not.toContain("visible-secret")
-    expect(JSON.stringify(records)).toContain("[REDACTED]")
-    expect(JSON.stringify(records)).not.toContain("sha256")
+    const serialized = JSON.stringify(records)
+    expect(serialized).not.toContain("ordinary complete tool output")
+    expect(serialized).not.toContain("complete final answer")
+    expect(serialized).not.toContain("visible-secret")
+    expect(serialized).not.toContain("call-1")
+    expect(serialized).not.toContain("session-1")
+    expect(serialized).not.toContain("A human title")
+    expect(serialized).not.toContain("sha256")
     expect(records.at(-1)).toMatchObject({
       type: "run_end",
       outcome: "succeeded",
-      turns: 1,
+      failureCategory: null,
     })
     expect((await stat(root)).mode & 0o777).toBe(0o700)
     expect((await stat(run.path)).mode & 0o777).toBe(0o600)
@@ -187,8 +190,9 @@ describe("durable logging", () => {
     expect(firstRecords.at(-1)).toMatchObject({
       type: "run_end",
       outcome: "failed",
-      error: { message: "request failed" },
+      failureCategory: "unknown",
     })
+    expect(JSON.stringify(firstRecords)).not.toContain("request failed")
   })
 
   test("writes append-only main monitor records", async () => {

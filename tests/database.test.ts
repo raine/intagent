@@ -232,6 +232,24 @@ describe("intake persistence", () => {
       },
     ])
     expect(
+      database.raw
+        .query("SELECT MAX(version) AS version FROM schema_migrations")
+        .get(),
+    ).toEqual({ version: 4 })
+    expect(
+      database.raw
+        .query("SELECT name FROM pragma_table_info('triage_runs')")
+        .all()
+        .map((row) => (row as { name: string }).name),
+    ).toEqual(
+      expect.arrayContaining([
+        "termination_reason",
+        "failure_category",
+        "telemetry_version",
+        "telemetry_completeness",
+      ]),
+    )
+    expect(
       database.raw.query("SELECT COUNT(*) AS count FROM entities").get(),
     ).toEqual({ count: 1 })
     expect(
@@ -251,6 +269,21 @@ describe("intake persistence", () => {
 
     watcher.sourceSucceeded("mail", {}, [item()], "2026-08-03T10:01:00.000Z")
     const event = watcher.claimNext("2026-08-03T10:02:00.000Z")
+    const runId = watcher.startTriageRun(
+      event?.id ?? 0,
+      1,
+      "2026-08-03T10:02:01.000Z",
+    )
+    watcher.recordTriageRunEvent(
+      runId,
+      { type: "turn_start" },
+      "2026-08-03T10:02:02.000Z",
+    )
+    watcher.recordTriageRunEvent(
+      runId,
+      { type: "tool_execution_start", toolName: "read" },
+      "2026-08-03T10:02:03.000Z",
+    )
 
     expect(observer.event(event?.id ?? 0)?.status).toBe("processing")
     expect(
@@ -269,6 +302,124 @@ describe("intake persistence", () => {
     expect(observer.event(event?.id ?? 0)).toMatchObject({
       status: "retryable",
       lastError: "triage interrupted by process exit",
+    })
+    expect(observer.triageRun(runId)).toMatchObject({
+      endedAt: "2026-08-03T10:33:00.000Z",
+      outcome: "interrupted",
+      terminationReason: "process_exit",
+      telemetryCompleteness: "partial",
+      steps: [
+        expect.objectContaining({
+          endedAt: "2026-08-03T10:33:00.000Z",
+          outcome: "interrupted",
+        }),
+      ],
+    })
+    expect(observer.triageRunTurns(runId)[0]).toMatchObject({
+      endedAt: "2026-08-03T10:33:00.000Z",
+      stopReason: "aborted",
+    })
+  })
+
+  test("closes an orphaned run before reclaiming its event", () => {
+    const database = new IntakeDatabase(":memory:")
+    databases.push(database)
+    database.sourceSucceeded("mail", {}, [item()], "2026-08-03T10:01:00.000Z")
+    const event = database.claimNext("2026-08-03T10:02:00.000Z")!
+    const runId = database.startTriageRun(
+      event.id,
+      1,
+      "2026-08-03T10:02:01.000Z",
+    )
+    database.raw
+      .query("UPDATE events SET status = 'retryable' WHERE id = ?")
+      .run(event.id)
+
+    expect(database.claimNext("2026-08-03T10:03:00.000Z")?.id).toBe(event.id)
+    expect(database.triageRun(runId)).toMatchObject({
+      endedAt: "2026-08-03T10:03:00.000Z",
+      outcome: "interrupted",
+      terminationReason: "superseded_attempt",
+    })
+  })
+
+  test("migrates legacy terminal runs and open spans to bounded telemetry", () => {
+    const directory = mkdtempSync(join(tmpdir(), "intake-database-"))
+    temporaryDirectories.push(directory)
+    const path = join(directory, "intake.sqlite")
+    const legacy = new Database(path)
+    legacy.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations VALUES
+        (1, '2026-08-03T00:00:00Z'),
+        (2, '2026-08-03T00:00:00Z'),
+        (3, '2026-08-03T00:00:00Z');
+      CREATE TABLE events (id INTEGER PRIMARY KEY, status TEXT NOT NULL);
+      INSERT INTO events VALUES (1, 'failed');
+      CREATE TABLE triage_runs (
+        id INTEGER PRIMARY KEY,
+        event_id INTEGER NOT NULL REFERENCES events(id),
+        attempt INTEGER NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        last_activity_at TEXT NOT NULL,
+        outcome TEXT,
+        model_id TEXT,
+        model_provider TEXT,
+        thinking_level TEXT,
+        turn_count INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        compaction_count INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE triage_run_steps (
+        id INTEGER PRIMARY KEY,
+        run_id INTEGER NOT NULL REFERENCES triage_runs(id),
+        step_key TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        label TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        outcome TEXT,
+        UNIQUE(run_id, step_key)
+      );
+      INSERT INTO triage_runs VALUES (
+        1, 1, 1, '2026-08-03T10:00:00Z', NULL,
+        '2026-08-03T10:05:00Z', 'failed', NULL, NULL, NULL, 1, 0, 0
+      );
+      INSERT INTO triage_run_steps VALUES (
+        1, 1, 'legacy-call-id', 'tool', 'read',
+        '2026-08-03T10:01:00Z', NULL, NULL
+      );
+    `)
+    legacy.close()
+
+    const database = new IntakeDatabase(path)
+    databases.push(database)
+    expect(
+      database.raw
+        .query(
+          `SELECT ended_at AS endedAt, outcome, telemetry_completeness AS completeness
+           FROM triage_runs WHERE id = 1`,
+        )
+        .get(),
+    ).toEqual({
+      endedAt: "2026-08-03T10:05:00Z",
+      outcome: "failed",
+      completeness: "legacy",
+    })
+    expect(
+      database.raw
+        .query(
+          "SELECT ended_at AS endedAt, outcome, step_key AS stepKey FROM triage_run_steps WHERE id = 1",
+        )
+        .get(),
+    ).toEqual({
+      endedAt: "2026-08-03T10:05:00Z",
+      outcome: "interrupted",
+      stepKey: expect.not.stringContaining("legacy-call-id"),
     })
   })
 

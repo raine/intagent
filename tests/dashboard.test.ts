@@ -107,6 +107,11 @@ describe("intake dashboard", () => {
     )
     database.recordTriageRunEvent(
       runId,
+      { type: "turn_start" },
+      "2026-08-04T09:02:02.500Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
       {
         type: "tool_execution_start",
         toolCallId: "secret-call-id",
@@ -125,7 +130,7 @@ describe("intake dashboard", () => {
         eventId,
         state: "active",
         modelId: "gpt-test",
-        turnCount: 0,
+        turnCount: 1,
         steps: [expect.objectContaining({ label: "bash", state: "active" })],
       }),
     ])
@@ -146,7 +151,27 @@ describe("intake dashboard", () => {
     )
     database.recordTriageRunEvent(
       runId,
-      { type: "turn_end" },
+      {
+        type: "turn_end",
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          usage: {
+            input: 10,
+            output: 2,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 12,
+            cost: {
+              input: 0.1,
+              output: 0.2,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0.3,
+            },
+          },
+        },
+      },
       "2026-08-04T09:02:06.000Z",
     )
     database.finishTriageRun(runId, "succeeded", "2026-08-04T09:02:07.000Z")
@@ -156,7 +181,8 @@ describe("intake dashboard", () => {
       state: "succeeded",
       endedAt: "2026-08-04T09:02:07.000Z",
       turnCount: 1,
-      steps: [{ label: "bash", state: "succeeded" }],
+      steps: [],
+      timelineTruncated: true,
     })
   })
 
@@ -196,12 +222,18 @@ describe("intake dashboard", () => {
     )
     database.recordTriageRunEvent(
       runId,
-      { type: "compaction_start" },
+      { type: "compaction_start", reason: "threshold" },
       "2026-08-04T09:02:07.000Z",
     )
     database.recordTriageRunEvent(
       runId,
-      { type: "compaction_end" },
+      {
+        type: "compaction_end",
+        reason: "threshold",
+        aborted: false,
+        willRetry: false,
+        result: { tokensBefore: 100, estimatedTokensAfter: 40 },
+      },
       "2026-08-04T09:02:09.000Z",
     )
 

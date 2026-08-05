@@ -78,7 +78,10 @@ async function main(argv: string[]): Promise<void> {
     }
     if (command === "dashboard") {
       const { hostname, port } = parseDashboardOptions(args)
-      const server = startDashboard(database, hostname, port)
+      const server = startDashboard(database, hostname, port, {
+        maxTurns: config.triage.max_turns,
+        wallTimeoutMs: config.triage.timeout_minutes * 60_000,
+      })
       process.stdout.write(`Intake dashboard: ${server.url}\n`)
       await waitForShutdown(server)
       return

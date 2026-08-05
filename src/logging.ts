@@ -3,7 +3,7 @@ import { chmod, mkdir, open } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import { errorMessage, expandPath } from "./config.ts"
-import type { EventRecord } from "./database.ts"
+import { safeErrorCategory, type EventRecord } from "./database.ts"
 
 const MAX_STRING_BYTES = 256 * 1024
 const MAX_RECORD_BYTES = 2 * 1024 * 1024
@@ -122,13 +122,8 @@ export class TriageRunLog {
     this.startedAt = Date.now()
     return this.record("run_start", {
       event: {
-        id: this.intakeEvent.id,
-        attempt: this.intakeEvent.attemptCount,
         source: this.intakeEvent.source,
-        entityId: this.intakeEvent.entityId,
-        revisionId: this.intakeEvent.revisionId,
         kind: this.intakeEvent.kind,
-        title: this.intakeEvent.title,
         occurredAt: this.intakeEvent.occurredAt,
         observedAt: this.intakeEvent.observedAt,
       },
@@ -136,16 +131,35 @@ export class TriageRunLog {
   }
 
   metadata(details: Record<string, unknown>): Promise<void> {
-    return this.record("session_metadata", details)
+    const model = objectValue(details.model)
+    return this.record("session_metadata", {
+      model: model
+        ? {
+            id: stringValue(model.id),
+            provider: stringValue(model.provider),
+            api: stringValue(model.api),
+            contextWindow: numberValue(model.contextWindow),
+            maxTokens: numberValue(model.maxTokens),
+          }
+        : null,
+      thinkingLevel: stringValue(details.thinkingLevel),
+      tools: Array.isArray(details.tools)
+        ? details.tools.filter(
+            (tool): tool is string => typeof tool === "string",
+          )
+        : [],
+    })
   }
 
   prompt(value: string): Promise<void> {
-    return this.record("prompt", { value })
+    return this.record("prompt_submitted", {
+      byteLength: Buffer.byteLength(value),
+    })
   }
 
   event(event: AgentSessionEvent): Promise<void> {
-    if (event.type === "message_update") return Promise.resolve()
-    return this.record(event.type, event as unknown as Record<string, unknown>)
+    const safe = safeAgentEvent(event)
+    return safe ? this.record(event.type, safe) : Promise.resolve()
   }
 
   finish(
@@ -155,7 +169,8 @@ export class TriageRunLog {
     return this.record("run_end", {
       outcome,
       durationMs: Date.now() - this.startedAt,
-      ...details,
+      failureCategory: safeErrorCategory(errorString(details.error)),
+      terminationReason: stringValue(details.terminationReason),
     })
   }
 
@@ -171,6 +186,137 @@ export class TriageRunLog {
       ...details,
     })
   }
+}
+
+function safeAgentEvent(
+  event: AgentSessionEvent,
+): Record<string, unknown> | null {
+  switch (event.type) {
+    case "agent_start":
+    case "agent_settled":
+    case "turn_start":
+      return {}
+    case "agent_end":
+      return { messageCount: event.messages.length, willRetry: event.willRetry }
+    case "turn_end":
+      return {
+        role: event.message.role,
+        stopReason:
+          event.message.role === "assistant" ? event.message.stopReason : null,
+        usage:
+          event.message.role === "assistant"
+            ? safeUsage(event.message.usage)
+            : null,
+        toolResultCount: event.toolResults.length,
+        failedToolCount: event.toolResults.filter((result) => result.isError)
+          .length,
+      }
+    case "message_start":
+    case "message_end":
+      return { role: event.message.role }
+    case "message_update":
+      return event.assistantMessageEvent.type === "thinking_start" ||
+        event.assistantMessageEvent.type === "thinking_end"
+        ? { phase: event.assistantMessageEvent.type }
+        : null
+    case "tool_execution_start":
+      return { toolName: event.toolName }
+    case "tool_execution_end":
+      return { toolName: event.toolName, isError: event.isError }
+    case "tool_execution_update":
+    case "bash_execution_update":
+    case "entry_appended":
+    case "session_info_changed":
+      return null
+    case "queue_update":
+      return {
+        steeringCount: event.steering.length,
+        followUpCount: event.followUp.length,
+      }
+    case "thinking_level_changed":
+      return { level: event.level }
+    case "compaction_start":
+      return { reason: event.reason }
+    case "compaction_end":
+      return {
+        reason: event.reason,
+        aborted: event.aborted,
+        willRetry: event.willRetry,
+        outcome: event.aborted
+          ? "aborted"
+          : event.result
+            ? "succeeded"
+            : "failed",
+        tokensBefore: event.result?.tokensBefore ?? null,
+        estimatedTokensAfter: event.result?.estimatedTokensAfter ?? null,
+        usage: safeUsage(event.result?.usage),
+        errorCategory: safeErrorCategory(event.errorMessage),
+      }
+    case "auto_retry_start":
+    case "summarization_retry_scheduled":
+      return {
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        delayMs: event.delayMs,
+        errorCategory: safeErrorCategory(event.errorMessage),
+      }
+    case "auto_retry_end":
+      return {
+        attempt: event.attempt,
+        outcome: event.success ? "succeeded" : "failed",
+        errorCategory: safeErrorCategory(event.finalError),
+      }
+    case "summarization_retry_attempt_start":
+      return {
+        source: event.source,
+        reason: event.source === "compaction" ? event.reason : null,
+      }
+    case "summarization_retry_finished":
+      return {}
+  }
+}
+
+function safeUsage(value: unknown): Record<string, unknown> | null {
+  const usage = objectValue(value)
+  if (!usage) return null
+  const cost = objectValue(usage.cost)
+  return {
+    input: numberValue(usage.input),
+    output: numberValue(usage.output),
+    cacheRead: numberValue(usage.cacheRead),
+    cacheWrite: numberValue(usage.cacheWrite),
+    reasoning: numberValue(usage.reasoning),
+    totalTokens: numberValue(usage.totalTokens),
+    cost: cost
+      ? {
+          input: numberValue(cost.input),
+          output: numberValue(cost.output),
+          cacheRead: numberValue(cost.cacheRead),
+          cacheWrite: numberValue(cost.cacheWrite),
+          total: numberValue(cost.total),
+        }
+      : null,
+  }
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" ? value : null
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function errorString(value: unknown): string | null {
+  if (typeof value === "string") return value
+  if (value instanceof Error) return value.message
+  return null
 }
 
 function normalize(
