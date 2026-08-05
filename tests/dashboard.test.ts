@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createDashboardHandler, dashboardSnapshot } from "../src/dashboard.ts"
+import {
+  createDashboardHandler,
+  dashboardDesign,
+  dashboardDesigns,
+  dashboardSnapshot,
+} from "../src/dashboard.ts"
 import { IntakeDatabase } from "../src/database.ts"
 import type { IntakeItem } from "../src/protocol.ts"
 
@@ -151,26 +156,69 @@ describe("intake dashboard", () => {
     })
   })
 
-  test("serves the dashboard and read-only snapshot API", async () => {
+  test("validates dashboard design identifiers", () => {
+    expect(dashboardDesigns).toEqual([
+      "ledger",
+      "console",
+      "pipeline",
+      "briefing",
+      "wall",
+    ])
+    for (const design of dashboardDesigns)
+      expect(dashboardDesign(design)).toBe(design)
+    expect(dashboardDesign(null)).toBeNull()
+    expect(dashboardDesign("unknown")).toBeNull()
+  })
+
+  test("serves every selectable design through the shared dashboard core", async () => {
     const handler = createDashboardHandler(createDatabase())
 
-    const page = handler(new Request("http://localhost/"))
-    expect(page.status).toBe(200)
-    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8")
-    expect(page.headers.get("content-security-policy")).toContain(
-      "default-src 'none'",
-    )
-    const html = await page.text()
-    expect(html).toContain("Intake events")
-    expect(html).toContain('data-theme-choice="system"')
-    expect(html).toContain('localStorage.getItem("im-theme")')
-    expect(html).toContain('id="active-runs"')
-    expect(html).toContain('id="run-detail-view"')
-    expect(html).toContain('name="color-scheme" content="light dark"')
-    expect(html).toContain("@media (max-width: 680px)")
-    expect(html).toContain("@media (prefers-reduced-motion: reduce)")
-    expect(html).toContain('aria-pressed="true"')
+    for (const design of dashboardDesigns) {
+      const page = handler(new Request(`http://localhost/?design=${design}`))
+      expect(page.status).toBe(200)
+      expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8")
+      expect(page.headers.get("content-security-policy")).toContain(
+        "default-src 'none'",
+      )
+      const html = await page.text()
+      expect(html).toContain(`const requestedDesign = "${design}"`)
+      expect(html).toContain('id="design-select"')
+      expect(html).toContain('localStorage.getItem("im-design")')
+      expect(html).toContain('localStorage.setItem("im-design", design)')
+      expect(html).toContain('data-theme-choice="system"')
+      expect(html).toContain('localStorage.getItem("im-theme")')
+      expect(html).toContain('name="color-scheme" content="light dark"')
+      expect(html).toContain('id="dashboard-content"')
+      expect(html).toContain('id="route-layer"')
+      expect(html).toContain("function keyedList(")
+      expect(html).toContain("function windowCounts(")
+      expect(html).toContain("function setConnection(")
+      expect(html).toContain("function safeExternalUrl(")
+      expect(html).toContain("Tool arguments, commands, output")
+      expect(html).toContain("@media (max-width: 680px)")
+      expect(html).toContain("@media (prefers-reduced-motion: reduce)")
+      expect(html).toContain("@media (forced-colors: active)")
+      expect(html).toContain('aria-pressed="true"')
+      for (const presenter of dashboardDesigns)
+        expect(html).toContain(`${presenter}: {`)
+    }
+  })
 
+  test("ignores an invalid query override and keeps persisted selection support", async () => {
+    const handler = createDashboardHandler(createDatabase())
+    const html = await handler(
+      new Request("http://localhost/?design=untrusted"),
+    ).text()
+
+    expect(html).toContain("const requestedDesign = null")
+    expect(html).not.toContain('const requestedDesign = "untrusted"')
+    expect(html).toContain(
+      'designs.includes(storedDesign) ? storedDesign : "ledger"',
+    )
+  })
+
+  test("serves a read-only snapshot API", async () => {
+    const handler = createDashboardHandler(createDatabase())
     const api = handler(new Request("http://localhost/api/snapshot"))
     expect(api.status).toBe(200)
     expect(await api.json()).toMatchObject({ total: 0, open: 0, sources: [] })

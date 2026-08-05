@@ -195,7 +195,23 @@ export function dashboardSnapshot(
   }
 }
 
-const page = `<!doctype html>
+export const dashboardDesigns = [
+  "ledger",
+  "console",
+  "pipeline",
+  "briefing",
+  "wall",
+] as const
+
+export type DashboardDesign = (typeof dashboardDesigns)[number]
+
+export function dashboardDesign(value: string | null): DashboardDesign | null {
+  return dashboardDesigns.find((design) => design === value) ?? null
+}
+
+function dashboardPage(queryDesign: DashboardDesign | null): string {
+  const requestedDesign = queryDesign ? JSON.stringify(queryDesign) : "null"
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -204,14 +220,23 @@ const page = `<!doctype html>
   <title>Intake Monitor</title>
   <script>
     (() => {
+      const designs = ["ledger", "console", "pipeline", "briefing", "wall"]
       try {
-        const choice = localStorage.getItem("im-theme") || "system"
-        const resolved = choice === "system"
+        const themeChoice = localStorage.getItem("im-theme") || "system"
+        const theme = themeChoice === "system"
           ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
-          : choice
-        document.documentElement.dataset.theme = resolved
-        document.documentElement.dataset.themeChoice = choice
-      } catch {}
+          : themeChoice
+        const requestedDesign = ${requestedDesign}
+        const storedDesign = localStorage.getItem("im-design")
+        const design = requestedDesign || (designs.includes(storedDesign) ? storedDesign : "ledger")
+        document.documentElement.dataset.theme = theme
+        document.documentElement.dataset.themeChoice = themeChoice
+        document.documentElement.dataset.design = design
+      } catch {
+        document.documentElement.dataset.theme = "dark"
+        document.documentElement.dataset.themeChoice = "system"
+        document.documentElement.dataset.design = ${requestedDesign} || "ledger"
+      }
     })()
   </script>
   <style>${dashboardStyles}</style>
@@ -219,12 +244,19 @@ const page = `<!doctype html>
 <body>
   <a class="skip-link" href="#dashboard-content">Skip to dashboard</a>
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">▤</span>
-      <span class="brand-copy">
-        <strong>Intake Monitor</strong>
-        <span id="daemon-label">local intake daemon</span>
-      </span>
+    <a class="brand" href="#/" aria-label="Intake Monitor dashboard">
+      <span class="brand-mark" aria-hidden="true">IM</span>
+      <span class="brand-copy"><strong>Intake Monitor</strong><span id="daemon-label">local daemon</span></span>
+    </a>
+    <div class="design-control">
+      <label for="design-select">Design</label>
+      <select id="design-select" aria-label="Dashboard design">
+        <option value="ledger">Ledger</option>
+        <option value="console">Console</option>
+        <option value="pipeline">Pipeline</option>
+        <option value="briefing">Briefing</option>
+        <option value="wall">Wall</option>
+      </select>
     </div>
     <span class="topbar-spacer"></span>
     <div id="connection" class="connection connection-connecting" role="status" aria-live="polite">
@@ -233,9 +265,9 @@ const page = `<!doctype html>
       <span id="connection-note">waiting for data</span>
     </div>
     <div class="theme-control" role="group" aria-label="Theme">
-      <button type="button" data-theme-choice="system" title="Follow system theme">auto</button>
-      <button type="button" data-theme-choice="light" title="Light theme">light</button>
-      <button type="button" data-theme-choice="dark" title="Dark theme">dark</button>
+      <button type="button" data-theme-choice="system" aria-pressed="true">auto</button>
+      <button type="button" data-theme-choice="light" aria-pressed="false">light</button>
+      <button type="button" data-theme-choice="dark" aria-pressed="false">dark</button>
     </div>
   </header>
 
@@ -244,79 +276,33 @@ const page = `<!doctype html>
     <span id="banner-copy"></span>
   </div>
 
-  <main id="dashboard-content" class="page-main">
-    <section id="loading-view" class="loading-view" aria-label="Loading">
-      <div class="skeleton-stats"><i></i><i></i><i></i><i></i><i></i></div>
-      <i class="skeleton-block skeleton-runs"></i>
-      <i class="skeleton-block skeleton-events"></i>
-      <p>Connecting to intake daemon...</p>
+  <main id="dashboard-content" tabindex="-1">
+    <section id="loading-view" class="loading-view" aria-label="Loading dashboard">
+      <div class="skeleton-line skeleton-short"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-grid"><i></i><i></i><i></i><i></i></div>
+      <p>Connecting to the intake daemon...</p>
     </section>
-
-    <div id="dashboard-view" class="dashboard-view" hidden>
-      <section class="overview" aria-label="Overview">
-        <article class="stat stat-info"><span>Open</span><strong id="stat-open">0</strong><small id="stat-open-note">queue is clear</small></article>
-        <article id="attention-stat" class="stat"><span>Needs attention</span><strong id="stat-attention">0</strong><small id="stat-attention-note">nothing to review</small></article>
-        <article class="stat stat-ok"><span>Active runs</span><strong id="stat-active">0</strong><small id="stat-active-note">idle</small></article>
-        <article class="stat"><span>Handled</span><strong id="stat-handled">0</strong><small>succeeded + ignored</small></article>
-        <article class="stat"><span>Oldest open</span><strong id="stat-oldest">-</strong><small id="stat-oldest-note"></small></article>
-      </section>
-
-      <div class="dashboard-columns">
-        <div class="primary-column">
-          <section aria-labelledby="active-runs-title">
-            <header class="section-title">
-              <h2 id="active-runs-title">Active runs</h2>
-              <span>refreshes every 1.5s</span>
-            </header>
-            <div id="active-runs" class="active-runs"></div>
-          </section>
-
-          <section aria-labelledby="events-title">
-            <header class="section-title events-heading">
-              <h2 id="events-title">Intake events</h2>
-              <div id="event-filters" class="filter-tabs" role="group" aria-label="Filter events">
-                <button type="button" data-filter="all" aria-pressed="true">Recent <b>0</b></button>
-                <button type="button" data-filter="open" aria-pressed="false">Open <b>0</b></button>
-                <button type="button" data-filter="attention" aria-pressed="false">Attention <b>0</b></button>
-                <button type="button" data-filter="handled" aria-pressed="false">Handled <b>0</b></button>
-              </div>
-            </header>
-            <div class="event-panel">
-              <div id="event-list"></div>
-              <p id="event-list-note" class="list-note"></p>
-            </div>
-          </section>
-        </div>
-
-        <aside class="rail">
-          <section aria-labelledby="sources-title">
-            <header class="section-title"><h2 id="sources-title">Sources</h2></header>
-            <div id="source-list" class="rail-panel"></div>
-          </section>
-          <section aria-labelledby="history-title">
-            <header class="section-title"><h2 id="history-title">Run history</h2></header>
-            <div id="run-history" class="rail-panel"></div>
-          </section>
-        </aside>
-      </div>
-      <footer class="page-footer">
-        <span>events + sources refresh every 5s - active runs every 1.5s</span>
-        <span id="refresh-note"></span>
-      </footer>
-    </div>
-
-    <section id="run-detail-view" class="run-detail-view" aria-label="Run detail" hidden>
-      <button id="back-to-dashboard" class="back-button" type="button"><span aria-hidden="true">←</span> Back to dashboard</button>
-      <div id="run-detail"></div>
-      <footer class="page-footer">
-        <span>events + sources refresh every 5s - active runs every 1.5s</span>
-        <span id="detail-refresh-note"></span>
-      </footer>
-    </section>
+    <div id="dashboard-root" hidden></div>
   </main>
+
+  <div id="route-layer" hidden>
+    <button id="route-backdrop" class="route-backdrop" type="button" aria-label="Close detail"></button>
+    <section id="route-panel" class="route-panel" role="dialog" aria-modal="true" aria-labelledby="route-title">
+      <header class="route-header">
+        <button id="route-back" class="back-button" type="button"><span aria-hidden="true">←</span> Back</button>
+        <span id="route-kind"></span>
+        <button id="route-close" class="icon-button" type="button" aria-label="Close detail">×</button>
+      </header>
+      <div id="route-content"></div>
+    </section>
+  </div>
+
+  <p id="announcer" class="visually-hidden" aria-live="polite"></p>
   <script>${dashboardScript}</script>
 </body>
 </html>`
+}
 
 const securityHeaders = {
   "Cache-Control": "no-store",
@@ -342,12 +328,15 @@ export function createDashboardHandler(
         headers: securityHeaders,
       })
     if (url.pathname === "/" || url.pathname === "/index.html")
-      return new Response(page, {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          ...securityHeaders,
+      return new Response(
+        dashboardPage(dashboardDesign(url.searchParams.get("design"))),
+        {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            ...securityHeaders,
+          },
         },
-      })
+      )
     return new Response("Not found", { status: 404, headers: securityHeaders })
   }
 }
