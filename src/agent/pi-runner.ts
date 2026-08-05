@@ -64,12 +64,15 @@ export class PiTriageRunner implements TriageRunner {
   ) {}
 
   async run(event: EventRecord, outerSignal?: AbortSignal): Promise<void> {
+    const runId = this.database.startTriageRun(event.id, event.attemptCount)
     const log = this.logs.triage(event)
-    await log.start()
     try {
-      await this.runAttempt(event, log, outerSignal)
+      await log.start()
+      await this.runAttempt(event, runId, log, outerSignal)
+      this.database.finishTriageRun(runId, "succeeded")
       await log.finish("succeeded")
     } catch (error) {
+      this.database.finishTriageRun(runId, "failed")
       await log.finish("failed", { error })
       throw error
     }
@@ -77,6 +80,7 @@ export class PiTriageRunner implements TriageRunner {
 
   private async runAttempt(
     event: EventRecord,
+    runId: number,
     log: TriageRunLog,
     outerSignal?: AbortSignal,
   ): Promise<void> {
@@ -211,6 +215,11 @@ export class PiTriageRunner implements TriageRunner {
       thinkingLevel: session.thinkingLevel,
       tools: session.getActiveToolNames(),
     })
+    this.database.setTriageRunMetadata(runId, {
+      modelId: session.model?.id ?? null,
+      modelProvider: session.model?.provider ?? null,
+      thinkingLevel: session.thinkingLevel,
+    })
     if (
       session.model?.provider !== "openai-codex" ||
       session.model.api !== "openai-codex-responses"
@@ -241,6 +250,7 @@ export class PiTriageRunner implements TriageRunner {
     const unsubscribe = session.subscribe((agentEvent) => {
       reporter.event(agentEvent)
       void log.event(agentEvent)
+      this.database.recordTriageRunEvent(runId, agentEvent)
       if (agentEvent.type === "turn_end") {
         turns += 1
         if (

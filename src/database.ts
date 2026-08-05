@@ -30,6 +30,32 @@ export interface EventRecord {
   investigationHandle: string | null
 }
 
+export interface TriageRunStepRecord {
+  id: number
+  kind: "tool"
+  label: string
+  startedAt: string
+  endedAt: string | null
+  outcome: "succeeded" | "failed" | null
+}
+
+export interface TriageRunRecord {
+  id: number
+  eventId: number
+  attempt: number
+  startedAt: string
+  endedAt: string | null
+  lastActivityAt: string
+  outcome: "succeeded" | "failed" | null
+  modelId: string | null
+  modelProvider: string | null
+  thinkingLevel: string | null
+  turnCount: number
+  retryCount: number
+  compactionCount: number
+  steps: TriageRunStepRecord[]
+}
+
 const migrations = [
   `
   CREATE TABLE source_state (
@@ -169,6 +195,37 @@ const migrations = [
   CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id);
   DROP TABLE event_merge;
   DROP TABLE entity_merge;
+  `,
+  `
+  CREATE TABLE triage_runs (
+    id INTEGER PRIMARY KEY,
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    attempt INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    last_activity_at TEXT NOT NULL,
+    outcome TEXT,
+    model_id TEXT,
+    model_provider TEXT,
+    thinking_level TEXT,
+    turn_count INTEGER NOT NULL DEFAULT 0,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    compaction_count INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC);
+  CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC);
+  CREATE TABLE triage_run_steps (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES triage_runs(id),
+    step_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    outcome TEXT,
+    UNIQUE(run_id, step_key)
+  );
+  CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at);
   `,
 ]
 
@@ -389,6 +446,143 @@ export class IntakeDatabase {
         "SELECT source, last_success_at AS lastSuccessAt, last_error AS lastError, updated_at AS updatedAt FROM source_state ORDER BY source",
       )
       .all() as Array<Record<string, unknown>>
+  }
+
+  startTriageRun(
+    eventId: number,
+    attempt: number,
+    now = new Date().toISOString(),
+  ): number {
+    const result = this.raw
+      .query(
+        "INSERT INTO triage_runs(event_id, attempt, started_at, last_activity_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(eventId, attempt, now, now)
+    return Number(result.lastInsertRowid)
+  }
+
+  setTriageRunMetadata(
+    runId: number,
+    metadata: {
+      modelId?: string | null
+      modelProvider?: string | null
+      thinkingLevel?: string | null
+    },
+    now = new Date().toISOString(),
+  ): void {
+    this.raw
+      .query(
+        "UPDATE triage_runs SET model_id = ?, model_provider = ?, thinking_level = ?, last_activity_at = ? WHERE id = ?",
+      )
+      .run(
+        metadata.modelId ?? null,
+        metadata.modelProvider ?? null,
+        metadata.thinkingLevel ?? null,
+        now,
+        runId,
+      )
+  }
+
+  recordTriageRunEvent(
+    runId: number,
+    event: {
+      type: string
+      toolCallId?: string
+      toolName?: string
+      isError?: boolean
+    },
+    now = new Date().toISOString(),
+  ): void {
+    this.raw.transaction(() => {
+      if (
+        event.type === "tool_execution_start" &&
+        event.toolCallId &&
+        event.toolName
+      ) {
+        this.raw
+          .query(
+            "INSERT OR IGNORE INTO triage_run_steps(run_id, step_key, kind, label, started_at) VALUES (?, ?, 'tool', ?, ?)",
+          )
+          .run(runId, event.toolCallId, event.toolName.slice(0, 80), now)
+      } else if (event.type === "tool_execution_end" && event.toolCallId) {
+        this.raw
+          .query(
+            "UPDATE triage_run_steps SET ended_at = ?, outcome = ? WHERE run_id = ? AND step_key = ? AND ended_at IS NULL",
+          )
+          .run(
+            now,
+            event.isError ? "failed" : "succeeded",
+            runId,
+            event.toolCallId,
+          )
+      } else if (event.type === "turn_end") {
+        this.raw
+          .query(
+            "UPDATE triage_runs SET turn_count = turn_count + 1 WHERE id = ?",
+          )
+          .run(runId)
+      } else if (event.type === "auto_retry_start") {
+        this.raw
+          .query(
+            "UPDATE triage_runs SET retry_count = retry_count + 1 WHERE id = ?",
+          )
+          .run(runId)
+      } else if (event.type === "compaction_end") {
+        this.raw
+          .query(
+            "UPDATE triage_runs SET compaction_count = compaction_count + 1 WHERE id = ?",
+          )
+          .run(runId)
+      } else {
+        return
+      }
+      this.raw
+        .query("UPDATE triage_runs SET last_activity_at = ? WHERE id = ?")
+        .run(now, runId)
+    })()
+  }
+
+  finishTriageRun(
+    runId: number,
+    outcome: "succeeded" | "failed",
+    now = new Date().toISOString(),
+  ): void {
+    this.raw
+      .query(
+        "UPDATE triage_runs SET ended_at = ?, last_activity_at = ?, outcome = ? WHERE id = ? AND ended_at IS NULL",
+      )
+      .run(now, now, outcome, runId)
+  }
+
+  listTriageRuns(limit = 50): TriageRunRecord[] {
+    const runs = this.raw
+      .query(
+        `SELECT id, event_id AS eventId, attempt, started_at AS startedAt,
+           ended_at AS endedAt, last_activity_at AS lastActivityAt, outcome,
+           model_id AS modelId, model_provider AS modelProvider,
+           thinking_level AS thinkingLevel, turn_count AS turnCount,
+           retry_count AS retryCount, compaction_count AS compactionCount
+         FROM triage_runs ORDER BY started_at DESC, id DESC LIMIT ?`,
+      )
+      .all(limit) as Array<Omit<TriageRunRecord, "steps">>
+    if (runs.length === 0) return []
+    const steps = this.raw
+      .query(
+        `SELECT id, run_id AS runId, kind, label, started_at AS startedAt,
+           ended_at AS endedAt, outcome FROM triage_run_steps
+         WHERE run_id IN (${runs.map(() => "?").join(",")})
+         ORDER BY started_at, id`,
+      )
+      .all(...runs.map((run) => run.id)) as Array<
+      TriageRunStepRecord & { runId: number }
+    >
+    const byRun = new Map<number, TriageRunStepRecord[]>()
+    for (const { runId, ...step } of steps) {
+      const list = byRun.get(runId)
+      if (list) list.push(step)
+      else byRun.set(runId, [step])
+    }
+    return runs.map((run) => ({ ...run, steps: byRun.get(run.id) ?? [] }))
   }
 
   succeed(id: number): void {

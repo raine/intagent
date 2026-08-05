@@ -63,6 +63,83 @@ describe("intake dashboard", () => {
     expect(JSON.stringify(snapshot)).not.toContain("Private event content")
   })
 
+  test("projects structured active and completed run history", () => {
+    const database = createDatabase()
+    database.sourceSucceeded(
+      "github",
+      { cursor: "next" },
+      [item],
+      "2026-08-04T09:01:00.000Z",
+    )
+    const event = database.claimNext("2026-08-04T09:02:00.000Z")
+    const eventId = event?.id ?? 0
+    const runId = database.startTriageRun(
+      eventId,
+      1,
+      "2026-08-04T09:02:01.000Z",
+    )
+    database.setTriageRunMetadata(
+      runId,
+      {
+        modelId: "gpt-test",
+        modelProvider: "openai-codex",
+        thinkingLevel: "medium",
+      },
+      "2026-08-04T09:02:02.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "tool_execution_start",
+        toolCallId: "secret-call-id",
+        toolName: "bash",
+      },
+      "2026-08-04T09:02:03.000Z",
+    )
+
+    const active = dashboardSnapshot(
+      database,
+      new Date("2026-08-04T09:02:04.000Z"),
+    )
+    expect(active.runs).toEqual([
+      expect.objectContaining({
+        id: runId,
+        eventId,
+        state: "active",
+        modelId: "gpt-test",
+        turnCount: 0,
+        steps: [expect.objectContaining({ label: "bash", state: "active" })],
+      }),
+    ])
+    expect(JSON.stringify(active.runs)).not.toContain("secret-call-id")
+    expect(JSON.stringify(active.runs)).not.toContain("Private event content")
+
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "tool_execution_end",
+        toolCallId: "secret-call-id",
+        toolName: "bash",
+        isError: false,
+      },
+      "2026-08-04T09:02:05.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "turn_end" },
+      "2026-08-04T09:02:06.000Z",
+    )
+    database.finishTriageRun(runId, "succeeded", "2026-08-04T09:02:07.000Z")
+    database.succeed(eventId)
+
+    expect(dashboardSnapshot(database).runs[0]).toMatchObject({
+      state: "succeeded",
+      endedAt: "2026-08-04T09:02:07.000Z",
+      turnCount: 1,
+      steps: [{ label: "bash", state: "succeeded" }],
+    })
+  })
+
   test("serves the dashboard and read-only snapshot API", async () => {
     const handler = createDashboardHandler(createDatabase())
 
@@ -72,7 +149,11 @@ describe("intake dashboard", () => {
     expect(page.headers.get("content-security-policy")).toContain(
       "default-src 'none'",
     )
-    expect(await page.text()).toContain("Every signal,")
+    const html = await page.text()
+    expect(html).toContain("Every signal,")
+    expect(html).toContain('id="theme-select"')
+    expect(html).toContain('id="run-rows"')
+    expect(html).toContain('name="color-scheme" content="light dark"')
 
     const api = handler(new Request("http://localhost/api/snapshot"))
     expect(api.status).toBe(200)

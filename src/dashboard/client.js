@@ -1,4 +1,18 @@
-const state = { snapshot: null, filter: "all" }
+const state = {
+  snapshot: null,
+  filter: "all",
+  refreshTimer: null,
+  contentKey: null,
+  expandedEvents: new Set(),
+  expandedRuns: new Set(),
+}
+
+const runStateLabels = {
+  active: "Active",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  interrupted: "Interrupted",
+}
 
 const statusLabels = {
   pending: "Pending",
@@ -40,6 +54,25 @@ function durationSince(value) {
   const hours = Math.floor(minutes / 60)
   if (hours < 48) return `oldest waiting ${hours}h ${minutes % 60}m`
   return `oldest waiting ${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
+function elapsedTime(start, end = Date.now()) {
+  const milliseconds = Math.max(0, end - Date.parse(start))
+  if (!Number.isFinite(milliseconds)) return "unknown"
+  if (milliseconds < 1000) return "under 1s"
+  const seconds = Math.floor(milliseconds / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
+function runDuration(run) {
+  return elapsedTime(
+    run.startedAt,
+    run.endedAt ? Date.parse(run.endedAt) : Date.now(),
+  )
 }
 
 function statusBadge(status) {
@@ -120,11 +153,6 @@ function eventMatches(event) {
 
 function renderEvents(events) {
   const body = element("event-rows")
-  const expanded = new Set(
-    [...body.querySelectorAll('[aria-expanded="true"]')].map((button) =>
-      Number(button.dataset.eventId),
-    ),
-  )
   body.replaceChildren()
   const visible = events.filter(eventMatches)
   element("activity-empty").hidden = visible.length > 0
@@ -177,16 +205,207 @@ function renderEvents(events) {
     const detailRow = eventDetail(event)
     detailRow.hidden = true
     body.append(detailRow)
-    toggle.addEventListener("click", () => {
-      const open = toggle.getAttribute("aria-expanded") !== "true"
+    const setExpanded = (open) => {
       toggle.setAttribute("aria-expanded", String(open))
       toggle.setAttribute(
         "aria-label",
         `${open ? "Hide" : "Show"} details for ${event.title}`,
       )
       detailRow.hidden = !open
+    }
+    toggle.addEventListener("click", () => {
+      const open = !state.expandedEvents.has(event.id)
+      if (open) state.expandedEvents.add(event.id)
+      else state.expandedEvents.delete(event.id)
+      setExpanded(open)
     })
-    if (expanded.has(event.id)) toggle.click()
+    if (state.expandedEvents.has(event.id)) setExpanded(true)
+  }
+}
+
+function runBadge(value) {
+  const badge = document.createElement("span")
+  badge.className = `run-state run-state-${value}`
+  const dot = document.createElement("i")
+  dot.setAttribute("aria-hidden", "true")
+  const label = document.createElement("span")
+  label.textContent = runStateLabels[value] || value
+  badge.append(dot, label)
+  return badge
+}
+
+function runActivity(run) {
+  const tools = run.steps.length
+  const parts = [
+    `${tools} tool ${tools === 1 ? "call" : "calls"}`,
+    `${run.turnCount} ${run.turnCount === 1 ? "turn" : "turns"}`,
+  ]
+  if (run.retryCount > 0) parts.push(`${run.retryCount} model retries`)
+  if (run.compactionCount > 0) parts.push(`${run.compactionCount} compactions`)
+  return parts.join(" · ")
+}
+
+function buildRunDetail(run) {
+  const detail = document.createElement("div")
+  const facts = document.createElement("div")
+  facts.className = "run-facts"
+  facts.append(
+    detailField("Started", new Date(run.startedAt).toLocaleString()),
+    detailField("Attempt", String(run.attempt)),
+    detailField("Model", run.modelId),
+    detailField("Provider", run.modelProvider),
+    detailField("Thinking", run.thinkingLevel),
+    detailField("Investigation", run.investigationHandle),
+  )
+  detail.append(facts)
+
+  const heading = document.createElement("div")
+  heading.className = "timeline-heading"
+  const title = document.createElement("strong")
+  title.textContent = "Tool activity"
+  const privacy = document.createElement("span")
+  privacy.textContent =
+    "Commands, arguments, output, and intake content stay private."
+  heading.append(title, privacy)
+  detail.append(heading)
+
+  if (run.steps.length === 0) {
+    const empty = document.createElement("p")
+    empty.className = "timeline-empty"
+    empty.textContent =
+      run.state === "active"
+        ? "Waiting for the first tool call."
+        : "This run completed without a recorded tool call."
+    detail.append(empty)
+    return detail
+  }
+
+  const timeline = document.createElement("ol")
+  timeline.className = "run-timeline"
+  for (const step of run.steps) {
+    const item = document.createElement("li")
+    item.className = `timeline-step timeline-step-${step.state}`
+    const mark = document.createElement("span")
+    mark.className = "timeline-mark"
+    mark.setAttribute("aria-hidden", "true")
+    const body = document.createElement("div")
+    const label = document.createElement("strong")
+    label.textContent = step.label
+    const meta = document.createElement("span")
+    const duration = elapsedTime(
+      step.startedAt,
+      step.endedAt ? Date.parse(step.endedAt) : Date.now(),
+    )
+    meta.textContent = `${runStateLabels[step.state]} · ${duration} · ${new Date(step.startedAt).toLocaleTimeString()}`
+    body.append(label, meta)
+    item.append(mark, body)
+    timeline.append(item)
+  }
+  detail.append(timeline)
+  return detail
+}
+
+function renderActiveRuns(runs) {
+  const container = element("active-runs")
+  container.replaceChildren()
+  const active = runs.filter((run) => run.state === "active")
+  container.hidden = active.length === 0
+  for (const run of active) {
+    const card = document.createElement("article")
+    card.className = "active-run-card"
+    card.dataset.runId = String(run.id)
+    const pulse = document.createElement("span")
+    pulse.className = "active-run-pulse"
+    pulse.setAttribute("aria-hidden", "true")
+    const copy = document.createElement("div")
+    const eyebrow = document.createElement("span")
+    eyebrow.textContent = `RUN ${run.id} · ATTEMPT ${run.attempt}`
+    const title = document.createElement("strong")
+    title.textContent = run.eventTitle
+    const activity = document.createElement("span")
+    activity.className = "active-run-activity"
+    activity.textContent = `${runActivity(run)} · active ${runDuration(run)}`
+    copy.append(eyebrow, title, activity)
+    const live = document.createElement("span")
+    live.className = "active-run-live"
+    live.textContent = `Updated ${relativeTime(run.lastActivityAt)}`
+    card.append(pulse, copy, live)
+    container.append(card)
+  }
+}
+
+function renderRuns(runs) {
+  renderActiveRuns(runs)
+  const body = element("run-rows")
+  body.replaceChildren()
+  element("runs-empty").hidden = runs.length > 0
+  const activeCount = runs.filter((run) => run.state === "active").length
+  setText(
+    "runs-summary",
+    runs.length === 0
+      ? "No runs recorded"
+      : `${activeCount} active · ${runs.length} recent ${runs.length === 1 ? "run" : "runs"}`,
+  )
+
+  for (const run of runs) {
+    const row = document.createElement("tr")
+    row.className = "run-row"
+    row.dataset.runId = String(run.id)
+    const stateCell = document.createElement("td")
+    stateCell.append(runBadge(run.state))
+
+    const runCell = document.createElement("td")
+    runCell.className = "run-item-cell"
+    const title = document.createElement("strong")
+    title.textContent = run.eventTitle
+    title.title = run.eventTitle
+    const identity = document.createElement("span")
+    identity.textContent = `${run.source} · event #${run.eventId} · attempt ${run.attempt}`
+    runCell.append(title, identity)
+
+    const activityCell = document.createElement("td")
+    activityCell.className = "run-activity"
+    activityCell.textContent = runActivity(run)
+    const durationCell = document.createElement("td")
+    durationCell.className = "run-duration"
+    durationCell.textContent = runDuration(run)
+
+    const actionCell = document.createElement("td")
+    const toggle = document.createElement("button")
+    toggle.type = "button"
+    toggle.className = "detail-toggle"
+    toggle.dataset.runId = String(run.id)
+    toggle.setAttribute("aria-label", `Show details for run ${run.id}`)
+    toggle.setAttribute("aria-expanded", "false")
+    toggle.insertAdjacentHTML(
+      "afterbegin",
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg>',
+    )
+    actionCell.append(toggle)
+    row.append(stateCell, runCell, activityCell, durationCell, actionCell)
+    body.append(row)
+
+    const template = element("run-detail-template")
+    const detailRow = template.content.firstElementChild.cloneNode(true)
+    detailRow.hidden = true
+    body.append(detailRow)
+    const setExpanded = (open) => {
+      toggle.setAttribute("aria-expanded", String(open))
+      toggle.setAttribute(
+        "aria-label",
+        `${open ? "Hide" : "Show"} details for run ${run.id}`,
+      )
+      detailRow.hidden = !open
+      if (open && !detailRow.querySelector(".run-detail").hasChildNodes())
+        detailRow.querySelector(".run-detail").append(buildRunDetail(run))
+    }
+    toggle.addEventListener("click", () => {
+      const open = !state.expandedRuns.has(run.id)
+      if (open) state.expandedRuns.add(run.id)
+      else state.expandedRuns.delete(run.id)
+      setExpanded(open)
+    })
+    if (state.expandedRuns.has(run.id)) setExpanded(true)
   }
 }
 
@@ -230,8 +449,38 @@ function renderSources(sources) {
   }
 }
 
+function snapshotContentKey(snapshot) {
+  const { generatedAt: _, ...content } = snapshot
+  return JSON.stringify(content)
+}
+
+function refreshLiveTimes(snapshot) {
+  state.snapshot = snapshot
+  setText("updated-at", `updated ${relativeTime(snapshot.generatedAt)}`)
+  setText(
+    "queue-age",
+    snapshot.oldestOpenAt
+      ? durationSince(snapshot.oldestOpenAt)
+      : "No waiting items",
+  )
+  for (const run of snapshot.runs) {
+    const row = document.querySelector(`.run-row[data-run-id="${run.id}"]`)
+    const duration = row?.querySelector(".run-duration")
+    if (duration) duration.textContent = runDuration(run)
+    const card = document.querySelector(
+      `.active-run-card[data-run-id="${run.id}"]`,
+    )
+    const activity = card?.querySelector(".active-run-activity")
+    if (activity)
+      activity.textContent = `${runActivity(run)} · active ${runDuration(run)}`
+    const live = card?.querySelector(".active-run-live")
+    if (live) live.textContent = `Updated ${relativeTime(run.lastActivityAt)}`
+  }
+}
+
 function render(snapshot) {
   state.snapshot = snapshot
+  state.contentKey = snapshotContentKey(snapshot)
   setText("open-count", snapshot.open)
   setText("attention-count", snapshot.attention)
   setText(
@@ -261,6 +510,7 @@ function render(snapshot) {
         ? `${snapshot.attention} ${snapshot.attention === 1 ? "item needs" : "items need"} review across ${snapshot.sources.length} ${snapshot.sources.length === 1 ? "source" : "sources"}.`
         : `${snapshot.handled} ${snapshot.handled === 1 ? "item is" : "items are"} handled, with no failures waiting for review.`,
   )
+  renderRuns(snapshot.runs)
   renderEvents(snapshot.events)
   renderSources(snapshot.sources)
 }
@@ -268,17 +518,52 @@ function render(snapshot) {
 async function refresh() {
   const connection = document.querySelector(".connection")
   const label = element("connection-label")
+  let delay = 5000
   try {
     const response = await fetch("/api/snapshot", { cache: "no-store" })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    render(await response.json())
+    const snapshot = await response.json()
+    if (snapshotContentKey(snapshot) === state.contentKey)
+      refreshLiveTimes(snapshot)
+    else render(snapshot)
+    if (snapshot.runs.some((run) => run.state === "active")) delay = 1500
     connection.className = "connection connected"
     label.textContent = "live"
   } catch {
     connection.className = "connection disconnected"
     label.textContent = "disconnected"
+  } finally {
+    clearTimeout(state.refreshTimer)
+    state.refreshTimer = setTimeout(refresh, delay)
   }
 }
+
+function resolvedTheme(choice) {
+  if (choice !== "system") return choice
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+}
+
+function applyTheme(choice, persist) {
+  document.documentElement.dataset.theme = resolvedTheme(choice)
+  document.documentElement.dataset.themeChoice = choice
+  element("theme-select").value = choice
+  if (persist) {
+    try {
+      localStorage.setItem("intake-theme", choice)
+    } catch {}
+  }
+}
+
+const themeChoice = document.documentElement.dataset.themeChoice || "system"
+applyTheme(themeChoice, false)
+element("theme-select").addEventListener("change", (event) => {
+  applyTheme(event.target.value, true)
+})
+const systemTheme = matchMedia("(prefers-color-scheme: dark)")
+systemTheme.addEventListener("change", () => {
+  if (document.documentElement.dataset.themeChoice === "system")
+    applyTheme("system", false)
+})
 
 element("status-filter").addEventListener("change", (event) => {
   state.filter = event.target.value
@@ -286,4 +571,3 @@ element("status-filter").addEventListener("change", (event) => {
 })
 
 refresh()
-setInterval(refresh, 5000)

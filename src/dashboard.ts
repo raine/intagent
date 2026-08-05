@@ -28,6 +28,32 @@ export interface DashboardEvent {
   investigationHandle: string | null
 }
 
+export interface DashboardRun {
+  id: number
+  eventId: number
+  eventTitle: string
+  source: string
+  attempt: number
+  startedAt: string
+  endedAt: string | null
+  lastActivityAt: string
+  state: "active" | "succeeded" | "failed" | "interrupted"
+  modelId: string | null
+  modelProvider: string | null
+  thinkingLevel: string | null
+  turnCount: number
+  retryCount: number
+  compactionCount: number
+  investigationHandle: string | null
+  steps: Array<{
+    id: number
+    label: string
+    startedAt: string
+    endedAt: string | null
+    state: "active" | "succeeded" | "failed" | "interrupted"
+  }>
+}
+
 export interface DashboardSnapshot {
   generatedAt: string
   counts: Record<EventStatus, number>
@@ -42,6 +68,7 @@ export interface DashboardSnapshot {
     lastError: string | null
     updatedAt: string
   }>
+  runs: DashboardRun[]
   events: DashboardEvent[]
 }
 
@@ -86,6 +113,46 @@ export function dashboardSnapshot(
     lastError: typeof source.lastError === "string" ? source.lastError : null,
     updatedAt: String(source.updatedAt),
   }))
+  const runs = database.listTriageRuns(50).flatMap((run): DashboardRun[] => {
+    const event = database.event(run.eventId)
+    if (!event) return []
+    const state = run.outcome
+      ? run.outcome
+      : event.status === "processing"
+        ? "active"
+        : "interrupted"
+    return [
+      {
+        id: run.id,
+        eventId: run.eventId,
+        eventTitle: event.title,
+        source: event.source,
+        attempt: run.attempt,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+        lastActivityAt: run.lastActivityAt,
+        state,
+        modelId: run.modelId,
+        modelProvider: run.modelProvider,
+        thinkingLevel: run.thinkingLevel,
+        turnCount: run.turnCount,
+        retryCount: run.retryCount,
+        compactionCount: run.compactionCount,
+        investigationHandle: event.investigationHandle,
+        steps: run.steps.map((step) => ({
+          id: step.id,
+          label: step.label,
+          startedAt: step.startedAt,
+          endedAt: step.endedAt,
+          state: step.outcome
+            ? step.outcome
+            : state === "active"
+              ? "active"
+              : "interrupted",
+        })),
+      },
+    ]
+  })
 
   return {
     generatedAt: now.toISOString(),
@@ -96,6 +163,7 @@ export function dashboardSnapshot(
     handled: counts.succeeded + counts.ignored,
     oldestOpenAt,
     sources,
+    runs,
     events,
   }
 }
@@ -105,8 +173,20 @@ const page = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <title>Intake monitor</title>
+  <script>
+    (() => {
+      try {
+        const choice = localStorage.getItem("intake-theme") || "system"
+        const resolved = choice === "system"
+          ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : choice
+        document.documentElement.dataset.theme = resolved
+        document.documentElement.dataset.themeChoice = choice
+      } catch {}
+    })()
+  </script>
   <style>${dashboardStyles}</style>
 </head>
 <body>
@@ -121,6 +201,7 @@ const page = `<!doctype html>
         <span class="brand-name">intake</span><span class="brand-divider"></span><span class="brand-section">monitor</span>
       </div>
       <div class="connection" role="status"><span class="live-dot"></span><span id="connection-label">connecting</span></div>
+      <label class="theme-control"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
       <time id="updated-at" class="updated-at"></time>
     </header>
 
@@ -162,6 +243,21 @@ const page = `<!doctype html>
         </div>
       </section>
 
+      <section class="runs-panel" aria-labelledby="runs-title">
+        <header class="section-heading runs-heading">
+          <div><p class="eyebrow">Run observability</p><h2 id="runs-title">Triage runs</h2></div>
+          <p id="runs-summary" class="section-meta">No runs recorded</p>
+        </header>
+        <div id="active-runs" class="active-runs" aria-live="polite"></div>
+        <div class="run-table-wrap">
+          <table class="run-table">
+            <thead><tr><th>State</th><th>Run</th><th>Activity</th><th>Duration</th><th><span class="sr-only">Details</span></th></tr></thead>
+            <tbody id="run-rows"></tbody>
+          </table>
+          <div id="runs-empty" class="empty-state"><strong>No triage history yet</strong><span>Run activity appears here when an intake item enters triage.</span></div>
+        </div>
+      </section>
+
       <div class="workspace">
         <section id="activity" class="activity-panel" aria-labelledby="activity-title">
           <header class="section-heading activity-heading">
@@ -197,6 +293,7 @@ const page = `<!doctype html>
     </main>
   </div>
   <template id="event-detail-template"><tr class="detail-row"><td colspan="5"><div class="event-detail"></div></td></tr></template>
+  <template id="run-detail-template"><tr class="run-detail-row"><td colspan="5"><div class="run-detail"></div></td></tr></template>
   <script>${dashboardScript}</script>
 </body>
 </html>`
