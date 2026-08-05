@@ -47,6 +47,7 @@ export interface DashboardRun {
   investigationHandle: string | null
   steps: Array<{
     id: number
+    kind: "tool" | "thinking" | "compaction"
     label: string
     startedAt: string
     endedAt: string | null
@@ -168,6 +169,7 @@ export function dashboardSnapshot(
         investigationHandle: event.investigationHandle,
         steps: run.steps.map((step) => ({
           id: step.id,
+          kind: step.kind,
           label: step.label,
           startedAt: step.startedAt,
           endedAt: step.endedAt,
@@ -195,22 +197,7 @@ export function dashboardSnapshot(
   }
 }
 
-export const dashboardDesigns = [
-  "ledger",
-  "console",
-  "pipeline",
-  "briefing",
-  "wall",
-] as const
-
-export type DashboardDesign = (typeof dashboardDesigns)[number]
-
-export function dashboardDesign(value: string | null): DashboardDesign | null {
-  return dashboardDesigns.find((design) => design === value) ?? null
-}
-
-function dashboardPage(queryDesign: DashboardDesign | null): string {
-  const requestedDesign = queryDesign ? JSON.stringify(queryDesign) : "null"
+function dashboardPage(): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -220,22 +207,14 @@ function dashboardPage(queryDesign: DashboardDesign | null): string {
   <title>Intake Monitor</title>
   <script>
     (() => {
-      const designs = ["ledger", "console", "pipeline", "briefing", "wall"]
       try {
-        const themeChoice = localStorage.getItem("im-theme") || "system"
-        const theme = themeChoice === "system"
-          ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
-          : themeChoice
-        const requestedDesign = ${requestedDesign}
-        const storedDesign = localStorage.getItem("im-design")
-        const design = requestedDesign || (designs.includes(storedDesign) ? storedDesign : "ledger")
+        const storedTheme = localStorage.getItem("im-theme")
+        const theme = storedTheme === "light" || storedTheme === "dark"
+          ? storedTheme
+          : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
         document.documentElement.dataset.theme = theme
-        document.documentElement.dataset.themeChoice = themeChoice
-        document.documentElement.dataset.design = design
       } catch {
         document.documentElement.dataset.theme = "dark"
-        document.documentElement.dataset.themeChoice = "system"
-        document.documentElement.dataset.design = ${requestedDesign} || "ledger"
       }
     })()
   </script>
@@ -244,31 +223,16 @@ function dashboardPage(queryDesign: DashboardDesign | null): string {
 <body>
   <a class="skip-link" href="#dashboard-content">Skip to dashboard</a>
   <header class="topbar">
-    <a class="brand" href="#/" aria-label="Intake Monitor dashboard">
-      <span class="brand-mark" aria-hidden="true">IM</span>
-      <span class="brand-copy"><strong>Intake Monitor</strong><span id="daemon-label">local daemon</span></span>
-    </a>
-    <div class="design-control">
-      <label for="design-select">Design</label>
-      <select id="design-select" aria-label="Dashboard design">
-        <option value="ledger">Ledger</option>
-        <option value="console">Console</option>
-        <option value="pipeline">Pipeline</option>
-        <option value="briefing">Briefing</option>
-        <option value="wall">Wall</option>
-      </select>
-    </div>
-    <span class="topbar-spacer"></span>
+    <a class="brand" href="#/" aria-label="Intake Monitor dashboard">intake-monitor</a>
+    <span class="topbar-separator" aria-hidden="true">·</span>
     <div id="connection" class="connection connection-connecting" role="status" aria-live="polite">
       <span class="connection-dot" aria-hidden="true"></span>
       <strong id="connection-label">Connecting</strong>
       <span id="connection-note">waiting for data</span>
     </div>
-    <div class="theme-control" role="group" aria-label="Theme">
-      <button type="button" data-theme-choice="system" aria-pressed="true">auto</button>
-      <button type="button" data-theme-choice="light" aria-pressed="false">light</button>
-      <button type="button" data-theme-choice="dark" aria-pressed="false">dark</button>
-    </div>
+    <span class="topbar-spacer"></span>
+    <time id="dashboard-clock" class="dashboard-clock"></time>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch color theme"></button>
   </header>
 
   <div id="connection-banner" class="connection-banner" role="alert" hidden>
@@ -287,12 +251,14 @@ function dashboardPage(queryDesign: DashboardDesign | null): string {
   </main>
 
   <div id="route-layer" hidden>
-    <button id="route-backdrop" class="route-backdrop" type="button" aria-label="Close detail"></button>
     <section id="route-panel" class="route-panel" role="dialog" aria-modal="true" aria-labelledby="route-title">
       <header class="route-header">
-        <button id="route-back" class="back-button" type="button"><span aria-hidden="true">←</span> Back</button>
-        <span id="route-kind"></span>
-        <button id="route-close" class="icon-button" type="button" aria-label="Close detail">×</button>
+        <button id="route-back" class="back-button" type="button"><span aria-hidden="true">←</span> dashboard</button>
+        <span aria-hidden="true">/</span>
+        <strong id="route-title"></strong>
+        <span id="route-status"></span>
+        <span class="route-spacer"></span>
+        <time id="route-finished"></time>
       </header>
       <div id="route-content"></div>
     </section>
@@ -328,15 +294,12 @@ export function createDashboardHandler(
         headers: securityHeaders,
       })
     if (url.pathname === "/" || url.pathname === "/index.html")
-      return new Response(
-        dashboardPage(dashboardDesign(url.searchParams.get("design"))),
-        {
-          headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            ...securityHeaders,
-          },
+      return new Response(dashboardPage(), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...securityHeaders,
         },
-      )
+      })
     return new Response("Not found", { status: 404, headers: securityHeaders })
   }
 }

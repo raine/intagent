@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import {
-  createDashboardHandler,
-  dashboardDesign,
-  dashboardDesigns,
-  dashboardSnapshot,
-} from "../src/dashboard.ts"
+import { createDashboardHandler, dashboardSnapshot } from "../src/dashboard.ts"
 import { IntakeDatabase } from "../src/database.ts"
 import type { IntakeItem } from "../src/protocol.ts"
 
@@ -156,65 +151,116 @@ describe("intake dashboard", () => {
     })
   })
 
-  test("validates dashboard design identifiers", () => {
-    expect(dashboardDesigns).toEqual([
-      "ledger",
-      "console",
-      "pipeline",
-      "briefing",
-      "wall",
+  test("records privacy-safe thinking and compaction timing", () => {
+    const database = createDatabase()
+    database.sourceSucceeded(
+      "github",
+      { cursor: "next" },
+      [item],
+      "2026-08-04T09:01:00.000Z",
+    )
+    const event = database.claimNext("2026-08-04T09:02:00.000Z")
+    const runId = database.startTriageRun(
+      event?.id ?? 0,
+      1,
+      "2026-08-04T09:02:01.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+      },
+      "2026-08-04T09:02:02.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "thinking_end",
+          contentIndex: 0,
+          content: "private reasoning",
+        },
+      } as Parameters<IntakeDatabase["recordTriageRunEvent"]>[1],
+      "2026-08-04T09:02:06.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "compaction_start" },
+      "2026-08-04T09:02:07.000Z",
+    )
+    database.recordTriageRunEvent(
+      runId,
+      { type: "compaction_end" },
+      "2026-08-04T09:02:09.000Z",
+    )
+
+    const run = dashboardSnapshot(database).runs[0]!
+    expect(run.compactionCount).toBe(1)
+    expect(run.steps).toEqual([
+      expect.objectContaining({
+        kind: "thinking",
+        label: "thinking",
+        startedAt: "2026-08-04T09:02:02.000Z",
+        endedAt: "2026-08-04T09:02:06.000Z",
+        state: "succeeded",
+      }),
+      expect.objectContaining({
+        kind: "compaction",
+        label: "compaction",
+        startedAt: "2026-08-04T09:02:07.000Z",
+        endedAt: "2026-08-04T09:02:09.000Z",
+        state: "succeeded",
+      }),
     ])
-    for (const design of dashboardDesigns)
-      expect(dashboardDesign(design)).toBe(design)
-    expect(dashboardDesign(null)).toBeNull()
-    expect(dashboardDesign("unknown")).toBeNull()
+    expect(JSON.stringify(run)).not.toContain("private reasoning")
+    expect(JSON.stringify(run)).not.toContain("contentIndex")
   })
 
-  test("serves every selectable design through the shared dashboard core", async () => {
+  test("serves the responsive Wire dashboard through the shared core", async () => {
     const handler = createDashboardHandler(createDatabase())
+    const page = handler(new Request("http://localhost/"))
 
-    for (const design of dashboardDesigns) {
-      const page = handler(new Request(`http://localhost/?design=${design}`))
-      expect(page.status).toBe(200)
-      expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8")
-      expect(page.headers.get("content-security-policy")).toContain(
-        "default-src 'none'",
-      )
-      const html = await page.text()
-      expect(html).toContain(`const requestedDesign = "${design}"`)
-      expect(html).toContain('id="design-select"')
-      expect(html).toContain('localStorage.getItem("im-design")')
-      expect(html).toContain('localStorage.setItem("im-design", design)')
-      expect(html).toContain('data-theme-choice="system"')
-      expect(html).toContain('localStorage.getItem("im-theme")')
-      expect(html).toContain('name="color-scheme" content="light dark"')
-      expect(html).toContain('id="dashboard-content"')
-      expect(html).toContain('id="route-layer"')
-      expect(html).toContain("function keyedList(")
-      expect(html).toContain("function windowCounts(")
-      expect(html).toContain("function setConnection(")
-      expect(html).toContain("function safeExternalUrl(")
-      expect(html).toContain("Tool arguments, commands, output")
-      expect(html).toContain("@media (max-width: 680px)")
-      expect(html).toContain("@media (prefers-reduced-motion: reduce)")
-      expect(html).toContain("@media (forced-colors: active)")
-      expect(html).toContain('aria-pressed="true"')
-      for (const presenter of dashboardDesigns)
-        expect(html).toContain(`${presenter}: {`)
-    }
+    expect(page.status).toBe(200)
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8")
+    expect(page.headers.get("content-security-policy")).toContain(
+      "default-src 'none'",
+    )
+    const html = await page.text()
+    expect(html).toContain('class="stat-strip"')
+    expect(html).toContain("ACTIVE RUNS")
+    expect(html).toContain("RECENT EVENTS")
+    expect(html).toContain("RECENT RUNS")
+    expect(html).toContain('id="theme-toggle"')
+    expect(html).toContain('localStorage.getItem("im-theme")')
+    expect(html).toContain('name="color-scheme" content="light dark"')
+    expect(html).toContain('id="dashboard-content"')
+    expect(html).toContain('id="route-layer"')
+    expect(html).toContain("function keyedList(")
+    expect(html).toContain("function windowCounts(")
+    expect(html).toContain("function setConnection(")
+    expect(html).toContain("function safeExternalUrl(")
+    expect(html).toContain("Tool arguments, commands, output")
+    expect(html).toContain("Thinking content is not retained")
+    expect(html).toContain("@media (max-width: 700px)")
+    expect(html).toContain("@media (prefers-reduced-motion: reduce)")
+    expect(html).toContain("@media (forced-colors: active)")
+    expect(html).toContain('aria-pressed="true"')
+    expect(html).not.toContain('id="design-select"')
+    expect(html).not.toContain("ledgerMount")
+    expect(html).not.toContain("pipelineMount")
   })
 
-  test("ignores an invalid query override and keeps persisted selection support", async () => {
+  test("ignores obsolete design query parameters", async () => {
     const handler = createDashboardHandler(createDatabase())
-    const html = await handler(
+    const regular = await handler(new Request("http://localhost/")).text()
+    const queried = await handler(
       new Request("http://localhost/?design=untrusted"),
     ).text()
 
-    expect(html).toContain("const requestedDesign = null")
-    expect(html).not.toContain('const requestedDesign = "untrusted"')
-    expect(html).toContain(
-      'designs.includes(storedDesign) ? storedDesign : "ledger"',
-    )
+    expect(queried).toBe(regular)
+    expect(queried).not.toContain("untrusted")
   })
 
   test("serves a read-only snapshot API", async () => {

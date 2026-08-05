@@ -1,38 +1,36 @@
-const DESIGN_IDS = ["ledger", "console", "pipeline", "briefing", "wall"]
 const OPEN_STATES = ["pending", "processing", "retryable"]
 const ATTENTION_STATES = ["retryable", "failed"]
 const HANDLED_STATES = ["succeeded", "ignored"]
 const PRIVACY_NOTE =
-  "Tool arguments, commands, output, call identifiers, and intake content are not sent to the dashboard."
+  "Tool arguments, commands, output, call identifiers, and intake content are not sent to the dashboard. Thinking content is not retained."
 
 const eventStates = {
-  pending: { glyph: "○", label: "Pending" },
-  processing: { glyph: "◐", label: "Processing" },
-  retryable: { glyph: "↻", label: "Retryable" },
-  succeeded: { glyph: "✓", label: "Succeeded" },
-  failed: { glyph: "✕", label: "Failed" },
-  ignored: { glyph: "-", label: "Ignored" },
+  pending: { glyph: "○", short: "PEND", label: "Pending" },
+  processing: { glyph: "◐", short: "PROC", label: "Processing" },
+  retryable: { glyph: "↻", short: "RTRY", label: "Retryable" },
+  succeeded: { glyph: "✓", short: "OK", label: "Succeeded" },
+  failed: { glyph: "✕", short: "FAIL", label: "Failed" },
+  ignored: { glyph: "⊘", short: "IGN", label: "Ignored" },
 }
 
 const runStates = {
-  active: { glyph: "●", label: "Active" },
-  succeeded: { glyph: "✓", label: "Succeeded" },
-  failed: { glyph: "✕", label: "Failed" },
-  interrupted: { glyph: "⏸", label: "Interrupted" },
+  active: { glyph: "◐", short: "RUN", label: "Running" },
+  succeeded: { glyph: "✓", short: "OK", label: "Succeeded" },
+  failed: { glyph: "✕", short: "FAIL", label: "Failed" },
+  interrupted: { glyph: "◌", short: "STOP", label: "Interrupted" },
 }
 
 const state = {
   snapshot: null,
   contentKey: null,
-  filter: "all",
-  expanded: new Set(),
-  mountedDesign: null,
+  filter: "open",
+  expandedRuns: new Set(),
+  expandedEvents: new Set(),
   lastSuccessAt: null,
-  refreshTimer: null,
   failureCount: 0,
+  refreshTimer: null,
   route: { kind: null, id: null },
   routeOrigin: null,
-  selectedConsoleEvent: null,
   lastAnnouncements: new Map(),
 }
 
@@ -77,6 +75,10 @@ function formatDuration(milliseconds) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
+function compactDuration(milliseconds) {
+  return formatDuration(milliseconds).replace(" ", "")
+}
+
 function relativeTime(value, now = Date.now()) {
   const timestamp = parseTime(value)
   if (timestamp === null) return "unknown"
@@ -87,8 +89,19 @@ function relativeTime(value, now = Date.now()) {
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ago`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ${minutes % 60}m ago`
-  return `${Math.floor(hours / 24)}d ${hours % 24}h ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function clockTime(value) {
+  const timestamp = parseTime(value)
+  if (timestamp === null) return "unknown"
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
 }
 
 function absoluteTime(value) {
@@ -104,19 +117,16 @@ function stepDuration(step) {
   return elapsed(step.startedAt, parseTime(step.endedAt) ?? Date.now())
 }
 
-function safeExternalUrl(value) {
-  if (!value) return null
-  try {
-    const url = new URL(value)
-    return url.protocol === "http:" || url.protocol === "https:" ? url : null
-  } catch {
-    return null
-  }
+function stalled(run, now = Date.now()) {
+  return run.state === "active" && elapsed(run.lastActivityAt, now) > 120000
 }
 
-function currentDesign() {
-  const design = document.documentElement.dataset.design
-  return DESIGN_IDS.includes(design) ? design : "ledger"
+function activeRuns(snapshot = state.snapshot) {
+  return snapshot ? snapshot.runs.filter((run) => run.state === "active") : []
+}
+
+function completedRuns(snapshot = state.snapshot) {
+  return snapshot ? snapshot.runs.filter((run) => run.state !== "active") : []
 }
 
 function isOpen(event) {
@@ -127,12 +137,15 @@ function needsAttention(event) {
   return ATTENTION_STATES.includes(event.status)
 }
 
-function activeRuns(snapshot = state.snapshot) {
-  return snapshot ? snapshot.runs.filter((run) => run.state === "active") : []
-}
-
-function stalled(run, now = Date.now()) {
-  return run.state === "active" && elapsed(run.lastActivityAt, now) > 120000
+function filteredEvents(snapshot) {
+  if (state.filter === "open") return snapshot.events.filter(isOpen)
+  if (state.filter === "attention")
+    return snapshot.events.filter(needsAttention)
+  if (state.filter === "handled")
+    return snapshot.events.filter((event) =>
+      HANDLED_STATES.includes(event.status),
+    )
+  return snapshot.events
 }
 
 function windowCounts(snapshot) {
@@ -146,15 +159,14 @@ function windowCounts(snapshot) {
   }
 }
 
-function filteredEvents(snapshot) {
-  if (state.filter === "open") return snapshot.events.filter(isOpen)
-  if (state.filter === "attention")
-    return snapshot.events.filter(needsAttention)
-  if (state.filter === "handled")
-    return snapshot.events.filter((event) =>
-      HANDLED_STATES.includes(event.status),
-    )
-  return snapshot.events
+function safeExternalUrl(value) {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null
+  } catch {
+    return null
+  }
 }
 
 function keyedList(container, items, keyOf, create, update) {
@@ -178,37 +190,10 @@ function keyedList(container, items, keyOf, create, update) {
 function statusMarkup(status, run = false) {
   const definition = (run ? runStates : eventStates)[status] || {
     glyph: "?",
+    short: "UNKN",
     label: status,
   }
-  return `<span class="status status-${status}"><span aria-hidden="true">${definition.glyph}</span>${definition.label}</span>`
-}
-
-function filterMarkup(label = "Filter intake events") {
-  return `<div class="filters" role="group" aria-label="${label}">
-    <button type="button" data-filter="all" aria-pressed="true">Recent <b data-count="all">0</b></button>
-    <button type="button" data-filter="open" aria-pressed="false">Open <b data-count="open">0</b></button>
-    <button type="button" data-filter="attention" aria-pressed="false">Needs you <b data-count="attention">0</b></button>
-    <button type="button" data-filter="handled" aria-pressed="false">Handled <b data-count="handled">0</b></button>
-  </div>`
-}
-
-function updateFilters(root, snapshot) {
-  const counts = windowCounts(snapshot)
-  root.querySelectorAll("[data-filter]").forEach((button) => {
-    button.setAttribute(
-      "aria-pressed",
-      String(button.dataset.filter === state.filter),
-    )
-  })
-  root.querySelectorAll("[data-count]").forEach((target) => {
-    setText(target, counts[target.dataset.count] ?? 0)
-  })
-  root.querySelectorAll("[data-window-note]").forEach((target) => {
-    setText(
-      target,
-      `Showing ${filteredEvents(snapshot).length} from the ${snapshot.events.length}-event recent window`,
-    )
-  })
+  return `<span class="status status-${status}" aria-label="${definition.label}"><span aria-hidden="true">${definition.glyph}</span><b aria-hidden="true">${definition.short}</b></span>`
 }
 
 function detailField(label, value) {
@@ -217,7 +202,7 @@ function detailField(label, value) {
   return field
 }
 
-function eventDetails(container, event) {
+function eventFacts(container, event) {
   container.replaceChildren()
   if (event.lastError) {
     const error = node("p", "callout callout-error", `✕ ${event.lastError}`)
@@ -242,60 +227,238 @@ function eventDetails(container, event) {
     link.href = url.href
     link.target = "_blank"
     link.rel = "noreferrer"
-    link.dataset.focusKey = `event-link-${event.id}`
     container.append(link)
   }
 }
 
-function createEventRow(surface, options = {}) {
-  const item = node("article", `event-row ${options.className || ""}`.trim())
-  const button = node("button", "event-summary")
-  button.type = "button"
-  button.dataset.action = options.route ? "route-event" : "expand-event"
-  button.dataset.surface = surface
-  button.innerHTML = `<span class="event-status"></span><span class="event-copy"><strong></strong><small></small></span><time></time><span class="chevron" aria-hidden="true">▸</span>`
-  const detail = node("div", "event-detail")
-  item.append(button, detail)
-  return item
+function createActivityRow() {
+  const row = node("div", "activity-row")
+  row.tabIndex = 0
+  row.innerHTML = `<time class="activity-clock"></time><span class="activity-turn"></span><strong class="activity-label"></strong><span class="activity-state"></span><span class="activity-track" aria-hidden="true"><i></i></span>`
+  return row
 }
 
-function updateEventRow(item, event, surface, options = {}) {
-  const key = `event:${surface}:${event.id}`
-  const expanded = state.expanded.has(key)
-  const button = item.querySelector("button")
-  item.className =
-    `event-row status-border-${event.status} ${options.className || ""}`.trim()
-  button.dataset.id = String(event.id)
-  button.dataset.expandKey = key
-  button.dataset.focusKey = key
-  button.setAttribute("aria-expanded", String(options.route ? false : expanded))
-  button.setAttribute(
-    "aria-label",
-    `${options.route ? "Open" : expanded ? "Hide" : "Show"} details for ${event.title}`,
+function updateActivityRow(row, step, run, maxDuration) {
+  const definition = runStates[step.state] || runStates.interrupted
+  const kind = step.kind || "tool"
+  const label =
+    kind === "thinking"
+      ? "∴ thinking"
+      : kind === "compaction"
+        ? "⇲ compaction"
+        : step.label
+  const glyph =
+    step.state === "active"
+      ? "◐"
+      : kind === "thinking"
+        ? "∴"
+        : kind === "compaction"
+          ? "⇲"
+          : definition.glyph
+  const duration = stepDuration(step)
+  const width = Math.max(
+    2,
+    Math.round((duration / Math.max(maxDuration, 1)) * 100),
   )
-  button.querySelector(".event-status").innerHTML = statusMarkup(event.status)
-  setText(button.querySelector("strong"), event.title)
-  setText(button.querySelector("small"), `${event.source} · ${event.kind}`)
-  const time = button.querySelector("time")
-  time.dataset.relativeTime = event.observedAt
-  setText(time, relativeTime(event.observedAt))
+  row.className = `activity-row activity-${kind} activity-${step.state}`
+  setText(row.querySelector(".activity-clock"), clockTime(step.startedAt))
+  setText(row.querySelector(".activity-turn"), kind)
+  setText(row.querySelector(".activity-label"), label)
+  const activityState = row.querySelector(".activity-state")
   setText(
-    button.querySelector(".chevron"),
-    options.route ? "→" : expanded ? "▾" : "▸",
+    activityState,
+    `${glyph} ${compactDuration(duration)}${step.state === "active" ? "..." : ""}`,
   )
-  const detail = item.querySelector(".event-detail")
-  detail.hidden = !expanded || Boolean(options.route)
-  if (expanded && !options.route) eventDetails(detail, event)
+  if (step.state === "active") {
+    activityState.dataset.stepStartedAt = step.startedAt
+    row.dataset.activityLabel = label
+    row.dataset.runStartedAt = run.startedAt
+  } else {
+    delete activityState.dataset.stepStartedAt
+    delete row.dataset.activityLabel
+    delete row.dataset.runStartedAt
+  }
+  row.querySelector("i").style.width = `${width}%`
+  const description = `${label}, ${definition.label}, ${formatDuration(duration)}, started ${formatDuration(elapsed(run.startedAt, parseTime(step.startedAt)))} after run start`
+  row.setAttribute("aria-label", description)
+  row.dataset.tooltip = description
 }
 
-function renderEventList(container, events, surface, options = {}) {
+function renderActivity(container, run, limit = null) {
+  const steps = limit ? run.steps.slice(-limit) : run.steps
+  if (!steps.length) {
+    keyedList(
+      container,
+      [{ id: "empty" }],
+      (item) => item.id,
+      () => node("p", "empty-state"),
+      (target) => setText(target, "Waiting for recorded activity"),
+    )
+    return
+  }
+  const maxDuration = Math.max(...run.steps.map(stepDuration), 1)
+  keyedList(
+    container,
+    steps,
+    (step) => step.id,
+    createActivityRow,
+    (row, step) => updateActivityRow(row, step, run, maxDuration),
+  )
+}
+
+function createActiveRun() {
+  const card = node("article", "active-run")
+  const summary = node("button", "active-run-summary")
+  summary.type = "button"
+  summary.dataset.action = "toggle-run"
+  summary.innerHTML = `<span class="disclosure" aria-hidden="true">▶</span><strong></strong><small></small><span class="slow-badge" hidden>SLOW?</span><time></time>`
+  const metadata = node("div", "run-metadata")
+  const activity = node("div", "active-run-activity")
+  const footer = node("div", "activity-footer")
+  card.append(summary, metadata, activity, footer)
+  return card
+}
+
+function updateActiveRun(card, run) {
+  const expanded = state.expandedRuns.has(run.id)
+  const slow = stalled(run)
+  card.className = `active-run ${slow ? "is-stalled" : ""}`
+  const summary = card.querySelector(".active-run-summary")
+  summary.dataset.id = String(run.id)
+  summary.dataset.focusKey = `active-run-${run.id}`
+  summary.setAttribute("aria-expanded", String(expanded))
+  summary.setAttribute(
+    "aria-label",
+    `${expanded ? "Collapse" : "Expand"} activity for ${run.eventTitle}`,
+  )
+  setText(summary.querySelector(".disclosure"), expanded ? "▼" : "▶")
+  setText(summary.querySelector("strong"), run.eventTitle)
+  setText(summary.querySelector("small"), run.source)
+  summary.querySelector(".slow-badge").hidden = !slow
+  const duration = summary.querySelector("time")
+  duration.dataset.startedAt = run.startedAt
+  setText(duration, compactDuration(runDuration(run)))
+
+  const metadata = card.querySelector(".run-metadata")
+  metadata.replaceChildren()
+  const values = [
+    ["model", run.modelId || "unknown"],
+    ["thinking", run.thinkingLevel || "unknown"],
+    ["attempt", run.attempt],
+    ["turns", run.turnCount],
+    ["compactions", run.compactionCount],
+  ]
+  if (run.retryCount) values.push(["retries", run.retryCount])
+  if (run.investigationHandle) values.push(["handle", run.investigationHandle])
+  for (const [label, value] of values) {
+    const item = node("span")
+    item.append(`${label} `, node("b", "", String(value)))
+    metadata.append(item)
+  }
+
+  const activity = card.querySelector(".active-run-activity")
+  activity.classList.toggle("is-expanded", expanded)
+  activity.setAttribute(
+    "aria-label",
+    expanded ? "All recorded activity" : "Latest recorded activity",
+  )
+  renderActivity(activity, run, expanded ? null : 4)
+  const footer = card.querySelector(".activity-footer")
+  footer.hidden = !expanded
+  footer.replaceChildren()
+  if (expanded) {
+    const tools = run.steps.filter((step) => (step.kind || "tool") === "tool")
+    const failed = tools.filter((step) => step.state === "failed").length
+    const succeeded = tools.filter((step) => step.state === "succeeded").length
+    const thinkingDuration = run.steps
+      .filter((step) => step.kind === "thinking")
+      .reduce((sum, step) => sum + stepDuration(step), 0)
+    footer.append(
+      node("span", "", `${run.steps.length} entries`),
+      node("span", "", `tools ${tools.length} ✓${succeeded}`),
+      node("span", failed ? "has-error" : "", `✕${failed}`),
+      node(
+        "span",
+        "",
+        `thinking ${thinkingDuration ? `${compactDuration(thinkingDuration)} total` : "waiting"}`,
+      ),
+      node("span", "privacy-inline", PRIVACY_NOTE),
+    )
+  }
+}
+
+function renderActiveRuns(container, runs) {
+  if (!runs.length) {
+    keyedList(
+      container,
+      [{ id: "empty" }],
+      (item) => item.id,
+      () => node("p", "empty-state active-empty"),
+      (target) => setText(target, "No active runs. The queue is idle."),
+    )
+    return
+  }
+  keyedList(container, runs, (run) => run.id, createActiveRun, updateActiveRun)
+}
+
+function createEventRow() {
+  const row = node("article", "event-row")
+  const summary = node("button", "event-summary")
+  summary.type = "button"
+  summary.dataset.action = "toggle-event"
+  summary.innerHTML = `<span class="event-status"></span><strong></strong><small></small><span class="event-attempt"></span><time></time><span class="event-disclosure" aria-hidden="true">▸</span>`
+  const detail = node("div", "event-detail")
+  row.append(summary, detail)
+  return row
+}
+
+function updateEventRow(row, event) {
+  const expanded = state.expandedEvents.has(event.id)
+  row.className = `event-row event-${event.status}`
+  const summary = row.querySelector(".event-summary")
+  summary.dataset.id = String(event.id)
+  summary.dataset.focusKey = `event-${event.id}`
+  summary.setAttribute("aria-expanded", String(expanded))
+  summary.setAttribute(
+    "aria-label",
+    `${expanded ? "Hide" : "Show"} details for ${event.title}`,
+  )
+  summary.querySelector(".event-status").innerHTML = statusMarkup(event.status)
+  setText(summary.querySelector("strong"), event.title)
+  setText(summary.querySelector("small"), `${event.source}/${event.kind}`)
+  setText(
+    summary.querySelector(".event-attempt"),
+    event.attemptCount ? `att ${event.attemptCount}` : "-",
+  )
+  const time = summary.querySelector("time")
+  time.dataset.relativeTime = event.observedAt
+  setText(
+    time,
+    event.status === "retryable" && event.nextAttemptAt
+      ? `retry ${relativeTime(event.nextAttemptAt)}`
+      : relativeTime(event.observedAt),
+  )
+  setText(summary.querySelector(".event-disclosure"), expanded ? "▾" : "▸")
+  const detail = row.querySelector(".event-detail")
+  detail.hidden = !expanded
+  if (expanded) {
+    eventFacts(detail, event)
+    const open = node("button", "event-route-button", "Open event inspector →")
+    open.type = "button"
+    open.dataset.action = "route-event"
+    open.dataset.id = String(event.id)
+    detail.append(open)
+  }
+}
+
+function renderEvents(container, events) {
   if (!events.length) {
     keyedList(
       container,
       [{ id: "empty" }],
       (item) => item.id,
       () => node("p", "empty-state"),
-      (target) => setText(target, options.empty || "No events in this view"),
+      (target) => setText(target, "No events in this view"),
     )
     return
   }
@@ -303,203 +466,30 @@ function renderEventList(container, events, surface, options = {}) {
     container,
     events,
     (event) => event.id,
-    () => createEventRow(surface, options),
-    (item, event) => updateEventRow(item, event, surface, options),
+    createEventRow,
+    updateEventRow,
   )
 }
 
-function createToolRow() {
-  const row = node("div", "tool-row")
-  row.innerHTML = `<span class="tool-state"></span><strong></strong><span class="tool-track" aria-hidden="true"><i></i></span><time></time>`
-  return row
+function createSourceCard() {
+  const card = node("article", "source-card")
+  card.innerHTML = `<div class="source-heading"><span aria-hidden="true"></span><strong></strong><b></b></div><p class="source-poll"></p><p class="source-error" hidden></p>`
+  return card
 }
 
-function updateToolRow(row, step, run, maxDuration) {
-  const definition = runStates[step.state] || runStates.interrupted
-  setText(
-    row.querySelector(".tool-state"),
-    step.state === "active" ? "▸" : definition.glyph,
-  )
-  setText(row.querySelector("strong"), step.label)
-  const duration = stepDuration(step)
-  const width = Math.max(
-    3,
-    Math.round((duration / Math.max(maxDuration, 1)) * 100),
-  )
-  row.querySelector("i").style.width = `${width}%`
-  const time = row.querySelector("time")
-  time.dataset.stepStartedAt = step.startedAt
-  if (step.endedAt) time.dataset.stepEndedAt = step.endedAt
-  else delete time.dataset.stepEndedAt
-  setText(
-    time,
-    `${formatDuration(duration)}${step.state === "active" ? "…" : ""}`,
-  )
-  row.setAttribute(
-    "aria-label",
-    `${step.label}, ${definition.label}, ${formatDuration(duration)}, started ${formatDuration(elapsed(run.startedAt, parseTime(step.startedAt)))} after run start`,
-  )
-}
-
-function renderTools(container, run) {
-  const maxDuration = Math.max(...run.steps.map(stepDuration), 1)
-  keyedList(
-    container,
-    run.steps,
-    (step) => step.id,
-    createToolRow,
-    (row, step) => updateToolRow(row, step, run, maxDuration),
-  )
-  if (!run.steps.length) {
-    container.append(node("p", "empty-state", "No tool activity recorded"))
-  }
-}
-
-function runDetails(container, run, includeEvent = true) {
-  const focused = document.activeElement?.dataset?.focusKey
-  container.replaceChildren()
-  const linked = state.snapshot?.events.find(
-    (event) => event.id === run.eventId,
-  )
-  const facts = node("dl", "detail-grid")
-  facts.append(
-    detailField("Started", absoluteTime(run.startedAt)),
-    detailField("Finished", run.endedAt ? absoluteTime(run.endedAt) : "-"),
-    detailField("Model", run.modelId),
-    detailField("Provider", run.modelProvider),
-    detailField("Thinking", run.thinkingLevel),
-    detailField("Attempt", String(run.attempt)),
-    detailField("Turns", String(run.turnCount)),
-    detailField("Retries", String(run.retryCount)),
-    detailField("Compactions", String(run.compactionCount)),
-  )
-  container.append(facts)
-  if (stalled(run))
-    container.append(
-      node(
-        "p",
-        "callout callout-warn",
-        `⚠ Possibly stalled · no activity for ${formatDuration(elapsed(run.lastActivityAt))}`,
-      ),
-    )
-  if (run.state === "failed" && linked?.lastError)
-    container.append(
-      node("p", "callout callout-error", `✕ ${linked.lastError}`),
-    )
-  if (includeEvent && linked) {
-    const eventPanel = node("section", "linked-event")
-    eventPanel.append(node("h3", "eyebrow", "Intake event"))
-    const eventButton = node("button", "linked-event-button", linked.title)
-    eventButton.type = "button"
-    eventButton.dataset.action = "route-event"
-    eventButton.dataset.id = String(linked.id)
-    eventButton.dataset.focusKey = `linked-event-${linked.id}`
-    eventPanel.append(eventButton)
-    container.append(eventPanel)
-  }
-  const tools = node("section", "tool-section")
-  tools.append(node("h3", "eyebrow", "Tool activity"))
-  const list = node("div", "tool-list")
-  renderTools(list, run)
-  tools.append(list)
-  container.append(tools, node("p", "privacy-note", PRIVACY_NOTE))
-  if (focused)
-    requestAnimationFrame(() =>
-      container
-        .querySelector(`[data-focus-key="${CSS.escape(focused)}"]`)
-        ?.focus(),
-    )
-}
-
-function createRunRow(surface, options = {}) {
-  const item = node("article", `run-row ${options.className || ""}`.trim())
-  const button = node("button", "run-summary")
-  button.type = "button"
-  button.dataset.action = options.route ? "route-run" : "expand-run"
-  button.dataset.surface = surface
-  button.innerHTML = `<span class="run-status"></span><span class="run-copy"><strong></strong><small></small></span><time class="run-live-duration"></time><span class="chevron" aria-hidden="true">▸</span>`
-  const detail = node("div", "run-inline-detail")
-  item.append(button, detail)
-  return item
-}
-
-function updateRunRow(item, run, surface, options = {}) {
-  const key = `run:${surface}:${run.id}`
-  const expanded = state.expanded.has(key)
-  const button = item.querySelector("button")
-  item.className =
-    `run-row state-border-${run.state} ${stalled(run) ? "is-stalled" : ""} ${options.className || ""}`.trim()
-  button.dataset.id = String(run.id)
-  button.dataset.expandKey = key
-  button.dataset.focusKey = key
-  button.setAttribute("aria-expanded", String(options.route ? false : expanded))
-  button.setAttribute(
-    "aria-label",
-    `${options.route ? "Open" : expanded ? "Hide" : "Show"} details for ${run.eventTitle}`,
-  )
-  button.querySelector(".run-status").innerHTML = statusMarkup(run.state, true)
-  setText(button.querySelector("strong"), run.eventTitle)
-  const activeStep = run.steps.find((step) => step.state === "active")
-  setText(
-    button.querySelector("small"),
-    `${run.source} · attempt ${run.attempt}${activeStep ? ` · ${activeStep.label}` : ""}`,
-  )
-  const duration = button.querySelector("time")
-  duration.dataset.startedAt = run.startedAt
-  if (run.endedAt) duration.dataset.endedAt = run.endedAt
-  else delete duration.dataset.endedAt
-  setText(duration, formatDuration(runDuration(run)))
-  setText(
-    button.querySelector(".chevron"),
-    options.route ? "→" : expanded ? "▾" : "▸",
-  )
-  const detail = item.querySelector(".run-inline-detail")
-  detail.hidden = !expanded || Boolean(options.route)
-  if (expanded && !options.route) runDetails(detail, run)
-}
-
-function renderRunList(container, runs, surface, options = {}) {
-  if (!runs.length) {
-    keyedList(
-      container,
-      [{ id: "empty" }],
-      (item) => item.id,
-      () => node("p", "empty-state"),
-      (target) => setText(target, options.empty || "No runs in this view"),
-    )
-    return
-  }
-  keyedList(
-    container,
-    runs,
-    (run) => run.id,
-    () => createRunRow(surface, options),
-    (item, run) => updateRunRow(item, run, surface, options),
-  )
-}
-
-function sourceRow(source) {
-  const row = node(
-    "article",
-    `source-row ${source.lastError ? "is-failing" : ""}`,
-  )
-  row.dataset.key = source.source
-  row.innerHTML = `<span class="source-glyph" aria-hidden="true"></span><span><strong></strong><small></small></span><b></b>`
-  return row
-}
-
-function updateSourceRow(row, source) {
-  row.className = `source-row ${source.lastError ? "is-failing" : ""}`
-  setText(row.querySelector(".source-glyph"), source.lastError ? "✕" : "✓")
-  setText(row.querySelector("strong"), source.source)
-  const small = row.querySelector("small")
-  if (source.lastError) setText(small, source.lastError)
-  else if (source.lastSuccessAt) {
-    small.dataset.relativeTimePrefix = "last success "
-    small.dataset.relativeTime = source.lastSuccessAt
-    setText(small, `last success ${relativeTime(source.lastSuccessAt)}`)
-  } else setText(small, "waiting for first success")
-  setText(row.querySelector("b"), source.lastError ? "Failing" : "Healthy")
+function updateSourceCard(card, source) {
+  const failing = Boolean(source.lastError)
+  card.className = `source-card ${failing ? "is-failing" : "is-healthy"}`
+  setText(card.querySelector(".source-heading > span"), failing ? "✕" : "✓")
+  setText(card.querySelector("strong"), source.source)
+  setText(card.querySelector("b"), failing ? "FAILING" : "HEALTHY")
+  const poll = card.querySelector(".source-poll")
+  poll.dataset.relativeTime = source.updatedAt
+  poll.dataset.relativeTimePrefix = "last poll "
+  setText(poll, `last poll ${relativeTime(source.updatedAt)}`)
+  const error = card.querySelector(".source-error")
+  error.hidden = !failing
+  setText(error, source.lastError || "")
 }
 
 function renderSources(container, sources) {
@@ -517,503 +507,316 @@ function renderSources(container, sources) {
     container,
     sources,
     (source) => source.source,
-    sourceRow,
-    updateSourceRow,
+    createSourceCard,
+    updateSourceCard,
   )
 }
 
-function metric(label, value, note, tone = "") {
-  return `<article class="metric ${tone}"><span>${label}</span><strong data-metric="${label.toLowerCase().replaceAll(" ", "-")}">${value}</strong><small>${note}</small></article>`
+function createRecentRun() {
+  const button = node("button", "recent-run")
+  button.type = "button"
+  button.dataset.action = "route-run"
+  button.innerHTML = `<span class="recent-run-state" aria-hidden="true"></span><strong></strong><time></time>`
+  return button
 }
 
-function updateSharedMetrics(root, snapshot) {
+function updateRecentRun(button, run) {
+  const definition = runStates[run.state]
+  button.dataset.id = String(run.id)
+  button.dataset.focusKey = `recent-run-${run.id}`
+  button.setAttribute(
+    "aria-label",
+    `Inspect ${run.eventTitle}, ${definition.label}`,
+  )
+  button.className = `recent-run recent-run-${run.state}`
+  setText(button.querySelector(".recent-run-state"), definition.glyph)
+  setText(button.querySelector("strong"), run.eventTitle)
+  const time = button.querySelector("time")
+  time.dataset.startedAt = run.startedAt
+  time.dataset.endedAt = run.endedAt || run.lastActivityAt
+  setText(time, compactDuration(runDuration(run)))
+}
+
+function renderRecentRuns(container, runs) {
+  if (!runs.length) {
+    keyedList(
+      container,
+      [{ id: "empty" }],
+      (item) => item.id,
+      () => node("p", "empty-state"),
+      (target) => setText(target, "No completed runs"),
+    )
+    return
+  }
+  keyedList(
+    container,
+    runs.slice(0, 8),
+    (run) => run.id,
+    createRecentRun,
+    updateRecentRun,
+  )
+}
+
+function mountDashboard(root) {
+  root.innerHTML = `<div class="wire-dashboard">
+    <section class="stat-strip" aria-label="Queue status">
+      <article><span>OPEN</span><strong data-metric="open">0</strong></article>
+      <article class="stat-attention"><span>⚠ NEEDS ATTENTION</span><strong data-metric="attention">0</strong></article>
+      <article class="stat-active"><span>▶ ACTIVE RUNS</span><strong data-metric="active">0</strong></article>
+      <article><span>HANDLED</span><strong data-metric="handled">0</strong></article>
+      <article><span>OLDEST OPEN</span><strong data-metric="oldest">-</strong></article>
+    </section>
+    <div class="dashboard-grid">
+      <div class="primary-column">
+        <section class="active-section" aria-labelledby="active-title">
+          <h1 id="active-title" class="section-label">ACTIVE RUNS <span>· refresh 1.5s</span></h1>
+          <div data-active-runs></div>
+        </section>
+        <section class="events-section" aria-labelledby="events-title">
+          <header class="events-header">
+            <h2 id="events-title" class="section-label">RECENT EVENTS</h2>
+            <div class="filters" role="group" aria-label="Filter recent events">
+              <button type="button" data-filter="open" aria-pressed="true">open <b data-count="open">0</b></button>
+              <button type="button" data-filter="attention" aria-pressed="false">attention <b data-count="attention">0</b></button>
+              <button type="button" data-filter="handled" aria-pressed="false">handled <b data-count="handled">0</b></button>
+              <button type="button" data-filter="all" aria-pressed="false">all <b data-count="all">0</b></button>
+            </div>
+          </header>
+          <div class="events-list" data-events></div>
+          <p class="window-note" data-window-note></p>
+        </section>
+      </div>
+      <aside class="side-column" aria-label="Source health and completed runs">
+        <section aria-labelledby="sources-title">
+          <h2 id="sources-title" class="section-label">SOURCES</h2>
+          <div class="sources-list" data-sources></div>
+        </section>
+        <section class="recent-runs-section" aria-labelledby="recent-runs-title">
+          <h2 id="recent-runs-title" class="section-label">RECENT RUNS</h2>
+          <div class="recent-runs" data-recent-runs></div>
+        </section>
+      </aside>
+    </div>
+  </div>`
+}
+
+function updateMetrics(root, snapshot) {
   const values = {
     open: snapshot.open,
-    "needs-you": snapshot.attention,
+    attention: snapshot.attention,
     active: activeRuns(snapshot).length,
     handled: snapshot.handled,
-    "oldest-open": snapshot.oldestOpenAt
-      ? formatDuration(elapsed(snapshot.oldestOpenAt)).replace(/ \d+s$/, "")
+    oldest: snapshot.oldestOpenAt
+      ? compactDuration(elapsed(snapshot.oldestOpenAt)).replace(/\d+s$/, "")
       : "-",
   }
   root.querySelectorAll("[data-metric]").forEach((target) => {
-    setText(target, values[target.dataset.metric] ?? target.textContent)
+    setText(target, values[target.dataset.metric])
   })
 }
 
-function ledgerMount(root) {
-  root.innerHTML = `<div class="ledger layout-shell">
-    <section class="ledger-strip" aria-label="Queue status">
-      <p><strong data-metric="open">0</strong> open</p><p><strong data-metric="needs-you">0</strong> need you</p><p><strong data-metric="active">0</strong> active</p><p><strong data-metric="handled">0</strong> handled</p><p>oldest <strong data-metric="oldest-open">-</strong></p>
-    </section>
-    <section class="ledger-alerts" aria-labelledby="ledger-alerts-title" hidden><h2 id="ledger-alerts-title">Source alerts</h2><div data-ledger-sources></div></section>
-    <section class="ledger-active" aria-labelledby="ledger-active-title"><header><h1 id="ledger-active-title">Active runs</h1><span>pinned while working</span></header><div data-ledger-active></div></section>
-    <section class="ledger-feed" aria-labelledby="ledger-feed-title"><header><div><p class="eyebrow">Chronological record</p><h2 id="ledger-feed-title">Intake ledger</h2></div>${filterMarkup("Filter ledger events")}</header><div class="timeline-feed" data-ledger-feed></div><p class="window-note" data-window-note></p></section>
-  </div>`
-}
-
-function ledgerEntry() {
-  const item = node("article", "ledger-entry")
-  item.innerHTML = `<time></time><span class="ledger-node" aria-hidden="true"></span><div class="ledger-entry-body"></div>`
-  return item
-}
-
-function updateLedgerEntry(item, entry) {
-  const time = item.querySelector("time")
-  time.dataset.relativeTime = entry.at
-  time.title = absoluteTime(entry.at)
-  setText(time, relativeTime(entry.at))
-  setText(
-    item.querySelector(".ledger-node"),
-    entry.type === "event"
-      ? eventStates[entry.value.status].glyph
-      : runStates[entry.value.state].glyph,
-  )
-  const body = item.querySelector(".ledger-entry-body")
-  if (!body.firstElementChild) {
-    body.append(
-      entry.type === "event"
-        ? createEventRow("ledger-feed")
-        : createRunRow("ledger-feed"),
+function updateFilters(root, snapshot) {
+  const counts = windowCounts(snapshot)
+  root.querySelectorAll("[data-filter]").forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.filter === state.filter),
     )
-  }
-  const expectedClass = entry.type === "event" ? "event-row" : "run-row"
-  if (!body.firstElementChild.classList.contains(expectedClass)) {
-    body.replaceChildren(
-      entry.type === "event"
-        ? createEventRow("ledger-feed")
-        : createRunRow("ledger-feed"),
-    )
-  }
-  if (entry.type === "event")
-    updateEventRow(body.firstElementChild, entry.value, "ledger-feed")
-  else updateRunRow(body.firstElementChild, entry.value, "ledger-feed")
-}
-
-function ledgerRender(root, snapshot) {
-  updateSharedMetrics(root, snapshot)
-  updateFilters(root, snapshot)
-  const active = activeRuns(snapshot)
-  renderRunList(
-    root.querySelector("[data-ledger-active]"),
-    active,
-    "ledger-active",
-    {
-      empty: "No active runs. The queue is idle.",
-    },
-  )
-  const failures = snapshot.sources.filter((source) => source.lastError)
-  const alerts = root.querySelector(".ledger-alerts")
-  alerts.hidden = failures.length === 0
-  renderSources(root.querySelector("[data-ledger-sources]"), failures)
-  const events = filteredEvents(snapshot).map((value) => ({
-    key: `event-${value.id}`,
-    type: "event",
-    at: value.observedAt,
-    value,
-  }))
-  const runs = snapshot.runs
-    .filter((run) => run.state !== "active")
-    .map((value) => ({
-      key: `run-${value.id}`,
-      type: "run",
-      at: value.endedAt || value.lastActivityAt,
-      value,
-    }))
-  const entries = [...events, ...runs].sort((left, right) =>
-    right.at.localeCompare(left.at),
-  )
-  keyedList(
-    root.querySelector("[data-ledger-feed]"),
-    entries,
-    (entry) => entry.key,
-    ledgerEntry,
-    updateLedgerEntry,
-  )
-}
-
-function consoleMount(root) {
-  root.innerHTML = `<div class="console layout-shell">
-    <aside class="console-scopes" aria-label="Event scopes"><p class="eyebrow">Work queue</p>${filterMarkup("Select queue scope")}<section><h2>Sources</h2><div data-console-sources></div></section></aside>
-    <section class="console-master" aria-labelledby="console-title"><header><div><p class="eyebrow">Event master</p><h1 id="console-title">Intake events</h1></div><span class="key-hint">↑↓ select · Enter open</span></header><div class="console-list" role="listbox" aria-label="Intake events" tabindex="0" data-console-events></div><p class="window-note" data-window-note></p></section>
-    <section class="console-detail" aria-labelledby="console-detail-title"><div data-console-detail><div class="console-empty"><p class="eyebrow">Event detail</p><h2 id="console-detail-title">Select an event</h2><p>Choose an item to inspect its facts and triage attempts.</p></div></div></section>
-    <footer class="console-status"><span><b data-metric="open">0</b> open · <b data-metric="needs-you">0</b> need you · <b data-metric="active">0</b> running</span><span data-console-health></span></footer>
-  </div>`
-}
-
-function renderConsoleDetail(container, event, snapshot) {
-  if (!event) return
-  let header = container.querySelector(".console-detail-heading")
-  if (!header) {
-    container.replaceChildren()
-    header = node("header", "console-detail-heading")
-    header.innerHTML = `<button class="console-detail-back" type="button" data-action="console-close"><span aria-hidden="true">←</span> Events</button><p class="eyebrow">Selected event</p><h2 id="console-detail-title"></h2><div class="console-event-facts"></div>`
-    container.append(header, node("section", "console-attempts"))
-  }
-  setText(header.querySelector("h2"), event.title)
-  eventDetails(header.querySelector(".console-event-facts"), event)
-  const attempts = container.querySelector(".console-attempts")
-  let attemptsTitle = attempts.querySelector("h3")
-  if (!attemptsTitle) {
-    attemptsTitle = node("h3", "eyebrow", "Triage attempts")
-    attempts.append(attemptsTitle, node("div", "console-run-list"))
-  }
-  renderRunList(
-    attempts.querySelector(".console-run-list"),
-    snapshot.runs.filter((run) => run.eventId === event.id),
-    `console-event-${event.id}`,
-    { empty: "No triage attempts for this event" },
-  )
-}
-
-function consoleRender(root, snapshot) {
-  updateSharedMetrics(root, snapshot)
-  updateFilters(root, snapshot)
-  renderSources(root.querySelector("[data-console-sources]"), snapshot.sources)
-  const events = filteredEvents(snapshot)
-  renderEventList(
-    root.querySelector("[data-console-events]"),
-    events,
-    "console",
-    {
-      route: true,
-      empty: "No events match this scope",
-    },
-  )
-  root.querySelectorAll("[data-console-events] .event-row").forEach((row) => {
-    const id = Number(row.querySelector("button")?.dataset.id)
-    row.classList.toggle("is-selected", id === state.selectedConsoleEvent)
-    row.setAttribute("role", "option")
-    row.setAttribute("aria-selected", String(id === state.selectedConsoleEvent))
   })
-  const selected = snapshot.events.find(
-    (event) => event.id === state.selectedConsoleEvent,
-  )
-  const detail = root.querySelector("[data-console-detail]")
-  if (selected) renderConsoleDetail(detail, selected, snapshot)
-  else if (!detail.querySelector(".console-empty"))
-    detail.innerHTML = `<div class="console-empty"><p class="eyebrow">Event detail</p><h2 id="console-detail-title">Select an event</h2><p>Choose an item to inspect its facts and triage attempts.</p></div>`
-  const failing = snapshot.sources.filter((source) => source.lastError).length
+  root.querySelectorAll("[data-count]").forEach((target) => {
+    setText(target, counts[target.dataset.count] ?? 0)
+  })
   setText(
-    root.querySelector("[data-console-health]"),
-    failing
-      ? `✕ ${failing} source${failing === 1 ? "" : "s"} failing`
-      : "✓ sources healthy",
+    root.querySelector("[data-window-note]"),
+    `Showing ${filteredEvents(snapshot).length} from the ${snapshot.events.length}-event recent window`,
   )
 }
 
-function pipelineMount(root) {
-  root.innerHTML = `<div class="pipeline layout-shell">
-    <header class="pipeline-heading"><div><p class="eyebrow">Queue flow</p><h1>Intake pipeline</h1></div><p>Position shows where work is waiting.</p></header>
-    <section class="intake-gutter" aria-labelledby="intake-title"><h2 id="intake-title">Source inlets</h2><div data-pipeline-sources></div></section>
-    <nav class="pipeline-tabs" aria-label="Pipeline stages"></nav>
-    <section class="pipeline-board" aria-label="Event pipeline">
-      <section class="stage stage-observed" data-stage="observed"><header><span>01</span><h2>Observed</h2><b data-stage-count>0</b><small>ready for triage</small></header><div data-stage-list></div></section>
-      <section class="stage stage-waiting" data-stage="waiting"><header><span>02</span><h2>Waiting</h2><b data-stage-count>0</b><small>retry backoff</small></header><div data-stage-list></div></section>
-      <section class="stage stage-triaging" data-stage="triaging"><header><span>03</span><h2>Triaging</h2><b data-stage-count>0</b><small>work in progress</small></header><div data-stage-list></div></section>
-      <section class="stage stage-settled" data-stage="settled"><header><span>04</span><h2>Settled</h2><b data-stage-count>0</b><small>recent outcomes</small></header><div data-stage-list></div></section>
-    </section>
-  </div>`
+function renderDashboard() {
+  if (!state.snapshot) return
+  const root = element("dashboard-root")
+  updateMetrics(root, state.snapshot)
+  updateFilters(root, state.snapshot)
+  renderActiveRuns(
+    root.querySelector("[data-active-runs]"),
+    activeRuns(state.snapshot),
+  )
+  renderEvents(
+    root.querySelector("[data-events]"),
+    filteredEvents(state.snapshot),
+  )
+  renderSources(root.querySelector("[data-sources]"), state.snapshot.sources)
+  renderRecentRuns(
+    root.querySelector("[data-recent-runs]"),
+    completedRuns(state.snapshot),
+  )
+  renderRoute()
 }
 
-function pipelineCard() {
-  const card = node("article", "pipeline-card")
-  const button = node("button", "pipeline-card-button")
-  button.type = "button"
-  button.innerHTML = `<span class="pipeline-card-status"></span><strong></strong><small></small><time></time><span class="pipeline-card-arrow" aria-hidden="true">→</span>`
-  card.append(button)
-  return card
+function inspectorMeta(run) {
+  const rail = node("aside", "inspector-meta")
+  const runTitle = node("h2", "section-label", "RUN")
+  const runFacts = node("dl", "inspector-facts")
+  runFacts.append(
+    detailField("duration", formatDuration(runDuration(run))),
+    detailField("started", clockTime(run.startedAt)),
+    detailField("finished", run.endedAt ? clockTime(run.endedAt) : "running"),
+    detailField("attempt", String(run.attempt)),
+    detailField("turns", String(run.turnCount)),
+    detailField("retries", String(run.retryCount)),
+    detailField("compactions", String(run.compactionCount)),
+  )
+  const modelTitle = node("h2", "section-label inspector-divider", "MODEL")
+  const modelFacts = node("dl", "inspector-facts")
+  modelFacts.append(
+    detailField("model", run.modelId),
+    detailField("provider", run.modelProvider),
+    detailField("thinking", run.thinkingLevel),
+  )
+  const eventTitle = node("h2", "section-label inspector-divider", "EVENT")
+  const eventName = node("p", "inspector-event-title", run.eventTitle)
+  const eventFactsList = node("dl", "inspector-facts")
+  eventFactsList.append(
+    detailField("source", run.source),
+    detailField("handle", run.investigationHandle),
+  )
+  rail.append(
+    runTitle,
+    runFacts,
+    modelTitle,
+    modelFacts,
+    eventTitle,
+    eventName,
+    eventFactsList,
+    node("p", "privacy-note", PRIVACY_NOTE),
+  )
+  return rail
 }
 
-function updatePipelineCard(card, item) {
-  const button = card.querySelector("button")
-  button.dataset.action = item.type === "run" ? "route-run" : "route-event"
-  button.dataset.id = String(item.value.id)
-  button.dataset.focusKey = `pipeline-${item.type}-${item.value.id}`
-  const isRun = item.type === "run"
-  button.querySelector(".pipeline-card-status").innerHTML = statusMarkup(
-    isRun ? item.value.state : item.value.status,
+function runInspector(container, run) {
+  const layout = node("div", "run-inspector")
+  const timeline = node("section", "inspector-timeline")
+  const heading = node("header", "timeline-heading")
+  heading.append(
+    node(
+      "h2",
+      "section-label",
+      `TIMELINE · ${run.turnCount} TURNS · ${run.steps.length} ENTRIES`,
+    ),
+    node("span", "", "bars show relative duration"),
+  )
+  const list = node("div", "activity-list inspector-activity")
+  renderActivity(list, run)
+  const legend = node("div", "timeline-legend")
+  legend.innerHTML = `<span><i class="legend-success"></i> tool ✓</span><span><i class="legend-failed"></i> tool ✕</span><span><i class="legend-thinking"></i> ∴ thinking</span><span><i class="legend-compaction"></i> ⇲ compaction</span><span><i class="legend-active"></i> running ◐</span>`
+  timeline.append(heading, list, legend)
+  layout.append(inspectorMeta(run), timeline)
+  container.replaceChildren(layout)
+}
+
+function eventInspector(container, event) {
+  const layout = node("div", "event-inspector")
+  const facts = node("section", "event-inspector-facts")
+  facts.append(node("h2", "section-label", "EVENT"))
+  const body = node("div", "event-inspector-body")
+  eventFacts(body, event)
+  facts.append(body)
+  const attempts = node("section", "event-attempts")
+  attempts.append(node("h2", "section-label", "TRIAGE RUNS"))
+  const list = node("div", "recent-runs event-run-list")
+  renderRecentRuns(
+    list,
+    state.snapshot.runs.filter((run) => run.eventId === event.id),
+  )
+  attempts.append(list)
+  layout.append(facts, attempts)
+  container.replaceChildren(layout)
+}
+
+function parseRoute() {
+  const match = location.hash.match(/^#\/(run|event)\/(\d+)$/)
+  state.route = match
+    ? { kind: match[1], id: Number(match[2]) }
+    : { kind: null, id: null }
+}
+
+function renderRoute() {
+  const layer = element("route-layer")
+  if (!state.snapshot || !state.route.kind) {
+    layer.hidden = true
+    document.body.classList.remove("route-open")
+    return
+  }
+  const record =
+    state.route.kind === "run"
+      ? state.snapshot.runs.find((run) => run.id === state.route.id)
+      : state.snapshot.events.find((event) => event.id === state.route.id)
+  if (!record) {
+    layer.hidden = true
+    document.body.classList.remove("route-open")
+    return
+  }
+  const isRun = state.route.kind === "run"
+  setText("route-title", isRun ? record.eventTitle : record.title)
+  element("route-status").innerHTML = statusMarkup(
+    isRun ? record.state : record.status,
     isRun,
   )
   setText(
-    button.querySelector("strong"),
-    isRun ? item.value.eventTitle : item.value.title,
+    "route-finished",
+    isRun
+      ? record.endedAt
+        ? `finished ${clockTime(record.endedAt)} · ${relativeTime(record.endedAt)}`
+        : `started ${relativeTime(record.startedAt)}`
+      : `observed ${relativeTime(record.observedAt)}`,
   )
-  if (isRun) {
-    const activeStep = item.value.steps.find((step) => step.state === "active")
-    setText(
-      button.querySelector("small"),
-      `attempt ${item.value.attempt}${activeStep ? ` · ${activeStep.label}` : ""}`,
-    )
-    const time = button.querySelector("time")
-    time.dataset.startedAt = item.value.startedAt
-    setText(time, formatDuration(runDuration(item.value)))
-  } else {
-    setText(
-      button.querySelector("small"),
-      `${item.value.source} · ${item.value.kind}`,
-    )
-    const time = button.querySelector("time")
-    if (item.value.status === "retryable" && item.value.nextAttemptAt) {
-      time.dataset.relativeTime = item.value.nextAttemptAt
-      setText(time, `retry ${relativeTime(item.value.nextAttemptAt)}`)
-    } else {
-      time.dataset.relativeTime = item.value.observedAt
-      setText(time, relativeTime(item.value.observedAt))
-    }
+  const content = element("route-content")
+  const routeKey = `${state.route.kind}-${state.route.id}-${state.contentKey}`
+  if (content.dataset.routeKey !== routeKey) {
+    content.dataset.routeKey = routeKey
+    if (isRun) runInspector(content, record)
+    else eventInspector(content, record)
   }
-  card.className = `pipeline-card ${isRun && stalled(item.value) ? "is-stalled" : ""}`
+  layer.hidden = false
+  document.body.classList.add("route-open")
 }
 
-function pipelineRender(root, snapshot) {
-  renderSources(root.querySelector("[data-pipeline-sources]"), snapshot.sources)
-  const triagingRuns = activeRuns(snapshot)
-  const stages = {
-    observed: snapshot.events
-      .filter((event) => event.status === "pending")
-      .map((value) => ({ type: "event", value })),
-    waiting: snapshot.events
-      .filter((event) => event.status === "retryable")
-      .map((value) => ({ type: "event", value })),
-    triaging: [
-      ...triagingRuns.map((value) => ({ type: "run", value })),
-      ...snapshot.events
-        .filter(
-          (event) =>
-            event.status === "processing" &&
-            !triagingRuns.some((run) => run.eventId === event.id),
-        )
-        .map((value) => ({ type: "event", value })),
-    ],
-    settled: snapshot.events
-      .filter(
-        (event) =>
-          HANDLED_STATES.includes(event.status) || event.status === "failed",
-      )
-      .map((value) => ({ type: "event", value })),
-  }
-  for (const [name, items] of Object.entries(stages)) {
-    const stage = root.querySelector(`[data-stage="${name}"]`)
-    setText(stage.querySelector("[data-stage-count]"), items.length)
-    keyedList(
-      stage.querySelector("[data-stage-list]"),
-      items,
-      (item) => `${item.type}-${item.value.id}`,
-      pipelineCard,
-      updatePipelineCard,
-    )
-  }
+function navigate(kind, id, origin) {
+  state.routeOrigin = origin || document.activeElement
+  location.hash = `#/${kind}/${id}`
 }
 
-function briefingMount(root) {
-  root.innerHTML = `<article class="briefing layout-shell">
-    <header class="briefing-verdict"><p class="eyebrow">Your intake briefing</p><h1 data-briefing-verdict>Checking the queue.</h1><p data-briefing-summary></p></header>
-    <section class="briefing-section briefing-attention" aria-labelledby="briefing-attention-title" hidden><h2 id="briefing-attention-title">Needs you</h2><div data-briefing-attention></div></section>
-    <section class="briefing-section briefing-working" aria-labelledby="briefing-working-title" hidden><h2 id="briefing-working-title">Working now</h2><div data-briefing-active></div></section>
-    <section class="briefing-section" aria-labelledby="briefing-sources-title"><h2 id="briefing-sources-title">Sources</h2><div data-briefing-sources></div></section>
-    <details class="briefing-record"><summary><span>The recent record</span><b data-briefing-record-summary></b></summary><div class="briefing-record-body">${filterMarkup("Filter the recent record")}<div data-briefing-events></div><h3>Completed runs</h3><div data-briefing-runs></div><p class="window-note" data-window-note></p></div></details>
-  </article>`
+function dismissRoute() {
+  location.hash = "#/"
 }
 
-function briefingRender(root, snapshot) {
-  updateFilters(root, snapshot)
-  const failing = snapshot.sources.filter((source) => source.lastError)
-  const active = activeRuns(snapshot)
-  const attention = snapshot.events.filter(needsAttention)
-  let verdict = "Nothing needs you."
-  if (failing.length)
-    verdict = `${failing.length} source${failing.length === 1 ? " is" : "s are"} failing.`
-  else if (attention.length)
-    verdict = `${attention.length} item${attention.length === 1 ? " needs" : "s need"} you.`
-  else if (active.length)
-    verdict = `${active.length} triage run${active.length === 1 ? " is" : "s are"} working.`
-  setText(root.querySelector("[data-briefing-verdict]"), verdict)
-  const sourceHealth = failing.length
-    ? `${snapshot.sources.length - failing.length} of ${snapshot.sources.length} sources healthy.`
-    : `All ${snapshot.sources.length} source${snapshot.sources.length === 1 ? " is" : "s are"} healthy.`
-  setText(
-    root.querySelector("[data-briefing-summary]"),
-    `${snapshot.open} open, oldest ${snapshot.oldestOpenAt ? formatDuration(elapsed(snapshot.oldestOpenAt)) : "clear"}. ${sourceHealth}`,
-  )
-  const attentionSection = root.querySelector(".briefing-attention")
-  attentionSection.hidden = attention.length === 0 && failing.length === 0
-  renderEventList(
-    root.querySelector("[data-briefing-attention]"),
-    attention,
-    "briefing-attention",
-    {
-      empty: failing.length
-        ? "Source health needs attention below."
-        : "Nothing needs attention.",
-    },
-  )
-  const working = root.querySelector(".briefing-working")
-  working.hidden = active.length === 0
-  renderRunList(
-    root.querySelector("[data-briefing-active]"),
-    active,
-    "briefing-active",
-  )
-  renderSources(root.querySelector("[data-briefing-sources]"), snapshot.sources)
-  renderEventList(
-    root.querySelector("[data-briefing-events]"),
-    filteredEvents(snapshot),
-    "briefing-record",
-  )
-  const completed = snapshot.runs.filter((run) => run.state !== "active")
-  renderRunList(
-    root.querySelector("[data-briefing-runs]"),
-    completed,
-    "briefing-runs",
-  )
-  const succeeded = completed.filter((run) => run.state === "succeeded").length
-  setText(
-    root.querySelector("[data-briefing-record-summary]"),
-    `${snapshot.events.length} events · ${succeeded} of ${completed.length} runs succeeded`,
-  )
-}
-
-function wallMount(root) {
-  root.innerHTML = `<div class="wall layout-shell">
-    <header class="wall-heading"><div><p class="eyebrow">Continuous telemetry</p><h1>Intake wall</h1></div><span data-wall-verdict>Connecting</span></header>
-    <section class="wall-kpis" aria-label="Queue telemetry">
-      ${metric("Open", "0", "queue depth", "metric-info")}${metric("Needs you", "0", "attention", "metric-warn")}${metric("Active", "0", "triage runs", "metric-ok")}${metric("Oldest open", "-", "queue age")}${metric("Handled", "0", "all time")}${metric("Success rate", "-", "recent runs")}
-    </section>
-    <section class="wall-panel wall-active" aria-labelledby="wall-active-title"><header><h2 id="wall-active-title">Active lanes</h2><span>shared elapsed scale</span></header><div data-wall-active></div></section>
-    <section class="wall-panel wall-health" aria-labelledby="wall-health-title"><header><h2 id="wall-health-title">Source matrix</h2><span>current poll state</span></header><div data-wall-sources></div></section>
-    <section class="wall-panel wall-events" aria-labelledby="wall-events-title"><header><h2 id="wall-events-title">Event ledger</h2>${filterMarkup("Filter event telemetry")}</header><div class="wall-table-scroll"><table><thead><tr><th>Status</th><th>Event</th><th>Source</th><th>Age</th></tr></thead><tbody data-wall-events></tbody></table></div><p class="window-note" data-window-note></p></section>
-    <section class="wall-panel wall-runs" aria-labelledby="wall-runs-title"><header><h2 id="wall-runs-title">Run telemetry</h2><span>newest first</span></header><div class="wall-table-scroll"><table><thead><tr><th>State</th><th>Run</th><th>Duration</th></tr></thead><tbody data-wall-runs></tbody></table></div></section>
-  </div>`
-}
-
-function wallRunLane() {
-  const lane = node("button", "wall-run-lane")
-  lane.type = "button"
-  lane.innerHTML = `<span><strong></strong><small></small></span><span class="lane-track"><i></i></span><time></time>`
-  return lane
-}
-
-function wallEventRow() {
-  const row = node("tr")
-  row.innerHTML = `<td data-label="Status"></td><td data-label="Event"><button type="button"></button></td><td data-label="Source"></td><td data-label="Age"><time></time></td>`
-  return row
-}
-
-function wallRunRow() {
-  const row = node("tr")
-  row.innerHTML = `<td data-label="State"></td><td data-label="Run"><button type="button"></button></td><td data-label="Duration"><time></time></td>`
-  return row
-}
-
-function wallRender(root, snapshot) {
-  updateSharedMetrics(root, snapshot)
-  updateFilters(root, snapshot)
-  const completed = snapshot.runs.filter((run) => run.state !== "active")
-  const succeeded = completed.filter((run) => run.state === "succeeded").length
-  setText(
-    root.querySelector('[data-metric="success-rate"]'),
-    completed.length
-      ? `${Math.round((succeeded / completed.length) * 100)}%`
-      : "-",
-  )
-  const failing = snapshot.sources.filter((source) => source.lastError).length
-  setText(
-    root.querySelector("[data-wall-verdict]"),
-    failing
-      ? `✕ ${failing} source${failing === 1 ? "" : "s"} failing`
-      : snapshot.attention
-        ? `↻ ${snapshot.attention} need you`
-        : activeRuns(snapshot).length
-          ? "● Working"
-          : "✓ All clear",
-  )
-  const active = activeRuns(snapshot)
-  const maxElapsed = Math.max(...active.map(runDuration), 1)
-  const lanes = active.length ? active : [{ id: "empty" }]
-  keyedList(
-    root.querySelector("[data-wall-active]"),
-    lanes,
-    (run) => run.id,
-    (run) =>
-      run.id === "empty"
-        ? node("p", "empty-state", "No active runs")
-        : wallRunLane(),
-    (lane, run) => {
-      if (run.id === "empty") return
-      lane.dataset.action = "route-run"
-      lane.dataset.id = String(run.id)
-      lane.dataset.focusKey = `wall-run-${run.id}`
-      setText(lane.querySelector("strong"), run.eventTitle)
-      const step = run.steps.find((candidate) => candidate.state === "active")
-      setText(
-        lane.querySelector("small"),
-        `${run.source}${step ? ` · ${step.label}` : ""}`,
-      )
-      lane.querySelector("i").style.width =
-        `${Math.max(4, (runDuration(run) / maxElapsed) * 100)}%`
-      const time = lane.querySelector("time")
-      time.dataset.startedAt = run.startedAt
-      setText(time, formatDuration(runDuration(run)))
-      lane.classList.toggle("is-stalled", stalled(run))
-    },
-  )
-  renderSources(root.querySelector("[data-wall-sources]"), snapshot.sources)
-  keyedList(
-    root.querySelector("[data-wall-events]"),
-    filteredEvents(snapshot),
-    (event) => event.id,
-    wallEventRow,
-    (row, event) => {
-      row.querySelector("td").innerHTML = statusMarkup(event.status)
-      const button = row.querySelector("button")
-      setText(button, event.title)
-      button.dataset.action = "route-event"
-      button.dataset.id = String(event.id)
-      button.dataset.focusKey = `wall-event-${event.id}`
-      setText(row.children[2], event.source)
-      const time = row.querySelector("time")
-      time.dataset.relativeTime = event.observedAt
-      setText(time, relativeTime(event.observedAt))
-    },
-  )
-  keyedList(
-    root.querySelector("[data-wall-runs]"),
-    completed,
-    (run) => run.id,
-    wallRunRow,
-    (row, run) => {
-      row.querySelector("td").innerHTML = statusMarkup(run.state, true)
-      const button = row.querySelector("button")
-      setText(button, run.eventTitle)
-      button.dataset.action = "route-run"
-      button.dataset.id = String(run.id)
-      button.dataset.focusKey = `wall-history-${run.id}`
-      const time = row.querySelector("time")
-      time.dataset.startedAt = run.startedAt
-      time.dataset.endedAt = run.endedAt
-      setText(time, formatDuration(runDuration(run)))
-    },
-  )
-}
-
-const presenters = {
-  ledger: { mount: ledgerMount, render: ledgerRender },
-  console: { mount: consoleMount, render: consoleRender },
-  pipeline: { mount: pipelineMount, render: pipelineRender },
-  briefing: { mount: briefingMount, render: briefingRender },
-  wall: { mount: wallMount, render: wallRender },
-}
-
-function renderCurrent() {
-  if (!state.snapshot) return
-  const root = element("dashboard-root")
-  const design = currentDesign()
-  if (state.mountedDesign !== design) {
-    presenters[design].mount(root)
-    state.mountedDesign = design
-  }
-  presenters[design].render(root, state.snapshot)
+function handleRouteChange() {
+  const wasOpen = !element("route-layer").hidden
+  parseRoute()
   renderRoute()
+  const isOpen = !element("route-layer").hidden
+  if (!wasOpen && isOpen) element("route-back").focus()
+  if (wasOpen && !isOpen && state.routeOrigin?.isConnected)
+    state.routeOrigin.focus()
+}
+
+function trapRouteFocus(event) {
+  if (event.key !== "Tab" || element("route-layer").hidden) return
+  const focusable = [
+    ...element("route-panel").querySelectorAll(
+      "button, a[href], [tabindex]:not([tabindex='-1'])",
+    ),
+  ].filter((target) => !target.hidden && target.offsetParent !== null)
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable.at(-1)
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 function snapshotContentKey(snapshot) {
@@ -1064,113 +867,7 @@ function renderSnapshot(snapshot) {
   element("loading-view").hidden = true
   element("dashboard-root").hidden = false
   announceTransitions(previous, snapshot)
-  renderCurrent()
-}
-
-function parseRoute() {
-  const match = location.hash.match(/^#\/(run|event)\/(\d+)$/)
-  state.route = match
-    ? { kind: match[1], id: Number(match[2]) }
-    : { kind: null, id: null }
-  if (currentDesign() === "console")
-    state.selectedConsoleEvent =
-      state.route.kind === "event" ? state.route.id : null
-}
-
-function navigate(kind, id, origin) {
-  state.routeOrigin = origin || document.activeElement
-  location.hash = `#/${kind}/${id}`
-}
-
-function closeRoute() {
-  history.back()
-}
-
-function dismissRoute() {
-  location.hash = "#/"
-}
-
-function renderRoute() {
-  const layer = element("route-layer")
-  if (!state.snapshot || !state.route.kind) {
-    layer.hidden = true
-    return
-  }
-  if (currentDesign() === "console" && state.route.kind === "event") {
-    layer.hidden = true
-    return
-  }
-  const record =
-    state.route.kind === "run"
-      ? state.snapshot.runs.find((run) => run.id === state.route.id)
-      : state.snapshot.events.find((event) => event.id === state.route.id)
-  if (!record) {
-    layer.hidden = true
-    return
-  }
-  const panel = element("route-content")
-  const routeKey = `${state.route.kind}-${state.route.id}-${state.contentKey}`
-  if (panel.dataset.routeKey !== routeKey) {
-    const focusedKey = panel.contains(document.activeElement)
-      ? document.activeElement.dataset.focusKey
-      : null
-    panel.dataset.routeKey = routeKey
-    const heading = node("div", "route-title-block")
-    heading.append(
-      node(
-        "p",
-        "eyebrow",
-        state.route.kind === "run" ? `Run ${record.id}` : `Event ${record.id}`,
-      ),
-      node(
-        "h1",
-        "",
-        state.route.kind === "run" ? record.eventTitle : record.title,
-      ),
-      node("div", "route-status"),
-    )
-    heading.querySelector("h1").id = "route-title"
-    heading.querySelector(".route-status").innerHTML = statusMarkup(
-      state.route.kind === "run" ? record.state : record.status,
-      state.route.kind === "run",
-    )
-    const body = node("div", "route-body")
-    panel.replaceChildren(heading, body)
-    if (state.route.kind === "run") runDetails(body, record)
-    else {
-      eventDetails(body, record)
-      const attempts = state.snapshot.runs.filter(
-        (run) => run.eventId === record.id,
-      )
-      const attemptsSection = node("section", "route-attempts")
-      attemptsSection.append(node("h2", "eyebrow", "Triage attempts"))
-      const list = node("div")
-      renderRunList(list, attempts, `route-event-${record.id}`)
-      attemptsSection.append(list)
-      body.append(attemptsSection)
-    }
-    if (focusedKey)
-      requestAnimationFrame(() =>
-        panel
-          .querySelector(`[data-focus-key="${CSS.escape(focusedKey)}"]`)
-          ?.focus(),
-      )
-  }
-  setText(
-    "route-kind",
-    state.route.kind === "run" ? "Run detail" : "Event detail",
-  )
-  layer.hidden = false
-}
-
-function handleRouteChange() {
-  const wasOpen = !element("route-layer").hidden
-  parseRoute()
-  renderCurrent()
-  const isOpen = !element("route-layer").hidden
-  if (!wasOpen && isOpen) element("route-back").focus()
-  if (wasOpen && !isOpen && state.routeOrigin?.isConnected)
-    state.routeOrigin.focus()
+  renderDashboard()
 }
 
 function setConnection(mode) {
@@ -1203,27 +900,41 @@ function setConnection(mode) {
 function updateConnectionAge() {
   if (!state.lastSuccessAt) return
   const age = Date.now() - state.lastSuccessAt
-  setText("connection-note", `updated ${formatDuration(age)} ago`)
+  setText("connection-note", `refreshed ${formatDuration(age)} ago`)
   if (age > 15000 && state.snapshot && state.failureCount === 0)
     setConnection("stale")
 }
 
-function updateLiveTimes() {
+function updateLiveValues() {
   document.querySelectorAll("[data-relative-time]").forEach((target) => {
     const prefix = target.dataset.relativeTimePrefix || ""
     setText(target, `${prefix}${relativeTime(target.dataset.relativeTime)}`)
   })
-  document
-    .querySelectorAll("[data-started-at], .run-live-duration")
-    .forEach((target) => {
-      if (!target.dataset.startedAt) return
-      const end = parseTime(target.dataset.endedAt) ?? Date.now()
-      setText(target, formatDuration(elapsed(target.dataset.startedAt, end)))
-    })
-  document.querySelectorAll("[data-step-started-at]").forEach((target) => {
-    if (target.dataset.stepEndedAt) return
-    setText(target, `${formatDuration(elapsed(target.dataset.stepStartedAt))}…`)
+  document.querySelectorAll("[data-started-at]").forEach((target) => {
+    const end = parseTime(target.dataset.endedAt) ?? Date.now()
+    setText(target, compactDuration(elapsed(target.dataset.startedAt, end)))
   })
+  document.querySelectorAll("[data-step-started-at]").forEach((target) => {
+    const duration = elapsed(target.dataset.stepStartedAt)
+    setText(target, `◐ ${compactDuration(duration)}...`)
+    const row = target.closest(".activity-row")
+    if (!row) return
+    const description = `${row.dataset.activityLabel}, Running, ${formatDuration(duration)}, started ${formatDuration(elapsed(row.dataset.runStartedAt, parseTime(target.dataset.stepStartedAt)))} after run start`
+    row.setAttribute("aria-label", description)
+    row.dataset.tooltip = description
+  })
+  setText(
+    "dashboard-clock",
+    new Date().toLocaleString([], {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }),
+  )
   updateConnectionAge()
 }
 
@@ -1257,135 +968,67 @@ async function refresh() {
   }
 }
 
-function resolvedTheme(choice) {
-  if (choice !== "system") return choice
-  return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme
+  const toggle = element("theme-toggle")
+  const isDark = theme === "dark"
+  setText(toggle, isDark ? "◑ dark" : "☀ light")
+  toggle.setAttribute(
+    "aria-label",
+    `Switch to ${isDark ? "light" : "dark"} theme`,
+  )
 }
 
-function applyTheme(choice, persist) {
-  document.documentElement.dataset.theme = resolvedTheme(choice)
-  document.documentElement.dataset.themeChoice = choice
-  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
-    button.setAttribute(
-      "aria-pressed",
-      String(button.dataset.themeChoice === choice),
-    )
-  })
-  if (persist) {
-    try {
-      localStorage.setItem("im-theme", choice)
-    } catch {}
-  }
-}
-
-function trapRouteFocus(event) {
-  if (event.key !== "Tab" || element("route-layer").hidden) return
-  const focusable = [
-    ...element("route-panel").querySelectorAll(
-      "button, a[href], select, [tabindex]:not([tabindex='-1'])",
-    ),
-  ].filter((target) => !target.hidden && target.offsetParent !== null)
-  if (!focusable.length) return
-  const first = focusable[0]
-  const last = focusable.at(-1)
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
-}
-
-function handleRootClick(event) {
+function handleDashboardClick(event) {
   const control = event.target.closest("button")
   if (!control) return
   if (control.dataset.filter) {
     state.filter = control.dataset.filter
-    renderCurrent()
+    renderDashboard()
     return
   }
-  if (
-    control.dataset.action === "expand-event" ||
-    control.dataset.action === "expand-run"
-  ) {
-    const key = control.dataset.expandKey
-    if (state.expanded.has(key)) state.expanded.delete(key)
-    else state.expanded.add(key)
-    renderCurrent()
-    return
-  }
-  if (control.dataset.action === "console-close") {
-    state.selectedConsoleEvent = null
-    history.pushState(null, "", "#/")
-    parseRoute()
-    renderCurrent()
-    element("dashboard-root").querySelector("[data-console-events]")?.focus()
-    return
-  }
-  if (control.dataset.action === "route-event")
-    navigate("event", control.dataset.id, control)
-  if (control.dataset.action === "route-run")
-    navigate("run", control.dataset.id, control)
+  const id = Number(control.dataset.id)
+  if (control.dataset.action === "toggle-run") {
+    if (state.expandedRuns.has(id)) state.expandedRuns.delete(id)
+    else state.expandedRuns.add(id)
+    renderDashboard()
+    requestAnimationFrame(() =>
+      element("dashboard-root")
+        .querySelector(`[data-focus-key="active-run-${id}"]`)
+        ?.focus(),
+    )
+  } else if (control.dataset.action === "toggle-event") {
+    if (state.expandedEvents.has(id)) state.expandedEvents.delete(id)
+    else state.expandedEvents.add(id)
+    renderDashboard()
+    requestAnimationFrame(() =>
+      element("dashboard-root")
+        .querySelector(`[data-focus-key="event-${id}"]`)
+        ?.focus(),
+    )
+  } else if (control.dataset.action === "route-run")
+    navigate("run", id, control)
+  else if (control.dataset.action === "route-event")
+    navigate("event", id, control)
 }
 
-function handleConsoleKeys(event) {
-  if (currentDesign() !== "console" || !state.snapshot) return
-  const list = event.target.closest("[data-console-events]")
-  if (!list || !["ArrowDown", "ArrowUp", "j", "k", "Enter"].includes(event.key))
-    return
-  const events = filteredEvents(state.snapshot)
-  if (!events.length) return
-  event.preventDefault()
-  let index = events.findIndex((item) => item.id === state.selectedConsoleEvent)
-  if (event.key === "Enter") {
-    const selected = events[Math.max(0, index)]
-    if (selected) navigate("event", selected.id, list)
-    return
-  }
-  index += event.key === "ArrowUp" || event.key === "k" ? -1 : 1
-  index = Math.max(0, Math.min(events.length - 1, index))
-  state.selectedConsoleEvent = events[index].id
-  history.pushState(null, "", `#/event/${events[index].id}`)
-  parseRoute()
-  renderCurrent()
-  list
-    .querySelector(`[data-id="${events[index].id}"]`)
-    ?.scrollIntoView({ block: "nearest" })
-}
+mountDashboard(element("dashboard-root"))
+parseRoute()
+applyTheme(document.documentElement.dataset.theme || "dark")
+setConnection("connecting")
+updateLiveValues()
 
-const designSelect = element("design-select")
-designSelect.value = currentDesign()
-designSelect.addEventListener("change", () => {
-  const design = DESIGN_IDS.includes(designSelect.value)
-    ? designSelect.value
-    : "ledger"
+element("theme-toggle").addEventListener("click", () => {
+  const theme =
+    document.documentElement.dataset.theme === "dark" ? "light" : "dark"
+  applyTheme(theme)
   try {
-    localStorage.setItem("im-design", design)
+    localStorage.setItem("im-theme", theme)
   } catch {}
-  const url = new URL(location.href)
-  url.searchParams.set("design", design)
-  location.assign(url)
 })
-
-for (const button of document.querySelectorAll("[data-theme-choice]"))
-  button.addEventListener("click", () =>
-    applyTheme(button.dataset.themeChoice, true),
-  )
-
-const themeChoice = document.documentElement.dataset.themeChoice || "system"
-applyTheme(themeChoice, false)
-const systemTheme = matchMedia("(prefers-color-scheme: light)")
-systemTheme.addEventListener("change", () => {
-  if (document.documentElement.dataset.themeChoice === "system")
-    applyTheme("system", false)
-})
-
-element("dashboard-root").addEventListener("click", handleRootClick)
-element("dashboard-root").addEventListener("keydown", handleConsoleKeys)
-element("route-back").addEventListener("click", closeRoute)
-element("route-close").addEventListener("click", dismissRoute)
-element("route-backdrop").addEventListener("click", dismissRoute)
+element("dashboard-root").addEventListener("click", handleDashboardClick)
+element("route-content").addEventListener("click", handleDashboardClick)
+element("route-back").addEventListener("click", dismissRoute)
 document.addEventListener("keydown", (event) => {
   trapRouteFocus(event)
   if (event.key === "Escape" && !element("route-layer").hidden) dismissRoute()
@@ -1396,9 +1039,5 @@ document.addEventListener("visibilitychange", () => {
   clearTimeout(state.refreshTimer)
   if (document.visibilityState === "visible") refresh()
 })
-
-parseRoute()
-setText("daemon-label", `${location.host} · local daemon`)
-setConnection("connecting")
-setInterval(updateLiveTimes, 1000)
+setInterval(updateLiveValues, 1000)
 refresh()

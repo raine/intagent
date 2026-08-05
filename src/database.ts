@@ -32,7 +32,7 @@ export interface EventRecord {
 
 export interface TriageRunStepRecord {
   id: number
-  kind: "tool"
+  kind: "tool" | "thinking" | "compaction"
   label: string
   startedAt: string
   endedAt: string | null
@@ -490,6 +490,10 @@ export class IntakeDatabase {
       toolCallId?: string
       toolName?: string
       isError?: boolean
+      assistantMessageEvent?: {
+        type?: string
+        contentIndex?: number
+      }
     },
     now = new Date().toISOString(),
   ): void {
@@ -515,6 +519,31 @@ export class IntakeDatabase {
             runId,
             event.toolCallId,
           )
+      } else if (
+        event.type === "message_update" &&
+        event.assistantMessageEvent?.type === "thinking_start"
+      ) {
+        this.raw
+          .query(
+            "INSERT OR IGNORE INTO triage_run_steps(run_id, step_key, kind, label, started_at) VALUES (?, ?, 'thinking', 'thinking', ?)",
+          )
+          .run(
+            runId,
+            `thinking:${now}:${event.assistantMessageEvent.contentIndex ?? ""}`,
+            now,
+          )
+      } else if (
+        event.type === "message_update" &&
+        event.assistantMessageEvent?.type === "thinking_end"
+      ) {
+        this.raw
+          .query(
+            `UPDATE triage_run_steps SET ended_at = ?, outcome = 'succeeded'
+             WHERE id = (SELECT id FROM triage_run_steps
+               WHERE run_id = ? AND kind = 'thinking' AND ended_at IS NULL
+               ORDER BY id DESC LIMIT 1)`,
+          )
+          .run(now, runId)
       } else if (event.type === "turn_end") {
         this.raw
           .query(
@@ -527,7 +556,21 @@ export class IntakeDatabase {
             "UPDATE triage_runs SET retry_count = retry_count + 1 WHERE id = ?",
           )
           .run(runId)
+      } else if (event.type === "compaction_start") {
+        this.raw
+          .query(
+            "INSERT OR IGNORE INTO triage_run_steps(run_id, step_key, kind, label, started_at) VALUES (?, ?, 'compaction', 'compaction', ?)",
+          )
+          .run(runId, `compaction:${now}`, now)
       } else if (event.type === "compaction_end") {
+        this.raw
+          .query(
+            `UPDATE triage_run_steps SET ended_at = ?, outcome = 'succeeded'
+             WHERE id = (SELECT id FROM triage_run_steps
+               WHERE run_id = ? AND kind = 'compaction' AND ended_at IS NULL
+               ORDER BY id DESC LIMIT 1)`,
+          )
+          .run(now, runId)
         this.raw
           .query(
             "UPDATE triage_runs SET compaction_count = compaction_count + 1 WHERE id = ?",
