@@ -341,9 +341,11 @@ function EventFacts({
 function ActivityList({
   run,
   limit,
+  className = "activity-list",
 }: {
   run: DashboardRun
   limit?: number
+  className?: string
 }): JSX.Element {
   const now = useClock()
   const steps = limit ? run.steps.slice(-limit) : run.steps
@@ -354,7 +356,7 @@ function ActivityList({
   if (!steps.length)
     return <p className="empty-state">Waiting for recorded activity</p>
   return (
-    <div className="activity-list inspector-activity">
+    <div className={className}>
       {steps.map((step) => {
         const duration = elapsed(step.startedAt, step.endedAt)
         const kind = step.kind || "tool"
@@ -404,12 +406,12 @@ function ActivityList({
   )
 }
 
-function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
+export function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
   const [expanded, setExpanded] = useState(true)
   const now = useClock()
   const stalled = now - parseTime(run.lastActivityAt) > 120_000
   return (
-    <article className={`active-run${stalled ? " active-run-stalled" : ""}`}>
+    <article className={`active-run${stalled ? " is-stalled" : ""}`}>
       <button
         className="active-run-summary"
         type="button"
@@ -441,12 +443,20 @@ function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
           last activity <b>{relativeTime(run.lastActivityAt, now)}</b>
         </span>
       </div>
-      {expanded ? <ActivityList run={run} /> : null}
-      <div className="activity-footer">
-        <span>{run.steps.length} entries</span>
-        <span>·</span>
-        <span>{privacyNote}</span>
+      <div
+        className={`active-run-activity${expanded ? " is-expanded" : ""}`}
+        aria-label={
+          expanded ? "All recorded activity" : "Latest recorded activity"
+        }
+      >
+        <ActivityList run={run} limit={expanded ? run.steps.length : 4} />
       </div>
+      {expanded ? (
+        <div className="activity-footer">
+          <span>{run.steps.length} entries</span>
+          <span className="privacy-inline">{privacyNote}</span>
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -503,7 +513,7 @@ function EventRow({
   )
 }
 
-function SourceList({
+export function SourceList({
   sources,
   now,
 }: {
@@ -516,20 +526,20 @@ function SourceList({
     <div className="sources-list">
       {sources.map((source) => (
         <article
-          className={`source-card${source.lastError ? " source-failing" : ""}`}
+          className={`source-card ${source.lastError ? "is-failing" : "is-healthy"}`}
           key={source.source}
         >
-          <header>
-            <strong>
-              {source.lastError ? "✕" : "✓"} {source.source}
-            </strong>
-            <span>{source.lastError ? "FAILING" : "HEALTHY"}</span>
-          </header>
-          <p>
-            last poll{" "}
-            {relativeTime(source.lastSuccessAt ?? source.updatedAt, now)}
+          <div className="source-heading">
+            <span aria-hidden="true">{source.lastError ? "✕" : "✓"}</span>
+            <strong>{source.source}</strong>
+            <b>{source.lastError ? "FAILING" : "HEALTHY"}</b>
+          </div>
+          <p className="source-poll">
+            last poll {relativeTime(source.updatedAt, now)}
           </p>
-          {source.lastError ? <small>{source.lastError}</small> : null}
+          {source.lastError ? (
+            <p className="source-error">{source.lastError}</p>
+          ) : null}
         </article>
       ))}
     </div>
@@ -545,7 +555,12 @@ function RecentRuns({
   now: number
   open: (run: DashboardRun) => void
 }): JSX.Element {
-  if (!runs.length) return <p className="empty-state">No recorded runs</p>
+  if (!runs.length)
+    return (
+      <p className="empty-state">
+        Run timelines appear after the watcher records triage activity.
+      </p>
+    )
   return (
     <div className="recent-runs">
       {runs.map((run) => (
@@ -566,7 +581,7 @@ function RecentRuns({
   )
 }
 
-function RunInspector({ run }: { run: DashboardRun }): JSX.Element {
+export function RunInspector({ run }: { run: DashboardRun }): JSX.Element {
   const maxDurationSeconds = Math.max(
     1,
     Math.ceil(
@@ -619,7 +634,7 @@ function RunInspector({ run }: { run: DashboardRun }): JSX.Element {
           </h2>
           <span>bar scale: 0–{maxDurationSeconds}s</span>
         </header>
-        <ActivityList run={run} />
+        <ActivityList run={run} className="activity-list inspector-activity" />
         <div className="timeline-legend">
           <span>
             <i className="legend-success" /> tool ✓
@@ -899,7 +914,7 @@ export function App(): JSX.Element {
                     : "queue clear"}
                 </small>
               </article>
-              <article className={snapshot.attention ? "metric-attention" : ""}>
+              <article className={snapshot.attention ? "stat-attention" : ""}>
                 <span>⚠ NEEDS ATTENTION</span>
                 <strong>{snapshot.attention}</strong>
                 <small>
@@ -907,7 +922,7 @@ export function App(): JSX.Element {
                   retrying
                 </small>
               </article>
-              <article className="metric-active">
+              <article className="stat-active">
                 <span>▶ ACTIVE RUNS</span>
                 <strong>
                   {snapshot.runs.filter((run) => run.state === "active").length}
