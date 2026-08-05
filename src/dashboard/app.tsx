@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { RunRoute as RunDetailRoute } from "./run-inspector.tsx"
 
 type EventStatus =
   | "pending"
@@ -44,9 +45,12 @@ interface DashboardRun {
   turnCount: number
   retryCount: number
   compactionCount: number
+  telemetryCompleteness: "complete" | "partial" | "legacy"
+  timelineTruncated: boolean
   investigationHandle: string | null
   steps: Array<{
     id: number
+    turnOrdinal: number | null
     kind: StepKind
     label: string
     startedAt: string
@@ -264,21 +268,6 @@ function ThemeToggle(): JSX.Element {
   )
 }
 
-function DetailField({
-  label,
-  value,
-}: {
-  label: string
-  value: string | number | null
-}): JSX.Element {
-  return (
-    <div className="detail-field" data-label={label}>
-      <dt>{label}</dt>
-      <dd>{value ?? "-"}</dd>
-    </div>
-  )
-}
-
 function ActivityList({
   run,
   limit,
@@ -365,7 +354,12 @@ export function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
         </span>
         <strong>{run.eventTitle}</strong>
         <small>{run.source}</small>
-        {stalled ? <span className="slow-badge">SLOW?</span> : null}
+        {stalled ? (
+          <span className="slow-badge">
+            No telemetry for{" "}
+            {compactDuration(now - parseTime(run.lastActivityAt))}
+          </span>
+        ) : null}
         <time>{compactDuration(now - parseTime(run.startedAt))}</time>
       </button>
       <div className="run-metadata">
@@ -520,99 +514,36 @@ function RecentRuns({
   )
 }
 
-export function RunInspector({ run }: { run: DashboardRun }): JSX.Element {
-  const maxDurationSeconds = Math.max(
-    1,
-    Math.ceil(
-      Math.max(
-        ...run.steps.map((step) => elapsed(step.startedAt, step.endedAt)),
-        1,
-      ) / 1000,
-    ),
-  )
-  return (
-    <div className="run-inspector">
-      <aside className="inspector-meta">
-        <h2 className="section-label">RUN</h2>
-        <dl className="inspector-facts">
-          <DetailField
-            label="duration"
-            value={formatDuration(elapsed(run.startedAt, run.endedAt))}
-          />
-          <DetailField label="started" value={clockTime(run.startedAt)} />
-          <DetailField
-            label="finished"
-            value={run.endedAt ? clockTime(run.endedAt) : "running"}
-          />
-          <DetailField label="attempt" value={run.attempt} />
-          <DetailField label="turns" value={run.turnCount} />
-          <DetailField label="retries" value={run.retryCount} />
-          <DetailField label="compactions" value={run.compactionCount} />
-        </dl>
-        <h2 className="section-label inspector-divider">MODEL</h2>
-        <dl className="inspector-facts">
-          <DetailField label="model" value={run.modelId} />
-          <DetailField label="provider" value={run.modelProvider} />
-          <DetailField label="thinking" value={run.thinkingLevel} />
-        </dl>
-        <h2 className="section-label inspector-divider">EVENT</h2>
-        <p className="inspector-event-title">{run.eventTitle}</p>
-        <dl className="inspector-facts">
-          <DetailField
-            label="source"
-            value={`${run.source}/${run.eventKind}`}
-          />
-          <DetailField label="handle" value={run.investigationHandle} />
-        </dl>
-        <p className="privacy-note">{privacyNote}</p>
-      </aside>
-      <section className="inspector-timeline">
-        <header className="timeline-heading">
-          <h2 className="section-label">
-            TIMELINE · {run.turnCount} TURNS · {run.steps.length} ENTRIES
-          </h2>
-          <span>bar scale: 0–{maxDurationSeconds}s</span>
-        </header>
-        <ActivityList run={run} className="activity-list inspector-activity" />
-        <div className="timeline-legend">
-          <span>
-            <i className="legend-success" /> tool ✓
-          </span>
-          <span>
-            <i className="legend-failed" /> tool ✕
-          </span>
-          <span>
-            <i className="legend-thinking" /> ∴ thinking
-          </span>
-          <span>
-            <i className="legend-compaction" /> ⇲ compaction
-          </span>
-          <span>
-            <i className="legend-active" /> running ◐
-          </span>
-        </div>
-      </section>
-    </div>
-  )
-}
-
 function RouteLayer({
   route,
-  snapshot,
-  now,
   close,
+  navigate,
 }: {
   route: Route
-  snapshot: DashboardSnapshot
-  now: number
   close: () => void
+  navigate: (runId: number) => void
 }): JSX.Element | null {
   const panel = useRef<HTMLElement>(null)
   useEffect(() => {
     if (!route) return
     const previous = document.activeElement as HTMLElement | null
-    panel.current?.querySelector<HTMLButtonElement>(".back-button")?.focus()
+    const background = document.querySelectorAll<HTMLElement>(
+      ".skip-link, .topbar, .connection-banner, #dashboard-content",
+    )
+    document.body.classList.add("route-open")
+    for (const element of background) {
+      element.setAttribute("inert", "")
+      element.setAttribute("aria-hidden", "true")
+    }
+    requestAnimationFrame(() =>
+      panel.current?.querySelector<HTMLButtonElement>(".back-button")?.focus(),
+    )
     return () => {
+      document.body.classList.remove("route-open")
+      for (const element of background) {
+        element.removeAttribute("inert")
+        element.removeAttribute("aria-hidden")
+      }
       if (previous?.isConnected) previous.focus()
     }
   }, [route])
@@ -626,7 +557,7 @@ function RouteLayer({
       if (event.key !== "Tab" || !panel.current) return
       const focusable = [
         ...panel.current.querySelectorAll<HTMLElement>(
-          "button, a[href], [tabindex]:not([tabindex='-1'])",
+          "button:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])",
         ),
       ].filter((element) => element.offsetParent !== null)
       const first = focusable[0]
@@ -644,9 +575,6 @@ function RouteLayer({
     return () => document.removeEventListener("keydown", onKey)
   }, [route, close])
   if (!route) return null
-  const record = snapshot.runs.find((run) => run.id === route.id)
-  if (!record) return null
-  const finished = record.endedAt
   return (
     <div id="route-layer">
       <section
@@ -655,25 +583,9 @@ function RouteLayer({
         className="route-panel"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="route-title"
+        aria-label={`Run ${route.id} inspector`}
       >
-        <header className="route-header">
-          <button className="back-button" type="button" onClick={close}>
-            ← runs
-          </button>
-          <span aria-hidden="true">/</span>
-          <strong id="route-title">{record.eventTitle}</strong>
-          <Status status={record.state} run />
-          <span className="route-spacer" />
-          <time id="route-finished">
-            {finished
-              ? `finished ${clockTime(finished)} · ${relativeTime(finished, now)}`
-              : `started ${relativeTime(record.startedAt, now)}`}
-          </time>
-        </header>
-        <div id="route-content">
-          <RunInspector run={record} />
-        </div>
+        <RunDetailRoute runId={route.id} close={close} navigate={navigate} />
       </section>
     </div>
   )
@@ -934,14 +846,11 @@ export function App(): JSX.Element {
           </div>
         )}
       </main>
-      {snapshot ? (
-        <RouteLayer
-          route={route}
-          snapshot={snapshot}
-          now={now}
-          close={() => navigate(null)}
-        />
-      ) : null}
+      <RouteLayer
+        route={route}
+        close={() => navigate(null)}
+        navigate={(runId) => navigate({ kind: "run", id: runId })}
+      />
     </>
   )
 }

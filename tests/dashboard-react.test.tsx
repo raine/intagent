@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
-import {
-  ActiveRunCard,
-  EventRow,
-  RunInspector,
-  SourceList,
-} from "../src/dashboard/app.tsx"
+import { ActiveRunCard, EventRow, SourceList } from "../src/dashboard/app.tsx"
 
-const run: Parameters<typeof RunInspector>[0]["run"] = {
+const run: Parameters<typeof ActiveRunCard>[0]["run"] = {
   id: 7,
   eventId: 11,
   eventTitle: "Inspect the dashboard timeline",
@@ -24,10 +19,13 @@ const run: Parameters<typeof RunInspector>[0]["run"] = {
   turnCount: 1,
   retryCount: 0,
   compactionCount: 0,
+  telemetryCompleteness: "complete",
+  timelineTruncated: false,
   investigationHandle: "dashboard-timeline",
   steps: [
     {
       id: 1,
+      turnOrdinal: 1,
       kind: "tool",
       label: "Read",
       startedAt: "2026-08-05T10:00:01.000Z",
@@ -131,16 +129,5 @@ describe("React dashboard components", () => {
     expect(html).toContain('class="event-summary"')
     expect(html).not.toContain("<button")
     expect(html).not.toContain("event-detail")
-  })
-
-  test("renders the dedicated run inspector", () => {
-    const html = renderToStaticMarkup(<RunInspector run={run} />)
-
-    expect(html).toContain('class="run-inspector"')
-    expect(html).toContain("TIMELINE · 1 TURNS · 1 ENTRIES")
-    expect(html).toContain("bar scale: 0–3s")
-    expect(html).toContain("github/github-issue")
-    expect(html).toContain("dashboard-timeline")
-    expect(html).toContain("Tool arguments, commands, output")
   })
 })
