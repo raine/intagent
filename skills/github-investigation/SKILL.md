@@ -20,9 +20,17 @@ Use these skills for command syntax:
    For a new task, prefer `Issue #<number>: <concise issue title>` or
    `PR #<number>: <concise pull request title>`. Put the URL, request, and
    inferred priority in its description.
-3. Reuse workmux only when `priorHandling.investigationHandle` identifies the
-   investigation. Treat every separate issue or pull request as a separate
-   investigation.
+3. When `priorHandling.investigationHandle` resolves to an existing workmux
+   agent, send the update there regardless of whether its status is `working`,
+   `waiting`, or `done`. Do not create another worktree or invoke `/investigate`
+   again for the same issue or pull request. Send this prompt:
+
+   ```text
+   A new GitHub reply was added to this <issue-or-pull-request>: <url>. Read the latest discussion and update the existing investigation with what changed.
+   ```
+
+   Create a replacement investigation only when the prior handle is unavailable.
+
 4. Dispatch `workmux add` from the matched repository with a concise name and
    `--parent-session <repository-directory-name>`. Use the remote default branch
    with `--base` for an issue and `--pr <url>` for a pull request. Pass this
