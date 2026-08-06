@@ -78,6 +78,7 @@ describe("React dashboard components", () => {
     expect(html).toContain('class="source-card is-healthy"')
     expect(html).toContain('class="source-card is-failing"')
     expect(html).toContain('class="source-heading"')
+    expect(html).toContain('class="source-marker"')
     expect(html).toContain('class="source-poll"')
     expect(html).toContain('class="source-error"')
     expect(html).toContain("last success 6m ago")
@@ -98,6 +99,7 @@ describe("React dashboard components", () => {
 
     expect(html).toContain("active-run is-stalled")
     expect(html).toContain("active-run-activity is-expanded")
+    expect(html).toContain('class="activity-marker"')
     expect(html).toContain("inspect run →")
   })
 
@@ -114,6 +116,7 @@ describe("React dashboard components", () => {
     expect(html).toContain(
       "Open run inspector for Inspect the dashboard timeline",
     )
+    expect(html).toContain('class="status-glyph"')
     expect(html).not.toContain("event-detail")
     expect(html).not.toContain("Open event inspector")
   })

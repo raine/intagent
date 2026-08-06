@@ -246,7 +246,9 @@ function Status({
     : eventStates[status as EventStatus]
   return (
     <span className={`status status-${status}`} aria-label={definition.label}>
-      <span aria-hidden="true">{definition.glyph}</span>
+      <span className="status-glyph" aria-hidden="true">
+        {definition.glyph}
+      </span>
       <b aria-hidden="true">{definition.short}</b>
     </span>
   )
@@ -328,8 +330,13 @@ function ActivityList({
             <span className="activity-turn">{kind}</span>
             <strong className="activity-label">{label}</strong>
             <span className="activity-state">
-              {glyph} {compactDuration(liveDuration)}
-              {step.state === "active" ? "..." : ""}
+              <span className="activity-marker" aria-hidden="true">
+                {glyph}
+              </span>
+              <span>
+                {compactDuration(liveDuration)}
+                {step.state === "active" ? "..." : ""}
+              </span>
             </span>
             <span className="activity-track" aria-hidden="true">
               <i
@@ -479,7 +486,9 @@ export function SourceList({
           key={source.source}
         >
           <div className="source-heading">
-            <span aria-hidden="true">{source.lastError ? "✕" : "✓"}</span>
+            <span className="source-marker" aria-hidden="true">
+              {source.lastError ? "✕" : "✓"}
+            </span>
             <strong>{source.source}</strong>
             <b>{source.lastError ? "FAILING" : "HEALTHY"}</b>
           </div>

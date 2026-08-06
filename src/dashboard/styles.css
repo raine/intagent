@@ -346,6 +346,39 @@
     color: var(--red);
   }
 
+  .status-glyph,
+  .activity-marker,
+  .source-marker {
+    align-items: center;
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 15px;
+    justify-content: center;
+    line-height: 1;
+    width: 15px;
+  }
+
+  .status-succeeded .status-glyph,
+  .activity-tool.activity-succeeded .activity-marker,
+  .source-card.is-healthy .source-marker {
+    background: color-mix(in srgb, var(--green) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--green) 38%, var(--edge));
+    border-radius: 50%;
+    color: var(--green);
+    font-size: 0;
+  }
+
+  .status-succeeded .status-glyph::after,
+  .activity-tool.activity-succeeded .activity-marker::after,
+  .source-card.is-healthy .source-marker::after {
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    content: "";
+    height: 6px;
+    transform: translateY(-1px) rotate(45deg);
+    width: 3px;
+  }
+
   .active-run {
     background: var(--surface);
     border: 1px solid color-mix(in srgb, var(--blue) 28%, var(--edge));
@@ -474,7 +507,10 @@
   }
 
   .activity-state {
+    align-items: center;
     color: var(--green);
+    display: inline-flex;
+    gap: 5px;
   }
 
   .activity-thinking .activity-label,
@@ -805,6 +841,29 @@
     color: var(--muted);
     padding: 14px 8px;
   }
+
+  .connection strong,
+  .connection-note,
+  .dashboard-clock,
+  .section-label,
+  .status,
+  .activity-row,
+  .detail-field dt,
+  .source-poll,
+  .source-error,
+  .recent-run strong {
+    font-size: 11px;
+  }
+
+  .slow-badge,
+  .active-run-activity.is-expanded::before,
+  .activity-footer,
+  .window-note,
+  .source-heading b,
+  .recent-run time,
+  .stat-strip span {
+    font-size: 10px;
+  }
 }
 
 @layer layout {
@@ -831,7 +890,7 @@
 
   .stat-strip span {
     color: var(--muted);
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.1em;
   }
 
