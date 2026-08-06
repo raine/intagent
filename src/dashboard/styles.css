@@ -2113,6 +2113,14 @@
     background: color-mix(in srgb, var(--page) 55%, var(--surface));
   }
 
+  .activity-list {
+    margin-inline: -14px;
+  }
+
+  .activity-list .phase-row {
+    padding-left: 14px;
+  }
+
   .phase-row {
     align-items: center;
     border-top: 1px solid var(--edge-soft);
@@ -2684,6 +2692,10 @@
       grid-template-columns: minmax(0, 1fr) max-content;
       min-height: 58px;
       padding: 7px 8px 7px 28px;
+    }
+
+    .activity-list .phase-row {
+      padding-left: 8px;
     }
 
     .phase-copy {

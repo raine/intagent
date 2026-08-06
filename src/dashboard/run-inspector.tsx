@@ -15,7 +15,6 @@ import {
   type RetryEntry,
   type SummaryCount,
   type TimelineFilter,
-  type TurnGroup,
 } from "./run-inspector-data.ts"
 
 const staleThreshold = 120_000
@@ -32,7 +31,7 @@ const filterLabels: Record<TimelineFilter, string> = {
 
 const timelineTitles: Record<TimelineFilter, string> = {
   tools: "Tool activity",
-  all: "Turn-by-turn execution",
+  all: "Activity timeline",
   attention: "Activity needing attention",
   thinking: "Model activity",
   retries: "Model retries",
@@ -473,88 +472,38 @@ export function RunInspector({
   const counts = useMemo(() => runSummaryCounts(detail), [detail])
   const budget = useMemo(() => timeBudget(detail.metrics), [detail.metrics])
   const [filter, setFilter] = useState<TimelineFilter>(initialFilter)
-  const [expanded, setExpanded] = useState<Set<number>>(new Set())
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [following, setFollowing] = useState(detail.run.state === "active")
-  const currentTurn = grouped.turns.at(-1)?.turn.ordinal ?? null
-  const [rovingTurn, setRovingTurn] = useState(currentTurn)
   const timelineRef = useRef<HTMLElement>(null)
+  const activity = useMemo(
+    () =>
+      [
+        ...grouped.turns.flatMap((group) => [...group.spans, ...group.phases]),
+        ...grouped.unassigned,
+      ].sort(
+        (left, right) => parseTime(left.startedAt) - parseTime(right.startedAt),
+      ),
+    [grouped],
+  )
+  const visibleActivity = activity.filter((entry) =>
+    matchesFilter(entry, filter),
+  )
 
   useEffect(() => {
-    if (!following || detail.run.state !== "active" || currentTurn === null)
-      return
-    document.getElementById(`turn-${currentTurn}`)?.scrollIntoView({
-      block: "nearest",
-      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-    })
-  }, [currentTurn, detail.generatedAt, detail.run.state, following])
+    if (!following || detail.run.state !== "active") return
+    timelineRef.current
+      ?.querySelector(".phase-list > .phase-row:last-child")
+      ?.scrollIntoView({
+        block: "nearest",
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      })
+  }, [activity.length, detail.generatedAt, detail.run.state, following])
 
-  const isExpanded = (group: TurnGroup): boolean => {
-    const ordinal = group.turn.ordinal
-    if (collapsed.has(ordinal)) return false
-    if (expanded.has(ordinal)) return true
-    if (filter !== "all") return true
-    return group.needsAttention || group.turn.state === "active"
-  }
-  const toggleTurn = (group: TurnGroup): void => {
-    const ordinal = group.turn.ordinal
-    if (isExpanded(group)) {
-      setExpanded((values) => without(values, ordinal))
-      setCollapsed((values) => withValue(values, ordinal))
-    } else {
-      setCollapsed((values) => without(values, ordinal))
-      setExpanded((values) => withValue(values, ordinal))
-    }
-  }
-  const moveTurnFocus = (ordinal: number): void => {
-    setRovingTurn(ordinal)
-    requestAnimationFrame(() => {
-      document
-        .getElementById(`turn-${ordinal}`)
-        ?.querySelector<HTMLButtonElement>(".turn-disclosure")
-        ?.focus()
-    })
-  }
-  const focusTurn = (ordinal: number): void => {
-    setRovingTurn(ordinal)
-    setCollapsed((values) => without(values, ordinal))
-    setExpanded((values) => withValue(values, ordinal))
-    requestAnimationFrame(() => {
-      const target = document.getElementById(`turn-${ordinal}`)
-      target?.scrollIntoView({ block: "start" })
-      target?.querySelector<HTMLButtonElement>(".turn-disclosure")?.focus()
-    })
-  }
-  const firstFailure = grouped.turns.find(
-    (group) =>
-      group.turn.state === "interrupted" ||
-      group.turn.stopReason === "error" ||
-      group.spans.some((span) => span.state === "failed") ||
-      group.phases.some(
-        (phase) =>
-          phase.state === "failed" ||
-          phase.state === "aborted" ||
-          phase.state === "interrupted",
-      ),
-  )
   const wall = Math.max(
     0,
     runEnd(detail, now) - parseTime(detail.run.startedAt),
   )
-  const visibleTurns = grouped.turns.filter((group) => {
-    if (filter === "all") return true
-    if (filter === "attention") return group.needsAttention
-    return [...group.spans, ...group.phases].some((entry) =>
-      matchesFilter(entry, filter),
-    )
-  })
-  const tabbableTurn = visibleTurns.some(
-    (group) => group.turn.ordinal === rovingTurn,
-  )
-    ? rovingTurn
-    : (visibleTurns[0]?.turn.ordinal ?? null)
 
   return (
     <div className="run-inspector">
@@ -628,10 +577,6 @@ export function RunInspector({
           </div>
           <VerdictFact label="Duration" value={formatDuration(wall)} />
           <VerdictFact
-            label="Turns"
-            value={nullableCount(detail.metrics.turnCount)}
-          />
-          <VerdictFact
             label="Tools"
             value={summaryCountLabel(counts.toolCalls)}
           />
@@ -690,18 +635,10 @@ export function RunInspector({
         <ExecutionTimeline
           detail={detail}
           now={now}
-          groups={grouped.turns}
-          visibleTurns={visibleTurns}
-          unassigned={grouped.unassigned}
+          activity={activity}
+          visibleActivity={visibleActivity}
           filter={filter}
           setFilter={setFilter}
-          isExpanded={isExpanded}
-          toggleTurn={toggleTurn}
-          focusTurn={focusTurn}
-          moveTurnFocus={moveTurnFocus}
-          firstFailure={firstFailure?.turn.ordinal ?? null}
-          rovingTurn={tabbableTurn}
-          setRovingTurn={setRovingTurn}
           following={following}
           setFollowing={setFollowing}
           timelineRef={timelineRef}
@@ -728,10 +665,6 @@ function VerdictFact({
       <strong>{value}</strong>
     </div>
   )
-}
-
-function nullableCount(value: number | null): string {
-  return value === null ? "unavailable" : formatNumber(value)
 }
 
 function summaryCountLabel(count: SummaryCount): string {
@@ -820,18 +753,10 @@ function TimeBudget({
 interface TimelineProps {
   detail: RunDetail
   now: number
-  groups: TurnGroup[]
-  visibleTurns: TurnGroup[]
-  unassigned: Array<GroupedSpan | PhaseEntry>
+  activity: Array<GroupedSpan | PhaseEntry>
+  visibleActivity: Array<GroupedSpan | PhaseEntry>
   filter: TimelineFilter
   setFilter: (filter: TimelineFilter) => void
-  isExpanded: (group: TurnGroup) => boolean
-  toggleTurn: (group: TurnGroup) => void
-  focusTurn: (ordinal: number) => void
-  moveTurnFocus: (ordinal: number) => void
-  firstFailure: number | null
-  rovingTurn: number | null
-  setRovingTurn: (ordinal: number) => void
   following: boolean
   setFollowing: (value: boolean) => void
   timelineRef: React.RefObject<HTMLElement>
@@ -840,9 +765,9 @@ interface TimelineProps {
 }
 
 function ExecutionTimeline(props: TimelineProps): JSX.Element {
-  const { detail, groups, visibleTurns, filter } = props
-  const terminalEmpty =
-    detail.run.state !== "active" && detail.timeline.entries.length === 0
+  const { detail, activity, visibleActivity, filter } = props
+  const empty = activity.length === 0
+  const countLabel = `${visibleActivity.length} shown · ${activity.length} loaded`
   return (
     <section
       className="execution-timeline"
@@ -856,19 +781,8 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
           <span>Shared wall-clock axis</span>
           <h2 id="timeline-title">{timelineTitles[filter]}</h2>
         </div>
-        <strong>
-          {detail.timeline.entries.length} of {detail.timeline.page.total}{" "}
-          entries
-        </strong>
+        <strong>{countLabel}</strong>
       </header>
-      {groups.length ? (
-        <RunMinimap
-          detail={detail}
-          now={props.now}
-          groups={groups}
-          focusTurn={props.focusTurn}
-        />
-      ) : null}
       <div className="timeline-controls">
         <div
           className="timeline-filters"
@@ -886,26 +800,8 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
             </button>
           ))}
         </div>
-        <div className="timeline-jumps">
-          <button
-            type="button"
-            disabled={props.firstFailure === null}
-            onClick={() =>
-              props.firstFailure !== null && props.focusTurn(props.firstFailure)
-            }
-          >
-            First error
-          </button>
-          <button
-            type="button"
-            disabled={!groups.length}
-            onClick={() =>
-              groups.at(-1) && props.focusTurn(groups.at(-1)!.turn.ordinal)
-            }
-          >
-            Latest activity
-          </button>
-          {detail.run.state === "active" ? (
+        {detail.run.state === "active" ? (
+          <div className="timeline-jumps">
             <button
               type="button"
               aria-pressed={props.following}
@@ -913,61 +809,29 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
             >
               {props.following ? "Pause live follow" : "Resume live follow"}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
-      {terminalEmpty ? (
+      {empty ? (
         <p className="timeline-empty">
-          No structured activity was recorded for this terminal run.
+          {detail.run.state === "active"
+            ? "Waiting for tool or model activity."
+            : "No tool or model activity was recorded for this run."}
         </p>
-      ) : null}
-      {!terminalEmpty && !groups.length ? (
-        <LegacyTimeline
-          detail={detail}
-          now={props.now}
-          entries={props.unassigned}
-          filter={filter}
-        />
-      ) : null}
-      <div className="turn-list">
-        {visibleTurns.map((group) => {
-          return (
-            <TurnSection
+      ) : visibleActivity.length ? (
+        <div className="phase-list activity-list">
+          {visibleActivity.map((entry) => (
+            <PhaseRow
               detail={detail}
               now={props.now}
-              group={group}
-              expanded={props.isExpanded(group)}
-              toggle={() => props.toggleTurn(group)}
-              tabIndex={group.turn.ordinal === props.rovingTurn ? 0 : -1}
-              onFocus={() => props.setRovingTurn(group.turn.ordinal)}
-              onMove={(direction) => {
-                const currentIndex = visibleTurns.indexOf(group)
-                const targetIndex =
-                  direction === "first"
-                    ? 0
-                    : direction === "last"
-                      ? visibleTurns.length - 1
-                      : currentIndex + direction
-                const target = visibleTurns[targetIndex]
-                if (target) props.moveTurnFocus(target.turn.ordinal)
-              }}
-              filter={filter}
-              key={group.turn.id}
+              entry={entry}
+              key={`${entry.type}-${entry.id}`}
             />
-          )
-        })}
-      </div>
-      {props.unassigned.length > 0 && groups.length > 0 ? (
-        <LegacyTimeline
-          detail={detail}
-          now={props.now}
-          entries={props.unassigned}
-          filter={filter}
-        />
-      ) : null}
-      {!visibleTurns.length && groups.length ? (
-        <p className="timeline-empty">No turns match this filter.</p>
-      ) : null}
+          ))}
+        </div>
+      ) : (
+        <p className="timeline-empty">No activity matches this filter.</p>
+      )}
       {detail.timeline.page.hasMore ? (
         <div className="timeline-pagination" role="status">
           <div>
@@ -989,225 +853,6 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
         </div>
       ) : null}
     </section>
-  )
-}
-
-function RunMinimap({
-  detail,
-  now,
-  groups,
-  focusTurn,
-}: {
-  detail: RunDetail
-  now: number
-  groups: TurnGroup[]
-  focusTurn: (ordinal: number) => void
-}): JSX.Element {
-  const [roving, setRoving] = useState(groups.length - 1)
-  const buttons = useRef<Array<HTMLButtonElement | null>>([])
-  const move = (index: number): void => {
-    const next = Math.max(0, Math.min(groups.length - 1, index))
-    setRoving(next)
-    buttons.current[next]?.focus()
-  }
-  return (
-    <div className="run-minimap" aria-label="Whole-run waterfall">
-      <div className="minimap-axis" aria-hidden="true">
-        <span>0</span>
-        <span>full run · {formatDuration(detail.metrics.durationMs.wall)}</span>
-        <span>100%</span>
-      </div>
-      <div className="minimap-track">
-        {groups.map((group, index) => {
-          const position = entryPosition(detail, group.turn, now)
-          return (
-            <button
-              key={group.turn.id}
-              ref={(node) => {
-                buttons.current[index] = node
-              }}
-              type="button"
-              className={`minimap-turn${group.needsAttention ? " minimap-attention" : group.hasSignal ? " minimap-signal" : ""}${position.marker ? " is-marker" : ""}`}
-              style={{
-                left: `${position.left}%`,
-                width: position.marker ? undefined : `${position.width}%`,
-              }}
-              tabIndex={index === roving ? 0 : -1}
-              onFocus={() => setRoving(index)}
-              onClick={() => focusTurn(group.turn.ordinal)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowRight") {
-                  event.preventDefault()
-                  move(index + 1)
-                } else if (event.key === "ArrowLeft") {
-                  event.preventDefault()
-                  move(index - 1)
-                } else if (event.key === "Home") {
-                  event.preventDefault()
-                  move(0)
-                } else if (event.key === "End") {
-                  event.preventDefault()
-                  move(groups.length - 1)
-                }
-              }}
-              aria-label={`Turn ${group.turn.ordinal}, ${offsetTime(detail, group.turn.startedAt)}, ${formatDuration(timelineDuration(detail, group.turn, now))}${group.needsAttention ? ", needs attention" : group.hasSignal ? ", retry or compaction recorded" : ""}`}
-            >
-              {position.marker ? <i aria-hidden="true" /> : null}
-              <span aria-hidden="true">{group.turn.ordinal}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function TurnSection({
-  detail,
-  now,
-  group,
-  expanded,
-  toggle,
-  tabIndex,
-  onFocus,
-  onMove,
-  filter,
-}: {
-  detail: RunDetail
-  now: number
-  group: TurnGroup
-  expanded: boolean
-  toggle: () => void
-  tabIndex: 0 | -1
-  onFocus: () => void
-  onMove: (direction: -1 | 1 | "first" | "last") => void
-  filter: TimelineFilter
-}): JSX.Element {
-  const entries = [...group.spans, ...group.phases]
-    .sort(
-      (left, right) => parseTime(left.startedAt) - parseTime(right.startedAt),
-    )
-    .filter((entry) => matchesFilter(entry, filter))
-  const tools = group.spans.filter((span) => span.kind === "tool")
-  const failed = tools.filter((span) => span.state === "failed").length
-  const retryCount = group.phases.filter(
-    (phase) => phase.type === "retry",
-  ).length
-  const compactionCount = group.phases.filter(
-    (phase) => phase.type === "compaction",
-  ).length
-  const turnDuration = timelineDuration(detail, group.turn, now)
-  const countBits = [
-    tools.length
-      ? `${tools.length} ${tools.length === 1 ? "tool" : "tools"}`
-      : null,
-    failed ? `${failed} failed` : null,
-  ].filter((value): value is string => value !== null)
-  const signalBits = [
-    retryCount
-      ? `${retryCount} ${retryCount === 1 ? "retry" : "retries"}`
-      : null,
-    compactionCount
-      ? `${compactionCount} ${compactionCount === 1 ? "compaction" : "compactions"}`
-      : null,
-  ].filter((value): value is string => value !== null)
-  const stopDetail =
-    group.turn.stopReason && group.turn.stopReason !== "stop"
-      ? stateLabel(group.turn.stopReason)
-      : stateLabel(group.turn.state)
-  return (
-    <article
-      className={`turn turn-${group.turn.state}${filter !== "all" ? " turn-filtered" : ""}${group.needsAttention ? " turn-attention" : group.hasSignal ? " turn-signal" : ""}`}
-      id={`turn-${group.turn.ordinal}`}
-    >
-      <button
-        className="turn-disclosure"
-        type="button"
-        onClick={toggle}
-        tabIndex={tabIndex}
-        onFocus={onFocus}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault()
-            onMove(1)
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault()
-            onMove(-1)
-          } else if (event.key === "Home") {
-            event.preventDefault()
-            onMove("first")
-          } else if (event.key === "End") {
-            event.preventDefault()
-            onMove("last")
-          }
-        }}
-        aria-expanded={expanded}
-        aria-controls={`turn-body-${group.turn.id}`}
-      >
-        <span className="turn-chevron" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
-        </span>
-        <span className="turn-ordinal">
-          <small>Turn</small>
-          <strong>{group.turn.ordinal}</strong>
-        </span>
-        <span className="turn-time">
-          <strong>{offsetTime(detail, group.turn.startedAt)}</strong>
-          <small>{exactTime(group.turn.startedAt)}</small>
-        </span>
-        <span className="turn-duration">
-          <strong>{formatDuration(turnDuration)}</strong>
-          <small>{stopDetail}</small>
-        </span>
-        <span className="turn-counts">
-          <strong>{countBits.join(" · ") || "No tool calls"}</strong>
-          {signalBits.length ? <small>{signalBits.join(" · ")}</small> : null}
-        </span>
-        <span className="turn-usage">
-          <strong>
-            {group.turn.usage.totalTokens === null
-              ? "usage unavailable"
-              : `${formatNumber(group.turn.usage.totalTokens)} tokens`}
-          </strong>
-          <small>
-            {group.turn.contextTokens === null
-              ? "context unavailable"
-              : `${formatNumber(group.turn.contextTokens)} context${group.turn.contextWindow ? ` / ${formatNumber(group.turn.contextWindow)}` : ""}`}
-          </small>
-        </span>
-        {group.needsAttention || group.hasSignal ? (
-          <span
-            className={`turn-health${group.needsAttention ? " needs-attention" : " has-signal"}`}
-          >
-            {group.needsAttention ? "error" : "signal"}
-          </span>
-        ) : null}
-      </button>
-      <div id={`turn-body-${group.turn.id}`} hidden={!expanded}>
-        {entries.length ? (
-          <div className="phase-list">
-            {entries.map((entry) => (
-              <PhaseRow
-                detail={detail}
-                now={now}
-                entry={entry}
-                key={`${entry.type}-${entry.id}`}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="turn-empty">
-            No entries in this turn match the active filter.
-          </p>
-        )}
-        {group.hasTelemetryGap ? (
-          <div className="turn-gap">
-            <span aria-hidden="true">···</span> Telemetry is incomplete for this
-            turn.
-          </div>
-        ) : null}
-      </div>
-    </article>
   )
 }
 
@@ -1408,50 +1053,6 @@ function WallTrack({
   )
 }
 
-function LegacyTimeline({
-  detail,
-  now,
-  entries,
-  filter,
-}: {
-  detail: RunDetail
-  now: number
-  entries: Array<GroupedSpan | PhaseEntry>
-  filter: TimelineFilter
-}): JSX.Element {
-  const visible = entries.filter((entry) => matchesFilter(entry, filter))
-  if (!visible.length)
-    return (
-      <p className="timeline-empty">
-        No unassigned activity matches this filter.
-      </p>
-    )
-  return (
-    <section className="unassigned-activity" aria-labelledby="unassigned-title">
-      <header>
-        <div>
-          <span>Run-level activity</span>
-          <h3 id="unassigned-title">Turn membership unavailable</h3>
-        </div>
-        <p>
-          Entries stay in exact timestamp order without inferred turn
-          membership.
-        </p>
-      </header>
-      <div className="phase-list">
-        {visible.map((entry) => (
-          <PhaseRow
-            detail={detail}
-            now={now}
-            entry={entry}
-            key={`${entry.type}-${entry.id}`}
-          />
-        ))}
-      </div>
-    </section>
-  )
-}
-
 function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
   const eventUrl = safeExternalUrl(detail.event.url)
   return (
@@ -1542,7 +1143,6 @@ function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
                 ) : null
               }
             />
-            <Detail label="Maximum turns" value={detail.limits.maxTurns} />
             <Detail
               label="Wall timeout"
               value={
@@ -1585,16 +1185,4 @@ function Detail({
       <dd>{value ?? "Unavailable"}</dd>
     </div>
   )
-}
-
-function withValue(values: Set<number>, value: number): Set<number> {
-  const next = new Set(values)
-  next.add(value)
-  return next
-}
-
-function without(values: Set<number>, value: number): Set<number> {
-  const next = new Set(values)
-  next.delete(value)
-  return next
 }

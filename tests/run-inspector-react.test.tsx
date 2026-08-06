@@ -27,31 +27,33 @@ function render(
   )
 }
 
-describe("turn-centric run inspector", () => {
-  test("renders clean success with a full execution hierarchy", () => {
+describe("activity-first run inspector", () => {
+  test("renders clean success with a flat activity timeline", () => {
     const html = render(runDetailFixture(), "all")
 
     expect(html).toContain("Succeeded cleanly")
     expect(html).toContain("Where the run spent time")
-    expect(html).toContain("Turn-by-turn execution")
-    expect(html).toContain("Turn</small><strong>1")
+    expect(html).toContain("Activity timeline")
+    expect(html).toContain("4 shown · 4 loaded")
     expect(html).toContain("Source lag")
     expect(html).toContain("Queue wait")
     expect(html).toContain("Aven reference")
     expect(html).toContain("Investigation handle")
-    expect(html).toContain('id="turn-body-1" hidden=""')
-    expect(html).toContain('id="turn-body-2" hidden=""')
+    expect(html).not.toContain('class="turn ')
+    expect(html).not.toContain("Turn</small>")
+    expect(html).not.toContain("aria-expanded")
   })
 
-  test("shows tool calls instead of collapsed turns by default", () => {
+  test("shows tool calls directly by default", () => {
     const html = render()
 
     expect(html).toContain('aria-pressed="true">Tool calls')
     expect(html).toContain("Tool activity")
-    expect(html).toContain('class="turn turn-completed turn-filtered"')
+    expect(html).toContain("2 shown · 4 loaded")
     expect(html).toContain('class="phase-row phase-tool phase-succeeded"')
     expect(html).not.toContain('class="phase-row phase-thinking')
     expect(html).not.toContain("No tool calls")
+    expect(html).not.toContain('class="turn ')
   })
 
   test("shows commands and read targets on tool rows", () => {
@@ -115,7 +117,7 @@ describe("turn-centric run inspector", () => {
     expect(html).toContain("Succeeded with recovered error")
     expect(html).toContain("1 failed tool call recovered")
     expect(html).toContain("Tools</span><strong>2")
-    expect(html).toContain("Turns</span><strong>unavailable")
+    expect(html).not.toContain("Turns</span>")
     expect(html).toContain("Time categories are unavailable")
     expect(html).not.toContain("Succeeded cleanly")
     expect(html).not.toContain("No recorded failures")
@@ -246,7 +248,7 @@ describe("turn-centric run inspector", () => {
     )
 
     expect(html).toContain(
-      "No structured activity was recorded for this terminal run",
+      "No tool or model activity was recorded for this run",
     )
   })
 
@@ -326,8 +328,8 @@ describe("turn-centric run inspector", () => {
 
     expect(html).toContain("Telemetry legacy")
     expect(html).toContain("Time categories are unavailable")
-    expect(html).toContain("Turn membership unavailable")
-    expect(html).toContain("without inferred turn membership")
+    expect(html).toContain('class="phase-row phase-tool phase-succeeded"')
+    expect(html).not.toContain("Turn membership")
   })
 
   test("renders sibling event attempts as navigable options", () => {
@@ -353,8 +355,9 @@ describe("turn-centric run inspector", () => {
       }),
     )
 
-    expect(html).toContain("6 of 306 entries")
+    expect(html).toContain("2 shown · 4 loaded")
     expect(html).toContain("Timeline continues")
+    expect(html).toContain("300 entries remain")
     expect(html).toContain("Load next 200")
   })
 
@@ -382,7 +385,7 @@ describe("turn-centric run inspector", () => {
     expect(html).not.toContain("$0.00")
   })
 
-  test("uses roving tab stops for long turn lists and the minimap", () => {
+  test("does not render turn records as activity", () => {
     const entries = Array.from({ length: 100 }, (_, index) =>
       turn(
         index + 1,
@@ -403,8 +406,10 @@ describe("turn-centric run inspector", () => {
       "all",
     )
 
-    expect(html.match(/tabindex="0"/g)).toHaveLength(2)
-    expect(html.match(/tabindex="-1"/g)).toHaveLength(198)
+    expect(html).toContain("0 shown · 0 loaded")
+    expect(html).toContain("No tool or model activity was recorded")
+    expect(html).not.toContain('class="turn ')
+    expect(html).not.toContain("Whole-run waterfall")
   })
 
   test("escapes structured labels and rejects unsafe source links", () => {
@@ -595,7 +600,7 @@ describe("run inspector derivation", () => {
     expect(grouped.unassigned).toEqual([unassignedCompaction])
   })
 
-  test("treats successful retries as collapsed signals rather than errors", () => {
+  test("renders successful retries directly without error treatment", () => {
     const detail = runDetailFixture({
       entries: [...cleanEntries(), retry()],
       metrics: { retryCount: 1 },
@@ -605,12 +610,12 @@ describe("run inspector derivation", () => {
 
     expect(first.hasSignal).toBe(true)
     expect(first.needsAttention).toBe(false)
-    expect(html).toContain('class="turn turn-completed turn-signal"')
-    expect(html).toContain('aria-expanded="false"')
-    expect(html).not.toContain("turn-health needs-attention")
+    expect(html).toContain("Model retry 1 of 3")
+    expect(html).toContain("phase-row phase-retry phase-succeeded")
+    expect(html).not.toContain('class="turn ')
   })
 
-  test("marks model error stop reasons as turn errors", () => {
+  test("derives model error stop reasons without rendering turn rows", () => {
     const entries = cleanEntries().map((entry) =>
       entry.type === "turn" && entry.ordinal === 2
         ? { ...entry, stopReason: "error" }
@@ -621,8 +626,8 @@ describe("run inspector derivation", () => {
     const html = render(detail)
 
     expect(second.needsAttention).toBe(true)
-    expect(html).toContain("First error")
-    expect(html).toContain("turn-health needs-attention")
+    expect(html).not.toContain('class="turn ')
+    expect(html).not.toContain("turn-health")
   })
 
   test("keeps activity with an unloaded turn reference unassigned", () => {
@@ -643,7 +648,10 @@ describe("run inspector derivation", () => {
 
     expect(grouped.turns[0]?.spans).toHaveLength(0)
     expect(grouped.unassigned).toHaveLength(1)
-    expect(render(detail)).toContain("Turn membership unavailable")
+    expect(render(detail)).toContain(
+      'class="phase-row phase-tool phase-succeeded"',
+    )
+    expect(render(detail)).not.toContain("Turn membership")
   })
 
   test("keeps spans with unknown turn membership unassigned", () => {
