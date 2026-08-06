@@ -34,6 +34,25 @@ describe("turn-centric run inspector", () => {
     expect(html).toContain("Investigation handle")
   })
 
+  test("shows retained commands and read targets on tool rows", () => {
+    const entries = cleanEntries().map((entry) =>
+      entry.type === "span" && entry.id === 2
+        ? { ...entry, label: "read", summary: "/workspace/src/dashboard.ts" }
+        : entry.type === "span" && entry.id === 4
+          ? {
+              ...entry,
+              label: "bash",
+              summary: "bun test tests/dashboard.test.ts",
+            }
+          : entry,
+    )
+    const html = render(runDetailFixture({ entries }))
+
+    expect(html).toContain('class="phase-summary"')
+    expect(html).toContain("/workspace/src/dashboard.ts")
+    expect(html).toContain("bun test tests/dashboard.test.ts")
+  })
+
   test("distinguishes recovered tool failure from clean success", () => {
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.id === 2

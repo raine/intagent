@@ -28,6 +28,7 @@ const run: Parameters<typeof ActiveRunCard>[0]["run"] = {
       turnOrdinal: 1,
       kind: "tool",
       label: "Read",
+      summary: null,
       startedAt: "2026-08-05T10:00:01.000Z",
       endedAt: "2026-08-05T10:00:04.000Z",
       state: "succeeded",

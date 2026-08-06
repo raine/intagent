@@ -59,6 +59,7 @@ export interface DashboardRun {
     turnOrdinal: number | null
     kind: "tool" | "thinking" | "compaction"
     label: string
+    summary: string | null
     startedAt: string
     endedAt: string | null
     state: "active" | "succeeded" | "failed" | "interrupted"
@@ -204,6 +205,7 @@ export function dashboardSnapshot(
             turnOrdinal: step.turnOrdinal,
             kind: step.kind,
             label: step.label,
+            summary: step.summary,
             startedAt: step.startedAt,
             endedAt: step.endedAt,
             state: step.outcome ?? "active",

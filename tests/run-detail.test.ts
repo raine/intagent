@@ -223,6 +223,16 @@ describe("run detail telemetry", () => {
     ])
     expect(detail.timeline.entries).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          type: "span",
+          label: "bash",
+          summary: "cat /private/path",
+        }),
+        expect.objectContaining({
+          type: "span",
+          label: "read",
+          summary: "/private/path",
+        }),
         expect.objectContaining({ type: "turn", ordinal: 1 }),
         expect.objectContaining({
           type: "retry",
@@ -242,8 +252,6 @@ describe("run detail telemetry", () => {
       "payload-secret",
       "private-call-one",
       "private-call-two",
-      "cat /private/path",
-      "/private/path",
       "private tool output",
       "private raw tool error",
       "raw-secret",

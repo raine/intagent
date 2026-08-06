@@ -245,6 +245,7 @@ export function span(
   startedAt: string,
   endedAt: string | null,
   state: "active" | "succeeded" | "failed" | "interrupted" = "succeeded",
+  summary: string | null = null,
 ): Extract<RunTimelineEntry, { type: "span" }> {
   return {
     type: "span",
@@ -252,6 +253,7 @@ export function span(
     turnOrdinal,
     kind,
     label,
+    summary,
     startedAt,
     endedAt,
     state,

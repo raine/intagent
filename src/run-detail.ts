@@ -68,6 +68,7 @@ export type RunTimelineEntry =
       turnOrdinal: number | null
       kind: "tool" | "thinking"
       label: string
+      summary: string | null
       startedAt: string
       endedAt: string | null
       state: "active" | RunOutcome
@@ -524,6 +525,7 @@ function timelineEntries(
               turnOrdinal: step.turnOrdinal,
               kind: step.kind,
               label: step.label,
+              summary: step.summary,
               startedAt: step.startedAt,
               endedAt: step.endedAt ?? (run.outcome ? run.endedAt : null),
               state: step.outcome ?? (run.outcome ? "interrupted" : "active"),

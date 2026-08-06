@@ -1958,19 +1958,14 @@
   }
 
   .minimap-turn.is-marker {
-    background: transparent;
+    background: var(--blue);
     border: 0;
+    border-radius: 999px;
     overflow: visible;
-    width: 8px;
+    width: 3px;
   }
 
-  .minimap-turn.is-marker i {
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 7px solid var(--blue);
-    display: block;
-  }
-
+  .minimap-turn.is-marker i,
   .minimap-turn.is-marker span {
     display: none;
   }
@@ -2164,6 +2159,19 @@
     white-space: nowrap;
   }
 
+  .phase-summary {
+    color: var(--ink);
+    display: -webkit-box;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.35;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .phase-copy small,
   .phase-row time,
   .phase-value {
@@ -2247,15 +2255,14 @@
   }
 
   .wall-segment.is-marker {
-    background: transparent;
-    border-left: 3px solid transparent;
-    border-right: 3px solid transparent;
-    border-top: 6px solid currentColor;
-    bottom: auto;
+    background: currentColor;
+    border: 0;
+    border-radius: 999px;
+    bottom: 3px;
     color: var(--viz-tool);
-    min-width: 0;
+    min-width: 3px;
     top: 3px;
-    width: 0;
+    width: 3px;
   }
 
   .segment-thinking.is-marker {

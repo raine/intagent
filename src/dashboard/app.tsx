@@ -53,6 +53,7 @@ interface DashboardRun {
     turnOrdinal: number | null
     kind: StepKind
     label: string
+    summary: string | null
     startedAt: string
     endedAt: string | null
     state: RunStatus
@@ -103,7 +104,7 @@ const runStates: Record<
 }
 
 const privacyNote =
-  "Event identity, title, source link, and typed effects are shown. Prompt text, intake bodies, thinking text, tool arguments, commands, output, raw errors, call identifiers, cwd, and file paths are excluded."
+  "Event identity, title, source link, typed effects, Bash commands, and read targets are shown. Prompt text, intake bodies, thinking text, other tool arguments, output, raw errors, call identifiers, and cwd are excluded."
 
 function positiveSafeInteger(value: string | null): number | null {
   if (value === null || !/^[1-9]\d*$/.test(value)) return null
@@ -303,7 +304,9 @@ function ActivityList({
             ? "∴ thinking"
             : kind === "compaction"
               ? "⇲ compaction"
-              : step.label
+              : step.summary
+                ? `${step.label} · ${step.summary}`
+                : step.label
         const glyph =
           step.state === "active"
             ? "◐"

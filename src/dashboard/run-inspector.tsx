@@ -19,7 +19,7 @@ import {
 } from "./run-inspector-data.ts"
 
 const privacyNote =
-  "Run telemetry and durable triage logs retain safe timing, state, counts, tool names, and categorized failures. They exclude prompt text, intake bodies, thinking text, arguments, commands, output, raw errors, session and tool call identifiers, cwd, and file paths."
+  "Run telemetry retains timing, state, counts, tool names, Bash commands, read targets, and categorized failures. Durable triage logs retain structural events. Prompt text, intake bodies, thinking text, other tool arguments, output, raw errors, session and tool call identifiers, and cwd are excluded."
 const staleThreshold = 120_000
 const pageSize = 200
 
@@ -1354,6 +1354,11 @@ function PhaseRow({
           <strong>
             {entry.kind === "thinking" ? "Thinking / model" : entry.label}
           </strong>
+          {entry.kind === "tool" && entry.summary ? (
+            <code className="phase-summary" title={entry.summary}>
+              {entry.summary}
+            </code>
+          ) : null}
           <small>
             {entry.blockCount > 1
               ? `${entry.blockCount} adjacent thinking blocks merged · `

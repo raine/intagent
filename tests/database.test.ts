@@ -235,7 +235,7 @@ describe("intake persistence", () => {
       database.raw
         .query("SELECT MAX(version) AS version FROM schema_migrations")
         .get(),
-    ).toEqual({ version: 5 })
+    ).toEqual({ version: 6 })
     expect(
       database.raw
         .query("SELECT name FROM pragma_table_info('triage_runs')")
@@ -249,6 +249,12 @@ describe("intake persistence", () => {
         "telemetry_completeness",
       ]),
     )
+    expect(
+      database.raw
+        .query("SELECT name FROM pragma_table_info('triage_run_steps')")
+        .all()
+        .map((row) => (row as { name: string }).name),
+    ).toContain("summary")
     expect(
       database.raw.query("SELECT COUNT(*) AS count FROM entities").get(),
     ).toEqual({ count: 1 })

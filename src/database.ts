@@ -52,6 +52,7 @@ export interface TriageRunStepRecord {
   turnOrdinal: number | null
   kind: "tool" | "thinking" | "compaction"
   label: string
+  summary: string | null
   startedAt: string
   endedAt: string | null
   outcome: RunOutcome | null
@@ -149,6 +150,7 @@ export interface TriageTelemetryEvent {
   type: string
   toolCallId?: string
   toolName?: string
+  args?: unknown
   isError?: boolean
   attempt?: number
   maxAttempts?: number
@@ -472,6 +474,9 @@ const migrations = [
   `
   UPDATE command_events
   SET command = 'tool=legacy', output_summary = 'unavailable';
+  `,
+  `
+  ALTER TABLE triage_run_steps ADD COLUMN summary TEXT;
   `,
 ]
 
@@ -857,13 +862,14 @@ export class IntakeDatabase {
         const result = this.raw
           .query(
             `INSERT INTO triage_run_steps(
-               run_id, step_key, turn_id, kind, label, started_at
-             ) VALUES (?, lower(hex(randomblob(16))), ?, 'tool', ?, ?)`,
+               run_id, step_key, turn_id, kind, label, summary, started_at
+             ) VALUES (?, lower(hex(randomblob(16))), ?, 'tool', ?, ?, ?)`,
           )
           .run(
             runId,
             currentTurn()?.id ?? null,
             safeToolName(event.toolName),
+            safeToolSummary(event.toolName, event.args),
             now,
           )
         if (event.toolCallId)
@@ -1145,10 +1151,12 @@ export class IntakeDatabase {
     return this.raw
       .query(
         `SELECT recent.id, recent.turnId, recent.turnOrdinal, recent.kind,
-           recent.label, recent.startedAt, recent.endedAt, recent.outcome
+           recent.label, recent.summary, recent.startedAt, recent.endedAt,
+           recent.outcome
          FROM (
            SELECT step.id, step.turn_id AS turnId, turn.ordinal AS turnOrdinal,
-             step.kind, step.label, step.started_at AS startedAt,
+             step.kind, step.label, step.summary,
+             step.started_at AS startedAt,
              step.ended_at AS endedAt, step.outcome
            FROM triage_run_steps step
            LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
@@ -1180,7 +1188,7 @@ export class IntakeDatabase {
     const steps = this.raw
       .query(
         `SELECT step.id, step.run_id AS runId, step.turn_id AS turnId,
-           turn.ordinal AS turnOrdinal, step.kind, step.label,
+           turn.ordinal AS turnOrdinal, step.kind, step.label, step.summary,
            step.started_at AS startedAt, step.ended_at AS endedAt, step.outcome
          FROM triage_run_steps step
          LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
@@ -1219,7 +1227,7 @@ export class IntakeDatabase {
     const steps = this.raw
       .query(
         `SELECT step.id, step.turn_id AS turnId, turn.ordinal AS turnOrdinal,
-           step.kind, step.label, step.started_at AS startedAt,
+           step.kind, step.label, step.summary, step.started_at AS startedAt,
            step.ended_at AS endedAt, step.outcome
          FROM triage_run_steps step
          LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
@@ -1480,6 +1488,36 @@ function safeTerminationReason(value: string): string {
 
 function safeToolName(value: string): string {
   return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,79}$/.test(value) ? value : "tool"
+}
+
+function safeToolSummary(toolName: string, args: unknown): string | null {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null
+  const values = args as Record<string, unknown>
+  const normalizedName = toolName.toLowerCase()
+  if (normalizedName === "bash" && typeof values.command === "string")
+    return boundedToolDetail(values.command, 4096)
+  if (normalizedName === "read") {
+    const target = values.path ?? values.file_path
+    return typeof target === "string" ? boundedToolDetail(target, 1024) : null
+  }
+  return null
+}
+
+function boundedToolDetail(value: string, limit: number): string | null {
+  const normalized = value
+    .trim()
+    .split("")
+    .filter((character) => {
+      const code = character.charCodeAt(0)
+      return (
+        code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)
+      )
+    })
+    .join("")
+  if (!normalized) return null
+  return normalized.length > limit
+    ? normalized.slice(0, limit) + "…"
+    : normalized
 }
 
 function safeStopReason(value: string | undefined): string | null {
