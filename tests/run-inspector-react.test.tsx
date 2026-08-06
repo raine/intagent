@@ -69,13 +69,15 @@ describe("turn-centric run inspector", () => {
     const html = render(runDetailFixture({ entries }))
 
     expect(html).toContain('class="phase-summary"')
-    expect(html).toContain("Read target")
-    expect(html).toContain("Command")
     expect(html).toContain("/workspace/src/dashboard.ts")
     expect(html).toContain("bun test tests/dashboard.test.ts")
+    expect(html).not.toContain("Read target")
+    expect(html).not.toContain(">Command<")
+    expect(html).not.toContain("<strong>bash</strong>")
+    expect(html).not.toContain("<small>succeeded</small>")
   })
 
-  test("offers an accessible full view for long retained commands", () => {
+  test("offers an accessible full view for long commands", () => {
     const command = `bun test ${"tests/run-inspector-react.test.tsx ".repeat(8)}`
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.id === 4
@@ -84,7 +86,7 @@ describe("turn-centric run inspector", () => {
     )
     const html = render(runDetailFixture({ entries }))
 
-    expect(html).toContain("Command · show full")
+    expect(html).toContain("Show full")
     expect(html).toContain('class="phase-summary-full"')
     expect(html).toContain(command.trim())
   })

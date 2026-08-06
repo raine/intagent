@@ -2792,20 +2792,16 @@
     color: var(--blue);
   }
 
-  .retained-tool-detail {
-    display: grid;
-    margin-top: 2px;
+  .tool-detail-long {
     min-width: 0;
   }
 
-  .retained-tool-detail > small,
-  .retained-tool-detail summary > small {
+  .tool-detail-long summary > small {
     color: var(--muted);
     font-size: 10px;
-    text-transform: uppercase;
   }
 
-  .retained-tool-detail summary {
+  .tool-detail-long summary {
     cursor: pointer;
     display: grid;
     list-style-position: inside;
@@ -2825,7 +2821,7 @@
     white-space: pre-wrap;
   }
 
-  .retained-tool-long[open] summary .phase-summary {
+  .tool-detail-long[open] summary .phase-summary {
     display: none;
   }
 

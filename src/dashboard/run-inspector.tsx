@@ -1234,6 +1234,8 @@ function PhaseRow({
     )
   const elapsed = timelineDuration(detail, entry, now)
   const interrupted = entry.state === "interrupted"
+  const hasToolDetail = entry.kind === "tool" && entry.summary !== null
+  const showToolStatus = !hasToolDetail || entry.state !== "succeeded"
   return (
     <div className={`phase-row phase-${entry.kind} phase-${entry.state}`}>
       <div className="phase-copy">
@@ -1247,20 +1249,27 @@ function PhaseRow({
                 : "✓"}
         </span>
         <div>
-          <strong>
-            {entry.kind === "thinking" ? "Thinking / model" : entry.label}
-          </strong>
-          {entry.kind === "tool" && entry.summary ? (
-            <RetainedToolDetail label={entry.label} value={entry.summary} />
+          {hasToolDetail && !showToolStatus ? (
+            <span className="visually-hidden">
+              {entry.label}, {stateLabel(entry.state)}
+            </span>
           ) : null}
-          <small>
-            {entry.blockCount > 1
-              ? `${entry.blockCount} adjacent thinking blocks merged · `
-              : ""}
-            {interrupted
-              ? "interrupted and clamped to run end"
-              : stateLabel(entry.state)}
-          </small>
+          {entry.kind === "thinking" || showToolStatus ? (
+            <strong>
+              {entry.kind === "thinking" ? "Thinking / model" : entry.label}
+            </strong>
+          ) : null}
+          {hasToolDetail ? <ToolDetail value={entry.summary!} /> : null}
+          {entry.kind === "thinking" || showToolStatus ? (
+            <small>
+              {entry.blockCount > 1
+                ? `${entry.blockCount} adjacent thinking blocks merged · `
+                : ""}
+              {interrupted
+                ? "interrupted and clamped to run end"
+                : stateLabel(entry.state)}
+            </small>
+          ) : null}
         </div>
       </div>
       <time>{offsetTime(detail, entry.startedAt)}</time>
@@ -1275,25 +1284,12 @@ function PhaseRow({
   )
 }
 
-function RetainedToolDetail({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}): JSX.Element {
-  const detailLabel = label.toLowerCase() === "bash" ? "Command" : "Read target"
-  if (value.length <= 160)
-    return (
-      <span className="retained-tool-detail">
-        <small>{detailLabel}</small>
-        <code className="phase-summary">{value}</code>
-      </span>
-    )
+function ToolDetail({ value }: { value: string }): JSX.Element {
+  if (value.length <= 160) return <code className="phase-summary">{value}</code>
   return (
-    <details className="retained-tool-detail retained-tool-long">
+    <details className="tool-detail-long">
       <summary>
-        <small>{detailLabel} · show full</small>
+        <small>Show full</small>
         <code className="phase-summary">{value}</code>
       </summary>
       <code className="phase-summary-full">{value}</code>
