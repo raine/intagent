@@ -217,8 +217,8 @@ export function groupTimeline(detail: RunDetail): {
           phase.state === "interrupted",
       )
       const hasTelemetryGap =
-        detail.run.telemetry.completeness !== "complete" ||
-        turnSpans.some((span) => span.turnOrdinal === null)
+        detail.run.telemetry.completeness === "partial" &&
+        turn.state === "interrupted"
       return {
         turn,
         spans: turnSpans,

@@ -32,6 +32,8 @@ describe("turn-centric run inspector", () => {
     expect(html).toContain("Queue wait")
     expect(html).toContain("Aven reference")
     expect(html).toContain("Investigation handle")
+    expect(html).toContain('id="turn-body-1" hidden=""')
+    expect(html).toContain('id="turn-body-2"')
   })
 
   test("shows retained commands and read targets on tool rows", () => {
@@ -490,6 +492,53 @@ describe("run inspector derivation", () => {
     ]
 
     expect(mergeThinkingSpans(spans)).toHaveLength(2)
+  })
+
+  test("does not mark completed turns incomplete while a run is active", () => {
+    const detail = runDetailFixture({
+      run: {
+        state: "active",
+        endedAt: null,
+        telemetry: { schemaVersion: 1, completeness: "partial" },
+      },
+      event: { status: "processing" },
+      entries: [
+        turn(1, "2026-08-05T10:00:01.000Z", "2026-08-05T10:00:05.000Z"),
+        turn(2, "2026-08-05T10:00:06.000Z", null, "active"),
+      ],
+    })
+
+    const grouped = groupTimeline(detail)
+    expect(grouped.turns.map((group) => group.hasTelemetryGap)).toEqual([
+      false,
+      false,
+    ])
+    expect(render(detail)).not.toContain(
+      "Telemetry is incomplete for this turn",
+    )
+  })
+
+  test("marks only an interrupted partial turn as incomplete", () => {
+    const detail = runDetailFixture({
+      run: {
+        state: "interrupted",
+        telemetry: { schemaVersion: 1, completeness: "partial" },
+      },
+      event: { status: "failed" },
+      entries: [
+        turn(1, "2026-08-05T10:00:01.000Z", "2026-08-05T10:00:05.000Z"),
+        turn(
+          2,
+          "2026-08-05T10:00:06.000Z",
+          "2026-08-05T10:00:10.000Z",
+          "interrupted",
+        ),
+      ],
+    })
+
+    expect(
+      groupTimeline(detail).turns.map((group) => group.hasTelemetryGap),
+    ).toEqual([false, true])
   })
 
   test("uses explicit turn association for retries and compactions", () => {
