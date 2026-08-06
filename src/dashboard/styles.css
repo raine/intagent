@@ -2391,6 +2391,78 @@
     line-height: 1.55;
     margin-top: 9px;
   }
+
+  .identity-title > span,
+  .section-heading > div > span,
+  .verdict-strip span,
+  .metric-grid article > span,
+  .attempt-select > span,
+  .turn-ordinal small {
+    font-size: 10px;
+  }
+
+  .identity-title h1 {
+    font-size: 16px;
+  }
+
+  .run-state,
+  .identity-time span,
+  .metric-grid small,
+  .budget-legend span,
+  .budget-legend strong,
+  .secondary-timings span,
+  .gap-summary span,
+  .turn-gap,
+  .unassigned-activity header span,
+  .unassigned-activity header p,
+  .timeline-pagination span,
+  .details-grid dd small {
+    font-size: 10px;
+  }
+
+  .verdict-outcome p,
+  .verdict-disposition small,
+  .attention-banner p,
+  .section-heading > strong,
+  .timeline-controls button,
+  .details-grid h3,
+  .details-grid dt,
+  .details-grid p {
+    font-size: 11px;
+  }
+
+  .verdict-outcome h2 {
+    font-size: 17px;
+  }
+
+  .verdict-fact strong,
+  .verdict-disposition strong,
+  .turn-time strong,
+  .turn-duration strong,
+  .turn-counts strong,
+  .turn-usage strong,
+  .phase-copy strong {
+    font-size: 12px;
+  }
+
+  .turn-time small,
+  .turn-duration small,
+  .turn-counts small,
+  .turn-usage small,
+  .phase-copy small,
+  .phase-row time,
+  .phase-value {
+    font-size: 10px;
+  }
+
+  .turn-health,
+  .minimap-turn {
+    font-size: 9px;
+  }
+
+  .minimap-axis {
+    font-size: 10px;
+  }
 }
 
 @layer layout {
@@ -2463,7 +2535,7 @@
     }
 
     .identity-title h1 {
-      font-size: 12px;
+      font-size: 14px;
     }
 
     .run-state {
