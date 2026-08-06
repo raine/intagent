@@ -2178,6 +2178,28 @@
     white-space: nowrap;
   }
 
+  .phase-tool.phase-succeeded .phase-glyph {
+    align-items: center;
+    background: color-mix(in srgb, var(--green) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--green) 38%, var(--edge));
+    border-radius: 50%;
+    color: var(--green);
+    display: inline-flex;
+    font-size: 0;
+    height: 15px;
+    justify-content: center;
+    width: 15px;
+  }
+
+  .phase-tool.phase-succeeded .phase-glyph::after {
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    content: "";
+    height: 6px;
+    transform: translateY(-1px) rotate(45deg);
+    width: 3px;
+  }
+
   .phase-thinking .phase-glyph {
     color: var(--viz-thinking);
   }
