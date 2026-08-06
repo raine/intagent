@@ -211,7 +211,7 @@ describe("intake dashboard", () => {
     })
   })
 
-  test("records structural thinking and compaction timing", () => {
+  test("records thinking summaries and compaction timing", () => {
     const database = createDatabase()
     database.sourceSucceeded(
       "github",
@@ -268,6 +268,7 @@ describe("intake dashboard", () => {
       expect.objectContaining({
         kind: "thinking",
         label: "thinking",
+        summary: "private reasoning",
         startedAt: "2026-08-04T09:02:02.000Z",
         endedAt: "2026-08-04T09:02:06.000Z",
         state: "succeeded",
@@ -280,7 +281,7 @@ describe("intake dashboard", () => {
         state: "succeeded",
       }),
     ])
-    expect(JSON.stringify(run)).not.toContain("private reasoning")
+    expect(JSON.stringify(run)).toContain("private reasoning")
     expect(JSON.stringify(run)).not.toContain("contentIndex")
   })
 

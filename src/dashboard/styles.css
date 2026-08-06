@@ -2152,6 +2152,58 @@
     white-space: nowrap;
   }
 
+  .phase-heading {
+    align-items: center;
+    display: flex;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .thinking-summary-trigger {
+    align-items: center;
+    background: transparent;
+    border: 1px solid var(--edge);
+    border-radius: 50%;
+    color: var(--muted);
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 8px;
+    font-weight: 700;
+    height: 14px;
+    justify-content: center;
+    padding: 0;
+    position: relative;
+    width: 14px;
+  }
+
+  .thinking-summary-trigger::after {
+    background: var(--surface-raised);
+    border: 1px solid var(--edge);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--page) 55%, transparent);
+    color: var(--ink-2);
+    content: attr(data-summary);
+    display: none;
+    font: 10px/1.5 var(--mono);
+    left: 20px;
+    max-height: 180px;
+    max-width: min(420px, calc(100vw - 100px));
+    overflow: auto;
+    padding: 8px 10px;
+    pointer-events: none;
+    position: absolute;
+    text-align: left;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: pre-wrap;
+    width: max-content;
+    z-index: 30;
+  }
+
+  .thinking-summary-trigger:hover::after,
+  .thinking-summary-trigger:focus-visible::after {
+    display: block;
+  }
+
   .phase-summary {
     color: var(--ink);
     display: -webkit-box;

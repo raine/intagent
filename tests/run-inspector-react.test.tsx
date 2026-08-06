@@ -20,7 +20,7 @@ function render(
   detail = runDetailFixture(),
   initialFilter: NonNullable<
     Parameters<typeof RunInspector>[0]["initialFilter"]
-  > = "tools",
+  > = "all",
 ): string {
   return renderToStaticMarkup(
     <RunInspector detail={detail} initialFilter={initialFilter} />,
@@ -29,11 +29,15 @@ function render(
 
 describe("activity-first run inspector", () => {
   test("renders clean success with a flat activity timeline", () => {
-    const html = render(runDetailFixture(), "all")
+    const html = render()
 
     expect(html).toContain("Succeeded cleanly")
     expect(html).toContain("Where the run spent time")
     expect(html).toContain("Activity timeline")
+    expect(html).toContain('aria-pressed="true">All activity')
+    expect(html.indexOf(">All activity</button>")).toBeLessThan(
+      html.indexOf(">Tool calls</button>"),
+    )
     expect(html).toContain("4 shown · 4 loaded")
     expect(html).toContain("Source lag")
     expect(html).toContain("Queue wait")
@@ -44,8 +48,8 @@ describe("activity-first run inspector", () => {
     expect(html).not.toContain("aria-expanded")
   })
 
-  test("shows tool calls directly by default", () => {
-    const html = render()
+  test("shows only tool calls when filtered", () => {
+    const html = render(runDetailFixture(), "tools")
 
     expect(html).toContain('aria-pressed="true">Tool calls')
     expect(html).toContain("Tool activity")
@@ -54,6 +58,22 @@ describe("activity-first run inspector", () => {
     expect(html).not.toContain('class="phase-row phase-thinking')
     expect(html).not.toContain("No tool calls")
     expect(html).not.toContain('class="turn ')
+  })
+
+  test("offers thinking summaries without adding row noise", () => {
+    const entries = cleanEntries().map((entry) =>
+      entry.type === "span" && entry.kind === "thinking" && entry.id === 1
+        ? { ...entry, summary: "Checked queue state before reading the event." }
+        : entry,
+    )
+    const html = render(runDetailFixture({ entries }))
+
+    expect(html).toContain(">Thinking</strong>")
+    expect(html).not.toContain("<strong>Thinking / model</strong>")
+    expect(html).toContain('class="thinking-summary-trigger"')
+    expect(html).toContain(
+      'data-summary="Checked queue state before reading the event."',
+    )
   })
 
   test("shows commands and read targets on tool rows", () => {
@@ -68,7 +88,7 @@ describe("activity-first run inspector", () => {
             }
           : entry,
     )
-    const html = render(runDetailFixture({ entries }))
+    const html = render(runDetailFixture({ entries }), "tools")
 
     expect(html).toContain('class="phase-summary"')
     expect(html).toContain("/workspace/src/dashboard.ts")
@@ -206,7 +226,7 @@ describe("activity-first run inspector", () => {
 
     expect(html).toContain("Execution in progress")
     expect(html).toContain("Pause live follow")
-    expect(html).toContain("Thinking / model")
+    expect(html).toContain(">Thinking</strong>")
     expect(html).not.toContain("No telemetry for")
   })
 
@@ -355,7 +375,7 @@ describe("activity-first run inspector", () => {
       }),
     )
 
-    expect(html).toContain("2 shown · 4 loaded")
+    expect(html).toContain("4 shown · 4 loaded")
     expect(html).toContain("Timeline continues")
     expect(html).toContain("300 entries remain")
     expect(html).toContain("Load next 200")

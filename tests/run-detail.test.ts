@@ -66,7 +66,10 @@ describe("run detail telemetry", () => {
     })
     record(database, runId, "2026-08-05T10:00:03.000Z", {
       type: "message_update",
-      assistantMessageEvent: { type: "thinking_end" },
+      assistantMessageEvent: {
+        type: "thinking_end",
+        content: "Checked the event context.",
+      },
     })
     record(database, runId, "2026-08-05T10:00:03.000Z", {
       type: "tool_execution_start",
@@ -223,6 +226,11 @@ describe("run detail telemetry", () => {
     ])
     expect(detail.timeline.entries).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          type: "span",
+          kind: "thinking",
+          summary: "Checked the event context.",
+        }),
         expect.objectContaining({
           type: "span",
           label: "bash",

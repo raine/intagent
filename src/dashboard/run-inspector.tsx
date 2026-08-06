@@ -21,8 +21,8 @@ const staleThreshold = 120_000
 const pageSize = 200
 
 const filterLabels: Record<TimelineFilter, string> = {
-  tools: "Tool calls",
   all: "All activity",
+  tools: "Tool calls",
   attention: "Attention",
   thinking: "Thinking",
   retries: "Retries",
@@ -454,7 +454,7 @@ export function RunInspector({
   onRefresh = () => {},
   onLoadMore = () => {},
   onNavigateAttempt = () => {},
-  initialFilter = "tools",
+  initialFilter = "all",
 }: {
   detail: RunDetail
   requestState?: RunDetailState["state"]
@@ -900,9 +900,22 @@ function PhaseRow({
             </span>
           ) : null}
           {entry.kind === "thinking" || showToolStatus ? (
-            <strong>
-              {entry.kind === "thinking" ? "Thinking / model" : entry.label}
-            </strong>
+            <div className="phase-heading">
+              <strong>
+                {entry.kind === "thinking" ? "Thinking" : entry.label}
+              </strong>
+              {entry.kind === "thinking" && entry.summary ? (
+                <button
+                  className="thinking-summary-trigger"
+                  type="button"
+                  aria-label={`Thinking summary: ${entry.summary}`}
+                  data-summary={entry.summary}
+                  title={entry.summary}
+                >
+                  i
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {hasToolDetail ? <ToolDetail value={entry.summary!} /> : null}
           {entry.kind === "thinking" || showToolStatus ? (

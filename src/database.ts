@@ -179,6 +179,7 @@ export interface TriageTelemetryEvent {
   assistantMessageEvent?: {
     type?: string
     contentIndex?: number
+    content?: string
   }
 }
 
@@ -922,12 +923,17 @@ export class IntakeDatabase {
       ) {
         this.raw
           .query(
-            `UPDATE triage_run_steps SET ended_at = ?, outcome = 'succeeded'
+            `UPDATE triage_run_steps
+             SET ended_at = ?, outcome = 'succeeded', summary = ?
              WHERE id = (SELECT id FROM triage_run_steps
                WHERE run_id = ? AND kind = 'thinking' AND ended_at IS NULL
                ORDER BY id DESC LIMIT 1)`,
           )
-          .run(now, runId)
+          .run(
+            now,
+            boundedTelemetryDetail(event.assistantMessageEvent.content, 1000),
+            runId,
+          )
       } else if (event.type === "auto_retry_start") {
         const delayMs = Math.max(0, finiteNumber(event.delayMs) ?? 0)
         this.raw
@@ -1495,15 +1501,16 @@ function safeToolSummary(toolName: string, args: unknown): string | null {
   const values = args as Record<string, unknown>
   const normalizedName = toolName.toLowerCase()
   if (normalizedName === "bash" && typeof values.command === "string")
-    return boundedToolDetail(values.command, 4096)
+    return boundedTelemetryDetail(values.command, 4096)
   if (normalizedName === "read") {
     const target = values.path ?? values.file_path
-    return typeof target === "string" ? boundedToolDetail(target, 1024) : null
+    return boundedTelemetryDetail(target, 1024)
   }
   return null
 }
 
-function boundedToolDetail(value: string, limit: number): string | null {
+function boundedTelemetryDetail(value: unknown, limit: number): string | null {
+  if (typeof value !== "string") return null
   const normalized = value
     .trim()
     .split("")

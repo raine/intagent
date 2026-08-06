@@ -160,6 +160,10 @@ export function mergeThinkingSpans(spans: SpanEntry[]): GroupedSpan[] {
       adjacent
     ) {
       previous.endedAt = span.endedAt
+      previous.summary =
+        [previous.summary, span.summary]
+          .filter((summary): summary is string => Boolean(summary))
+          .join("\n\n") || null
       previous.blockCount += 1
       continue
     }
