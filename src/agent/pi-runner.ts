@@ -187,15 +187,16 @@ export class PiTriageRunner implements TriageRunner {
       )
     }
     const skillCatalog = formatSkillsForPrompt(loadedSkills.skills)
+    const resolvedSystemPrompt = `${systemPrompt(
+      this.config,
+      projectInventory,
+      likelyProject,
+      registryPath,
+    )}${skillCatalog}`
     const resourceLoader = new DefaultResourceLoader({
       ...loaderOptions,
       extensionFactories: [guard],
-      systemPrompt: `${systemPrompt(
-        this.config,
-        projectInventory,
-        likelyProject,
-        registryPath,
-      )}${skillCatalog}`,
+      systemPrompt: resolvedSystemPrompt,
     })
     await resourceLoader.reload()
 
@@ -286,6 +287,8 @@ export class PiTriageRunner implements TriageRunner {
     let failure: unknown
     try {
       const prompt = buildEventPrompt(event)
+      this.database.recordTriageRunPrompt(runId, "system", resolvedSystemPrompt)
+      this.database.recordTriageRunPrompt(runId, "user", prompt)
       await log.prompt(prompt)
       await session.prompt(prompt)
       if (modelFailure) throw new Error(modelFailure)

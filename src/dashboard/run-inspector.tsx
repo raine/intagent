@@ -646,6 +646,7 @@ export function RunInspector({
           refreshing={refreshing}
         />
         <TimeBudget detail={detail} budget={budget} />
+        <RunPrompts detail={detail} />
         <RunDetails detail={detail} />
       </main>
     </div>
@@ -1063,6 +1064,44 @@ function WallTrack({
         aria-hidden="true"
       />
     </span>
+  )
+}
+
+function RunPrompts({ detail }: { detail: RunDetail }): JSX.Element {
+  return (
+    <details className="run-prompts">
+      <summary>
+        Agent prompts
+        <small>
+          {detail.prompts.length
+            ? `${detail.prompts.length} captured`
+            : "unavailable for this run"}
+        </small>
+      </summary>
+      {detail.prompts.length ? (
+        <div className="prompt-list">
+          {detail.prompts.map((prompt) => (
+            <section key={prompt.role}>
+              <header>
+                <h3>
+                  {prompt.role === "system"
+                    ? "Triage system instructions"
+                    : "Event prompt"}
+                </h3>
+                <time>{exactTime(prompt.recordedAt)}</time>
+              </header>
+              <pre>
+                <code>{prompt.content}</code>
+              </pre>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="prompt-unavailable">
+          Prompt capture is unavailable for this run.
+        </p>
+      )}
+    </details>
   )
 }
 

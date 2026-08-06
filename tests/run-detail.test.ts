@@ -57,6 +57,18 @@ describe("run detail telemetry", () => {
       contextWindow: 100,
       maxTokens: 20,
     })
+    database.recordTriageRunPrompt(
+      runId,
+      "system",
+      "Use the restricted triage tools.",
+      "2026-08-05T10:00:00.000Z",
+    )
+    database.recordTriageRunPrompt(
+      runId,
+      "user",
+      "Triage this event payload.",
+      "2026-08-05T10:00:00.001Z",
+    )
     record(database, runId, "2026-08-05T10:00:01.000Z", {
       type: "turn_start",
     })
@@ -223,6 +235,18 @@ describe("run detail telemetry", () => {
         type: "investigation_handle",
         value: "investigate-incident",
       }),
+    ])
+    expect(detail.prompts).toEqual([
+      {
+        role: "system",
+        content: "Use the restricted triage tools.",
+        recordedAt: "2026-08-05T10:00:00.000Z",
+      },
+      {
+        role: "user",
+        content: "Triage this event payload.",
+        recordedAt: "2026-08-05T10:00:00.001Z",
+      },
     ])
     expect(detail.timeline.entries).toEqual(
       expect.arrayContaining([

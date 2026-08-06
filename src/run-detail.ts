@@ -154,6 +154,11 @@ export interface RunDetail {
     value: string
     recordedAt: string
   }>
+  prompts: Array<{
+    role: "system" | "user"
+    content: string
+    recordedAt: string
+  }>
   limits: {
     maxTurns: number | null
     wallTimeoutMs: number | null
@@ -262,6 +267,9 @@ export function runDetail(
         value,
         recordedAt,
       })),
+    prompts: database
+      .triageRunPrompts(run.id)
+      .map(({ role, content, recordedAt }) => ({ role, content, recordedAt })),
     limits: {
       maxTurns: options.maxTurns ?? null,
       wallTimeoutMs: options.wallTimeoutMs ?? null,

@@ -1759,6 +1759,7 @@
 
   .time-budget,
   .execution-timeline,
+  .run-prompts,
   .run-details {
     background: var(--surface);
     border: 1px solid var(--edge);
@@ -2410,11 +2411,73 @@
     padding: 6px 9px;
   }
 
+  .run-prompts summary,
   .run-details summary {
     color: var(--ink-2);
     font-weight: 700;
     list-style-position: inside;
     padding: 2px;
+  }
+
+  .run-prompts summary small {
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 400;
+    margin-left: 8px;
+  }
+
+  .prompt-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .prompt-list section {
+    border-top: 1px solid var(--edge);
+    padding-top: 9px;
+  }
+
+  .prompt-list header {
+    align-items: baseline;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 7px;
+  }
+
+  .prompt-list h3 {
+    color: var(--ink);
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+
+  .prompt-list time,
+  .prompt-unavailable {
+    color: var(--muted);
+    font-size: 9px;
+  }
+
+  .prompt-list pre {
+    background: var(--page);
+    border: 1px solid var(--edge-soft);
+    color: var(--ink-2);
+    font: 10px/1.55 var(--mono);
+    margin: 0;
+    max-height: 420px;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+  }
+
+  .prompt-list code {
+    font: inherit;
+  }
+
+  .prompt-unavailable {
+    border-top: 1px solid var(--edge);
+    margin-top: 12px;
+    padding-top: 10px;
   }
 
   .details-grid {
@@ -2685,8 +2748,12 @@
       overflow: hidden;
     }
 
-    .run-details {
+    .run-prompts {
       order: 6;
+    }
+
+    .run-details {
+      order: 7;
     }
 
     .budget-legend {

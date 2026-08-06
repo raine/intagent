@@ -7,6 +7,7 @@ type FixtureOptions = {
   entries?: RunTimelineEntry[]
   siblingAttempts?: RunDetail["siblingAttempts"]
   effects?: RunDetail["effects"]
+  prompts?: RunDetail["prompts"]
   page?: Partial<RunDetail["timeline"]["page"]>
 }
 
@@ -113,6 +114,18 @@ export function runDetailFixture(options: FixtureOptions = {}): RunDetail {
         type: "investigation_handle",
         value: "triage-production-run",
         recordedAt: "2026-08-05T10:00:11.500Z",
+      },
+    ],
+    prompts: options.prompts ?? [
+      {
+        role: "system",
+        content: "Triage intake events using the available tools.",
+        recordedAt: "2026-08-05T10:00:00.000Z",
+      },
+      {
+        role: "user",
+        content: "Triage this one intake event.",
+        recordedAt: "2026-08-05T10:00:00.000Z",
       },
     ],
     limits: {

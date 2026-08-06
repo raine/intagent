@@ -112,6 +112,13 @@ export interface TriageCompactionRecord {
   totalCost: number | null
 }
 
+export interface TriageRunPromptRecord {
+  id: number
+  role: "system" | "user"
+  content: string
+  recordedAt: string
+}
+
 export interface TriageEffectRecord {
   id: number
   type: "aven_reference" | "investigation_handle"
@@ -479,6 +486,17 @@ const migrations = [
   `
   ALTER TABLE triage_run_steps ADD COLUMN summary TEXT;
   `,
+  `
+  CREATE TABLE triage_run_prompts (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES triage_runs(id),
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    UNIQUE(run_id, role)
+  );
+  CREATE INDEX triage_run_prompts_run_idx ON triage_run_prompts(run_id, id);
+  `,
 ]
 
 export class IntakeDatabase {
@@ -767,6 +785,22 @@ export class IntakeDatabase {
         now,
         runId,
       )
+  }
+
+  recordTriageRunPrompt(
+    runId: number,
+    role: TriageRunPromptRecord["role"],
+    content: string,
+    now = new Date().toISOString(),
+  ): void {
+    this.raw
+      .query(
+        `INSERT INTO triage_run_prompts(run_id, role, content, recorded_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(run_id, role) DO UPDATE SET
+           content = excluded.content, recorded_at = excluded.recorded_at`,
+      )
+      .run(runId, role, content, now)
   }
 
   recordTriageRunEvent(
@@ -1309,6 +1343,15 @@ export class IntakeDatabase {
       aborted: row.aborted === null ? null : row.aborted === 1,
       willRetry: row.willRetry === null ? null : row.willRetry === 1,
     }))
+  }
+
+  triageRunPrompts(runId: number): TriageRunPromptRecord[] {
+    return this.raw
+      .query(
+        `SELECT id, role, content, recorded_at AS recordedAt
+         FROM triage_run_prompts WHERE run_id = ? ORDER BY id`,
+      )
+      .all(runId) as TriageRunPromptRecord[]
   }
 
   triageRunEffects(runId: number): TriageEffectRecord[] {

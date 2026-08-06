@@ -60,6 +60,20 @@ describe("activity-first run inspector", () => {
     expect(html).not.toContain('class="turn ')
   })
 
+  test("shows the captured system and event prompts", () => {
+    const html = render()
+
+    expect(html).toContain("Agent prompts")
+    expect(html).toContain("2 captured")
+    expect(html).toContain("Triage system instructions")
+    expect(html).toContain("Triage intake events using the available tools.")
+    expect(html).toContain("Event prompt")
+    expect(html).toContain("Triage this one intake event.")
+
+    const unavailable = render(runDetailFixture({ prompts: [] }))
+    expect(unavailable).toContain("Prompt capture is unavailable for this run.")
+  })
+
   test("offers thinking summaries without adding row noise", () => {
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.kind === "thinking" && entry.id === 1

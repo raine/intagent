@@ -235,7 +235,7 @@ describe("intake persistence", () => {
       database.raw
         .query("SELECT MAX(version) AS version FROM schema_migrations")
         .get(),
-    ).toEqual({ version: 6 })
+    ).toEqual({ version: 7 })
     expect(
       database.raw
         .query("SELECT name FROM pragma_table_info('triage_runs')")
