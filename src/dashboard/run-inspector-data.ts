@@ -7,7 +7,6 @@ export type TimelineFilter =
   | "thinking"
   | "retries"
   | "compactions"
-  | "gaps"
 
 export type SpanEntry = Extract<RunTimelineEntry, { type: "span" }>
 export type TurnEntry = Extract<RunTimelineEntry, { type: "turn" }>
@@ -24,6 +23,7 @@ export interface TurnGroup {
   spans: GroupedSpan[]
   phases: PhaseEntry[]
   hasTelemetryGap: boolean
+  hasSignal: boolean
   needsAttention: boolean
 }
 
@@ -183,10 +183,12 @@ export function groupTimeline(detail: RunDetail): {
       entry.type === "retry" || entry.type === "compaction",
   )
   const groupedSpans = mergeThinkingSpans(spans)
+  const turnOrdinals = new Set(turns.map((turn) => turn.ordinal))
   const byOrdinal = new Map<number, GroupedSpan[]>()
   const unassigned: Array<GroupedSpan | PhaseEntry> = []
   for (const span of groupedSpans) {
-    if (span.turnOrdinal === null) unassigned.push(span)
+    if (span.turnOrdinal === null || !turnOrdinals.has(span.turnOrdinal))
+      unassigned.push(span)
     else {
       const entries = byOrdinal.get(span.turnOrdinal) ?? []
       entries.push(span)
@@ -196,7 +198,7 @@ export function groupTimeline(detail: RunDetail): {
 
   const groupedPhases = new Map<number, PhaseEntry[]>()
   for (const phase of phases) {
-    if (phase.turnOrdinal === null) {
+    if (phase.turnOrdinal === null || !turnOrdinals.has(phase.turnOrdinal)) {
       unassigned.push(phase)
       continue
     }
@@ -209,7 +211,9 @@ export function groupTimeline(detail: RunDetail): {
     turns: turns.map((turn) => {
       const turnSpans = byOrdinal.get(turn.ordinal) ?? []
       const turnPhases = groupedPhases.get(turn.ordinal) ?? []
-      const failedSpan = turnSpans.some((span) => span.state === "failed")
+      const failedSpan = turnSpans.some(
+        (span) => span.state === "failed" || span.state === "interrupted",
+      )
       const failedPhase = turnPhases.some(
         (phase) =>
           phase.state === "failed" ||
@@ -219,17 +223,19 @@ export function groupTimeline(detail: RunDetail): {
       const hasTelemetryGap =
         detail.run.telemetry.completeness === "partial" &&
         turn.state === "interrupted"
+      const needsAttention =
+        turn.state === "interrupted" ||
+        turn.stopReason === "error" ||
+        failedSpan ||
+        failedPhase ||
+        hasTelemetryGap
       return {
         turn,
         spans: turnSpans,
         phases: turnPhases,
         hasTelemetryGap,
-        needsAttention:
-          turn.state === "interrupted" ||
-          failedSpan ||
-          failedPhase ||
-          turnPhases.length > 0 ||
-          hasTelemetryGap,
+        hasSignal: turnPhases.length > 0,
+        needsAttention,
       }
     }),
     unassigned: unassigned.sort(
@@ -248,7 +254,6 @@ export function matchesFilter(
     return entry.type === "span" && entry.kind === "thinking"
   if (filter === "retries") return entry.type === "retry"
   if (filter === "compactions") return entry.type === "compaction"
-  if (filter === "gaps") return false
   return (
     (entry.type === "span" && entry.state === "failed") ||
     (entry.type === "retry" && entry.state !== "succeeded") ||

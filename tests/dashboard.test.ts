@@ -211,7 +211,7 @@ describe("intake dashboard", () => {
     })
   })
 
-  test("records privacy-safe thinking and compaction timing", () => {
+  test("records structural thinking and compaction timing", () => {
     const database = createDatabase()
     database.sourceSucceeded(
       "github",
@@ -301,11 +301,9 @@ describe("intake dashboard", () => {
     expect(html).toContain('<script type="module">')
     expect(html).toContain("ACTIVE RUNS")
     expect(html).toContain("RECENT EVENTS")
-    expect(html).toContain("RECENT RUNS")
+    expect(html).toContain("SOURCES")
     expect(html).toContain('localStorage.getItem("im-theme")')
     expect(html).toContain('name="color-scheme" content="light dark"')
-    expect(html).toContain("Event identity, title, source link")
-    expect(html).toContain("intake bodies, thinking text")
     expect(html).toContain("@media (width<=700px)")
     expect(html).toContain("@media (prefers-reduced-motion:reduce)")
     expect(html).toContain("@media (forced-colors:active)")

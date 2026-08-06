@@ -18,19 +18,25 @@ import {
   type TurnGroup,
 } from "./run-inspector-data.ts"
 
-const privacyNote =
-  "Run telemetry retains timing, state, counts, tool names, Bash commands, read targets, and categorized failures. Durable triage logs retain structural events. Prompt text, intake bodies, thinking text, other tool arguments, output, raw errors, session and tool call identifiers, and cwd are excluded."
 const staleThreshold = 120_000
 const pageSize = 200
 
 const filterLabels: Record<TimelineFilter, string> = {
-  all: "All",
+  tools: "Tool calls",
+  all: "All activity",
   attention: "Attention",
-  tools: "Tools",
   thinking: "Thinking",
   retries: "Retries",
   compactions: "Compactions",
-  gaps: "Gaps",
+}
+
+const timelineTitles: Record<TimelineFilter, string> = {
+  tools: "Tool activity",
+  all: "Turn-by-turn execution",
+  attention: "Activity needing attention",
+  thinking: "Model activity",
+  retries: "Model retries",
+  compactions: "Compactions",
 }
 
 function safeExternalUrl(value: string | null): string | null {
@@ -293,6 +299,7 @@ export function RunRoute({
     )
   return (
     <RunInspector
+      key={value.detail.run.id}
       detail={value.detail}
       requestState={value.state}
       refreshing={value.refreshing}
@@ -334,22 +341,16 @@ function attentionItems(
         ? `Termination reason: ${stateLabel(detail.run.terminationReason)}.`
         : "Execution ended before a normal terminal outcome.",
     })
-  if (counts.failedTools.value > 0)
+  if (counts.failedTools.value > 0 && detail.run.state !== "succeeded")
     items.push({
-      tone: detail.run.state === "succeeded" ? "warning" : "critical",
+      tone: "critical",
       title: `${countQualifier(counts.failedTools)} tool ${counts.failedTools.value === 1 ? "failure" : "failures"}`,
-      body:
-        detail.run.state === "succeeded"
-          ? "The run recovered and reached a successful outcome."
-          : "Review the failed tool phases in the timeline.",
+      body: "Review the failed tool phases in the timeline.",
     })
-  if (counts.retries.value > 0)
-    items.push({
-      tone: "warning",
-      title: `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`,
-      body: "Model retries are separate from event-level attempts.",
-    })
-  if (counts.incompleteCompactions.value > 0)
+  if (
+    counts.incompleteCompactions.value > 0 &&
+    detail.run.state !== "succeeded"
+  )
     items.push({
       tone: "warning",
       title: `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`,
@@ -370,21 +371,6 @@ function attentionItems(
       title: "Event and run states disagree",
       body: `Event is ${detail.event.status}; execution is ${detail.run.state}.`,
     })
-  if (detail.run.telemetry.completeness !== "complete")
-    items.push({
-      tone: "info",
-      title: `${stateLabel(detail.run.telemetry.completeness)} telemetry`,
-      body:
-        detail.run.telemetry.completeness === "legacy"
-          ? "Turn membership and time categories are unavailable for this legacy run."
-          : "Some structured telemetry is missing. Values remain unavailable where the backend cannot account for them.",
-    })
-  if (detail.timeline.page.hasMore)
-    items.push({
-      tone: "info",
-      title: "Timeline is truncated",
-      body: `${detail.timeline.entries.length} of ${detail.timeline.page.total} entries are loaded.`,
-    })
   return items
 }
 
@@ -398,26 +384,26 @@ function outcomeVerdict(detail: RunDetail): {
   tone: string
 } {
   const counts = runSummaryCounts(detail)
+  const recordedSignals = [
+    counts.failedTools.value > 0
+      ? `${countQualifier(counts.failedTools)} failed ${counts.failedTools.value === 1 ? "tool call" : "tool calls"}`
+      : null,
+    counts.retries.value > 0
+      ? `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`
+      : null,
+    counts.incompleteCompactions.value > 0
+      ? `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`
+      : null,
+  ].filter((value): value is string => value !== null)
   if (
     detail.run.state === "succeeded" &&
     (counts.failedTools.value > 0 ||
       counts.retries.value > 0 ||
       counts.incompleteCompactions.value > 0)
   ) {
-    const recoveries = [
-      counts.failedTools.value > 0
-        ? `${countQualifier(counts.failedTools)} failed ${counts.failedTools.value === 1 ? "tool call" : "tool calls"}`
-        : null,
-      counts.retries.value > 0
-        ? `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`
-        : null,
-      counts.incompleteCompactions.value > 0
-        ? `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`
-        : null,
-    ].filter((value): value is string => value !== null)
     return {
       title: "Succeeded with recovered error",
-      health: `${recoveries.join(", ")} recovered`,
+      health: `${recordedSignals.join(", ")} recovered`,
       tone: "warning",
     }
   }
@@ -447,12 +433,16 @@ function outcomeVerdict(detail: RunDetail): {
   if (detail.run.state === "interrupted")
     return {
       title: "Execution interrupted",
-      health: "Terminal without completion",
+      health: recordedSignals.length
+        ? `${recordedSignals.join(", ")} recorded`
+        : "Terminal without completion",
       tone: "critical",
     }
   return {
     title: "Execution failed",
-    health: "Terminal failure",
+    health: recordedSignals.length
+      ? `${recordedSignals.join(", ")} recorded`
+      : "Terminal failure",
     tone: "critical",
   }
 }
@@ -465,6 +455,7 @@ export function RunInspector({
   onRefresh = () => {},
   onLoadMore = () => {},
   onNavigateAttempt = () => {},
+  initialFilter = "tools",
 }: {
   detail: RunDetail
   requestState?: RunDetailState["state"]
@@ -473,6 +464,7 @@ export function RunInspector({
   onRefresh?: () => void
   onLoadMore?: () => void
   onNavigateAttempt?: (runId: number) => void
+  initialFilter?: TimelineFilter
 }): JSX.Element {
   const now = useInspectorClock(detail.run.state === "active")
   const grouped = useMemo(() => groupTimeline(detail), [detail])
@@ -480,7 +472,7 @@ export function RunInspector({
   const verdict = useMemo(() => outcomeVerdict(detail), [detail])
   const counts = useMemo(() => runSummaryCounts(detail), [detail])
   const budget = useMemo(() => timeBudget(detail.metrics), [detail.metrics])
-  const [filter, setFilter] = useState<TimelineFilter>("all")
+  const [filter, setFilter] = useState<TimelineFilter>(initialFilter)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [following, setFollowing] = useState(detail.run.state === "active")
@@ -499,25 +491,31 @@ export function RunInspector({
     })
   }, [currentTurn, detail.generatedAt, detail.run.state, following])
 
-  const isExpanded = (group: TurnGroup, index: number): boolean => {
+  const isExpanded = (group: TurnGroup): boolean => {
     const ordinal = group.turn.ordinal
     if (collapsed.has(ordinal)) return false
     if (expanded.has(ordinal)) return true
-    return (
-      group.needsAttention ||
-      group.turn.state === "active" ||
-      index === grouped.turns.length - 1
-    )
+    if (filter !== "all") return true
+    return group.needsAttention || group.turn.state === "active"
   }
-  const toggleTurn = (group: TurnGroup, index: number): void => {
+  const toggleTurn = (group: TurnGroup): void => {
     const ordinal = group.turn.ordinal
-    if (isExpanded(group, index)) {
+    if (isExpanded(group)) {
       setExpanded((values) => without(values, ordinal))
       setCollapsed((values) => withValue(values, ordinal))
     } else {
       setCollapsed((values) => without(values, ordinal))
       setExpanded((values) => withValue(values, ordinal))
     }
+  }
+  const moveTurnFocus = (ordinal: number): void => {
+    setRovingTurn(ordinal)
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`turn-${ordinal}`)
+        ?.querySelector<HTMLButtonElement>(".turn-disclosure")
+        ?.focus()
+    })
   }
   const focusTurn = (ordinal: number): void => {
     setRovingTurn(ordinal)
@@ -546,7 +544,6 @@ export function RunInspector({
     runEnd(detail, now) - parseTime(detail.run.startedAt),
   )
   const visibleTurns = grouped.turns.filter((group) => {
-    if (filter === "gaps") return group.hasTelemetryGap
     if (filter === "all") return true
     if (filter === "attention") return group.needsAttention
     return [...group.spans, ...group.phases].some((entry) =>
@@ -638,24 +635,32 @@ export function RunInspector({
             label="Tools"
             value={summaryCountLabel(counts.toolCalls)}
           />
-          <VerdictFact
-            label="Recovered failures"
-            value={summaryCountLabel(counts.failedTools)}
-          />
-          <VerdictFact
-            label="Model retries"
-            value={summaryCountLabel(counts.retries)}
-          />
-          <VerdictFact
-            label="Compactions"
-            value={summaryCountLabel(counts.compactions)}
-          />
+          {detail.metrics.usage.totalTokens !== null ? (
+            <VerdictFact
+              label="Recorded tokens"
+              value={formatNumber(detail.metrics.usage.totalTokens)}
+            />
+          ) : null}
+          {detail.metrics.peakContextTokens !== null ? (
+            <VerdictFact
+              label="Peak context"
+              value={`${formatNumber(detail.metrics.peakContextTokens)}${detail.metrics.peakContextPercent === null ? "" : ` · ${Math.round(detail.metrics.peakContextPercent)}%`}`}
+            />
+          ) : null}
           <div className="verdict-disposition">
             <span>Disposition</span>
             <strong>Event {stateLabel(detail.event.status)}</strong>
             <small>
               Telemetry {stateLabel(detail.run.telemetry.completeness)}
             </small>
+            {detail.effects.length ? (
+              <small className="verdict-effects">
+                {detail.effects
+                  .map((effect) => effect.value)
+                  .slice(0, 2)
+                  .join(" · ")}
+              </small>
+            ) : null}
           </div>
         </section>
 
@@ -682,12 +687,6 @@ export function RunInspector({
           </section>
         ) : null}
 
-        <MetricGrid
-          detail={detail}
-          wall={wall}
-          attentionCount={notices.length}
-        />
-        <TimeBudget detail={detail} budget={budget} />
         <ExecutionTimeline
           detail={detail}
           now={now}
@@ -699,6 +698,7 @@ export function RunInspector({
           isExpanded={isExpanded}
           toggleTurn={toggleTurn}
           focusTurn={focusTurn}
+          moveTurnFocus={moveTurnFocus}
           firstFailure={firstFailure?.turn.ordinal ?? null}
           rovingTurn={tabbableTurn}
           setRovingTurn={setRovingTurn}
@@ -708,6 +708,7 @@ export function RunInspector({
           onLoadMore={onLoadMore}
           refreshing={refreshing}
         />
+        <TimeBudget detail={detail} budget={budget} />
         <RunDetails detail={detail} />
       </main>
     </div>
@@ -738,113 +739,6 @@ function summaryCountLabel(count: SummaryCount): string {
   return `${formatNumber(count.value)}${count.exact ? "" : "+"}`
 }
 
-function MetricGrid({
-  detail,
-  wall,
-  attentionCount,
-}: {
-  detail: RunDetail
-  wall: number
-  attentionCount: number
-}): JSX.Element {
-  const metrics = detail.metrics
-  const counts = runSummaryCounts(detail)
-  const usageBreakdown = [
-    metrics.usage.inputTokens === null
-      ? null
-      : `${formatNumber(metrics.usage.inputTokens)} in`,
-    metrics.usage.outputTokens === null
-      ? null
-      : `${formatNumber(metrics.usage.outputTokens)} out`,
-  ].filter((value): value is string => value !== null)
-  const turnSignals = [
-    counts.retries.exact || counts.retries.value > 0
-      ? `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`
-      : null,
-    counts.compactions.exact || counts.compactions.value > 0
-      ? `${countQualifier(counts.compactions)} ${counts.compactions.value === 1 ? "compaction" : "compactions"}`
-      : null,
-  ].filter((value): value is string => value !== null)
-  const cards: Array<{
-    label: string
-    value: string
-    note: string
-    tone?: string
-  }> = [
-    {
-      label: "Wall duration",
-      value: formatDuration(wall),
-      note:
-        detail.run.state === "active" ? "live elapsed" : "start to completion",
-    },
-  ]
-  if (metrics.durationMs.thinking !== null)
-    cards.push({
-      label: "Model / thinking",
-      value: formatDuration(metrics.durationMs.thinking),
-      note: `${Math.round((metrics.durationMs.thinking / Math.max(1, wall)) * 100)}% of wall`,
-    })
-  if (metrics.durationMs.tool !== null)
-    cards.push({
-      label: "Tool wall time",
-      value: formatDuration(metrics.durationMs.tool),
-      note:
-        counts.failedTools.exact || counts.failedTools.value > 0
-          ? `${countQualifier(counts.failedTools)} failed · overlap counted once`
-          : "failure count unavailable · overlap counted once",
-      ...(counts.failedTools.value > 0 ? { tone: "warning" } : {}),
-    })
-  if (metrics.turnCount !== null)
-    cards.push({
-      label: "Turns",
-      value: formatNumber(metrics.turnCount),
-      note: turnSignals.length
-        ? turnSignals.join(" · ")
-        : "retry and compaction counts unavailable",
-    })
-  if (metrics.usage.totalTokens !== null)
-    cards.push({
-      label: "Recorded tokens",
-      value: formatNumber(metrics.usage.totalTokens),
-      note: usageBreakdown.length
-        ? usageBreakdown.join(" · ")
-        : "input and output breakdown unavailable",
-    })
-  if (metrics.peakContextTokens !== null)
-    cards.push({
-      label: "Peak context",
-      value: formatNumber(metrics.peakContextTokens),
-      note:
-        metrics.peakContextPercent === null
-          ? "window percentage unavailable"
-          : `${Math.round(metrics.peakContextPercent)}% of context window`,
-    })
-  cards.push({
-    label: "Attention",
-    value: attentionCount
-      ? `${attentionCount} ${attentionCount === 1 ? "item" : "items"}`
-      : "None",
-    note: attentionCount
-      ? "review banners and marked turns"
-      : "no recorded concerns",
-    tone: attentionCount ? "warning" : "good",
-  })
-  return (
-    <section className="metric-grid" aria-label="Run summary metrics">
-      {cards.map((card) => (
-        <article
-          className={card.tone ? `metric-${card.tone}` : ""}
-          key={card.label}
-        >
-          <span>{card.label}</span>
-          <strong>{card.value}</strong>
-          <small>{card.note}</small>
-        </article>
-      ))}
-    </section>
-  )
-}
-
 function TimeBudget({
   detail,
   budget,
@@ -852,6 +746,17 @@ function TimeBudget({
   detail: RunDetail
   budget: ReturnType<typeof timeBudget>
 }): JSX.Element {
+  const total = Math.max(1, detail.metrics.durationMs.wall)
+  let offset = 0
+  const positioned = budget?.map((part) => {
+    const left = offset
+    offset += part.value
+    return {
+      ...part,
+      left: (left / total) * 100,
+      width: (part.value / total) * 100,
+    }
+  })
   return (
     <section className="time-budget" aria-labelledby="budget-title">
       <header className="section-heading">
@@ -863,20 +768,15 @@ function TimeBudget({
       </header>
       {budget ? (
         <>
-          <div
-            className="budget-bar"
-            role="img"
-            aria-label={budget
-              .map((part) => `${part.label} ${formatDuration(part.value)}`)
-              .join(", ")}
-          >
-            {budget
+          <div className="budget-bar" aria-hidden="true">
+            {positioned!
               .filter((part) => part.value > 0)
               .map((part) => (
                 <span
                   className={`budget-${part.key}`}
                   style={{
-                    width: `${(part.value / Math.max(1, detail.metrics.durationMs.wall)) * 100}%`,
+                    left: `${part.left}%`,
+                    width: `${part.width}%`,
                   }}
                   title={`${part.label}: ${formatDuration(part.value)}`}
                   key={part.key}
@@ -925,9 +825,10 @@ interface TimelineProps {
   unassigned: Array<GroupedSpan | PhaseEntry>
   filter: TimelineFilter
   setFilter: (filter: TimelineFilter) => void
-  isExpanded: (group: TurnGroup, index: number) => boolean
-  toggleTurn: (group: TurnGroup, index: number) => void
+  isExpanded: (group: TurnGroup) => boolean
+  toggleTurn: (group: TurnGroup) => void
   focusTurn: (ordinal: number) => void
+  moveTurnFocus: (ordinal: number) => void
   firstFailure: number | null
   rovingTurn: number | null
   setRovingTurn: (ordinal: number) => void
@@ -953,7 +854,7 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
       <header className="section-heading timeline-title-row">
         <div>
           <span>Shared wall-clock axis</span>
-          <h2 id="timeline-title">Turn-by-turn execution</h2>
+          <h2 id="timeline-title">{timelineTitles[filter]}</h2>
         </div>
         <strong>
           {detail.timeline.entries.length} of {detail.timeline.page.total}{" "}
@@ -993,7 +894,7 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
               props.firstFailure !== null && props.focusTurn(props.firstFailure)
             }
           >
-            First failure
+            First error
           </button>
           <button
             type="button"
@@ -1015,17 +916,6 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
           ) : null}
         </div>
       </div>
-      {filter === "gaps" && (detail.metrics.durationMs.gaps ?? 0) > 0 ? (
-        <div className="gap-summary">
-          <strong>
-            {formatDuration(detail.metrics.durationMs.gaps!)} gaps / other
-          </strong>
-          <span>
-            The backend accounts for this time without assigning an exact phase
-            location.
-          </span>
-        </div>
-      ) : null}
       {terminalEmpty ? (
         <p className="timeline-empty">
           No structured activity was recorded for this terminal run.
@@ -1041,14 +931,13 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
       ) : null}
       <div className="turn-list">
         {visibleTurns.map((group) => {
-          const originalIndex = groups.indexOf(group)
           return (
             <TurnSection
               detail={detail}
               now={props.now}
               group={group}
-              expanded={props.isExpanded(group, originalIndex)}
-              toggle={() => props.toggleTurn(group, originalIndex)}
+              expanded={props.isExpanded(group)}
+              toggle={() => props.toggleTurn(group)}
               tabIndex={group.turn.ordinal === props.rovingTurn ? 0 : -1}
               onFocus={() => props.setRovingTurn(group.turn.ordinal)}
               onMove={(direction) => {
@@ -1060,7 +949,7 @@ function ExecutionTimeline(props: TimelineProps): JSX.Element {
                       ? visibleTurns.length - 1
                       : currentIndex + direction
                 const target = visibleTurns[targetIndex]
-                if (target) props.focusTurn(target.turn.ordinal)
+                if (target) props.moveTurnFocus(target.turn.ordinal)
               }}
               filter={filter}
               key={group.turn.id}
@@ -1138,7 +1027,7 @@ function RunMinimap({
                 buttons.current[index] = node
               }}
               type="button"
-              className={`minimap-turn${group.needsAttention ? " minimap-attention" : ""}${position.marker ? " is-marker" : ""}`}
+              className={`minimap-turn${group.needsAttention ? " minimap-attention" : group.hasSignal ? " minimap-signal" : ""}${position.marker ? " is-marker" : ""}`}
               style={{
                 left: `${position.left}%`,
                 width: position.marker ? undefined : `${position.width}%`,
@@ -1161,7 +1050,7 @@ function RunMinimap({
                   move(groups.length - 1)
                 }
               }}
-              aria-label={`Turn ${group.turn.ordinal}, ${offsetTime(detail, group.turn.startedAt)}, ${formatDuration(timelineDuration(detail, group.turn, now))}`}
+              aria-label={`Turn ${group.turn.ordinal}, ${offsetTime(detail, group.turn.startedAt)}, ${formatDuration(timelineDuration(detail, group.turn, now))}${group.needsAttention ? ", needs attention" : group.hasSignal ? ", retry or compaction recorded" : ""}`}
             >
               {position.marker ? <i aria-hidden="true" /> : null}
               <span aria-hidden="true">{group.turn.ordinal}</span>
@@ -1208,9 +1097,27 @@ function TurnSection({
     (phase) => phase.type === "compaction",
   ).length
   const turnDuration = timelineDuration(detail, group.turn, now)
+  const countBits = [
+    tools.length
+      ? `${tools.length} ${tools.length === 1 ? "tool" : "tools"}`
+      : null,
+    failed ? `${failed} failed` : null,
+  ].filter((value): value is string => value !== null)
+  const signalBits = [
+    retryCount
+      ? `${retryCount} ${retryCount === 1 ? "retry" : "retries"}`
+      : null,
+    compactionCount
+      ? `${compactionCount} ${compactionCount === 1 ? "compaction" : "compactions"}`
+      : null,
+  ].filter((value): value is string => value !== null)
+  const stopDetail =
+    group.turn.stopReason && group.turn.stopReason !== "stop"
+      ? stateLabel(group.turn.stopReason)
+      : stateLabel(group.turn.state)
   return (
     <article
-      className={`turn turn-${group.turn.state}${group.needsAttention ? " turn-attention" : ""}`}
+      className={`turn turn-${group.turn.state}${filter !== "all" ? " turn-filtered" : ""}${group.needsAttention ? " turn-attention" : group.hasSignal ? " turn-signal" : ""}`}
       id={`turn-${group.turn.ordinal}`}
     >
       <button
@@ -1250,24 +1157,11 @@ function TurnSection({
         </span>
         <span className="turn-duration">
           <strong>{formatDuration(turnDuration)}</strong>
-          <small>
-            {group.turn.stopReason
-              ? `stop: ${stateLabel(group.turn.stopReason)}`
-              : stateLabel(group.turn.state)}
-          </small>
+          <small>{stopDetail}</small>
         </span>
         <span className="turn-counts">
-          <strong>
-            {tools.length} {tools.length === 1 ? "tool" : "tools"} · {failed}{" "}
-            failed
-          </strong>
-          <small>
-            {retryCount
-              ? `${retryCount} ${retryCount === 1 ? "retry" : "retries"}`
-              : "no retries"}{" "}
-            · {compactionCount}{" "}
-            {compactionCount === 1 ? "compaction" : "compactions"}
-          </small>
+          <strong>{countBits.join(" · ") || "No tool calls"}</strong>
+          {signalBits.length ? <small>{signalBits.join(" · ")}</small> : null}
         </span>
         <span className="turn-usage">
           <strong>
@@ -1281,11 +1175,13 @@ function TurnSection({
               : `${formatNumber(group.turn.contextTokens)} context${group.turn.contextWindow ? ` / ${formatNumber(group.turn.contextWindow)}` : ""}`}
           </small>
         </span>
-        <span
-          className={`turn-health${group.needsAttention ? " needs-attention" : ""}`}
-        >
-          {group.needsAttention ? "attention" : "clean"}
-        </span>
+        {group.needsAttention || group.hasSignal ? (
+          <span
+            className={`turn-health${group.needsAttention ? " needs-attention" : " has-signal"}`}
+          >
+            {group.needsAttention ? "error" : "signal"}
+          </span>
+        ) : null}
       </button>
       <div id={`turn-body-${group.turn.id}`} hidden={!expanded}>
         {entries.length ? (
@@ -1355,9 +1251,7 @@ function PhaseRow({
             {entry.kind === "thinking" ? "Thinking / model" : entry.label}
           </strong>
           {entry.kind === "tool" && entry.summary ? (
-            <code className="phase-summary" title={entry.summary}>
-              {entry.summary}
-            </code>
+            <RetainedToolDetail label={entry.label} value={entry.summary} />
           ) : null}
           <small>
             {entry.blockCount > 1
@@ -1378,6 +1272,32 @@ function PhaseRow({
         state={entry.state}
       />
     </div>
+  )
+}
+
+function RetainedToolDetail({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}): JSX.Element {
+  const detailLabel = label.toLowerCase() === "bash" ? "Command" : "Read target"
+  if (value.length <= 160)
+    return (
+      <span className="retained-tool-detail">
+        <small>{detailLabel}</small>
+        <code className="phase-summary">{value}</code>
+      </span>
+    )
+  return (
+    <details className="retained-tool-detail retained-tool-long">
+      <summary>
+        <small>{detailLabel} · show full</small>
+        <code className="phase-summary">{value}</code>
+      </summary>
+      <code className="phase-summary-full">{value}</code>
+    </details>
   )
 }
 
@@ -1540,7 +1460,7 @@ function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
   const eventUrl = safeExternalUrl(detail.event.url)
   return (
     <details className="run-details">
-      <summary>Diagnostic details, effects, and privacy</summary>
+      <summary>Diagnostic details and effects</summary>
       <div className="details-grid">
         <section>
           <h3>Effects</h3>
@@ -1650,7 +1570,6 @@ function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
               value={`${detail.timeline.entries.length} of ${detail.timeline.page.total}`}
             />
           </dl>
-          <p className="privacy-note">{privacyNote}</p>
         </section>
       </div>
     </details>

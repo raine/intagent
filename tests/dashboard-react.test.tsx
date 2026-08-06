@@ -80,6 +80,7 @@ describe("React dashboard components", () => {
     expect(html).toContain('class="source-heading"')
     expect(html).toContain('class="source-poll"')
     expect(html).toContain('class="source-error"')
+    expect(html).toContain("last success 6m ago")
   })
 
   test("renders active activity using the expected component classes", () => {
@@ -97,7 +98,7 @@ describe("React dashboard components", () => {
 
     expect(html).toContain("active-run is-stalled")
     expect(html).toContain("active-run-activity is-expanded")
-    expect(html).toContain('class="privacy-inline"')
+    expect(html).toContain("inspect run →")
   })
 
   test("opens the matching run directly from an event row", () => {

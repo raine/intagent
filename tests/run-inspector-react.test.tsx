@@ -16,13 +16,20 @@ import {
   turn,
 } from "./fixtures/run-detail.ts"
 
-function render(detail = runDetailFixture()): string {
-  return renderToStaticMarkup(<RunInspector detail={detail} />)
+function render(
+  detail = runDetailFixture(),
+  initialFilter: NonNullable<
+    Parameters<typeof RunInspector>[0]["initialFilter"]
+  > = "tools",
+): string {
+  return renderToStaticMarkup(
+    <RunInspector detail={detail} initialFilter={initialFilter} />,
+  )
 }
 
 describe("turn-centric run inspector", () => {
   test("renders clean success with a full execution hierarchy", () => {
-    const html = render()
+    const html = render(runDetailFixture(), "all")
 
     expect(html).toContain("Succeeded cleanly")
     expect(html).toContain("Where the run spent time")
@@ -33,10 +40,21 @@ describe("turn-centric run inspector", () => {
     expect(html).toContain("Aven reference")
     expect(html).toContain("Investigation handle")
     expect(html).toContain('id="turn-body-1" hidden=""')
-    expect(html).toContain('id="turn-body-2"')
+    expect(html).toContain('id="turn-body-2" hidden=""')
   })
 
-  test("shows retained commands and read targets on tool rows", () => {
+  test("shows tool calls instead of collapsed turns by default", () => {
+    const html = render()
+
+    expect(html).toContain('aria-pressed="true">Tool calls')
+    expect(html).toContain("Tool activity")
+    expect(html).toContain('class="turn turn-completed turn-filtered"')
+    expect(html).toContain('class="phase-row phase-tool phase-succeeded"')
+    expect(html).not.toContain('class="phase-row phase-thinking')
+    expect(html).not.toContain("No tool calls")
+  })
+
+  test("shows commands and read targets on tool rows", () => {
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.id === 2
         ? { ...entry, label: "read", summary: "/workspace/src/dashboard.ts" }
@@ -51,8 +69,24 @@ describe("turn-centric run inspector", () => {
     const html = render(runDetailFixture({ entries }))
 
     expect(html).toContain('class="phase-summary"')
+    expect(html).toContain("Read target")
+    expect(html).toContain("Command")
     expect(html).toContain("/workspace/src/dashboard.ts")
     expect(html).toContain("bun test tests/dashboard.test.ts")
+  })
+
+  test("offers an accessible full view for long retained commands", () => {
+    const command = `bun test ${"tests/run-inspector-react.test.tsx ".repeat(8)}`
+    const entries = cleanEntries().map((entry) =>
+      entry.type === "span" && entry.id === 4
+        ? { ...entry, label: "Bash", summary: command }
+        : entry,
+    )
+    const html = render(runDetailFixture({ entries }))
+
+    expect(html).toContain("Command · show full")
+    expect(html).toContain('class="phase-summary-full"')
+    expect(html).toContain(command.trim())
   })
 
   test("distinguishes recovered tool failure from clean success", () => {
@@ -69,8 +103,8 @@ describe("turn-centric run inspector", () => {
     )
 
     expect(html).toContain("Succeeded with recovered error")
-    expect(html).toContain("1 tool failure")
-    expect(html).toContain("The run recovered")
+    expect(html).toContain("1 failed tool call recovered")
+    expect(html).not.toContain('class="attention-stack"')
   })
 
   test("derives a recovered legacy verdict from safe timeline spans", () => {
@@ -78,9 +112,7 @@ describe("turn-centric run inspector", () => {
 
     expect(html).toContain("Succeeded with recovered error")
     expect(html).toContain("1 failed tool call recovered")
-    expect(html).toContain("1 tool failure")
     expect(html).toContain("Tools</span><strong>2")
-    expect(html).toContain("Recovered failures</span><strong>1")
     expect(html).toContain("Turns</span><strong>unavailable")
     expect(html).toContain("Time categories are unavailable")
     expect(html).not.toContain("Succeeded cleanly")
@@ -101,6 +133,7 @@ describe("turn-centric run inspector", () => {
         entries: [...cleanEntries(), retry("failed")],
         metrics: { retryCount: 1 },
       }),
+      "all",
     )
 
     expect(html).toContain("Execution failed")
@@ -164,6 +197,7 @@ describe("turn-centric run inspector", () => {
           ),
         ],
       }),
+      "all",
     )
 
     expect(html).toContain("Execution in progress")
@@ -233,6 +267,7 @@ describe("turn-centric run inspector", () => {
           },
         },
       }),
+      "all",
     )
 
     expect(html).toContain("Model retry 1 of 3")
@@ -287,7 +322,7 @@ describe("turn-centric run inspector", () => {
       }),
     )
 
-    expect(html).toContain("legacy telemetry")
+    expect(html).toContain("Telemetry legacy")
     expect(html).toContain("Time categories are unavailable")
     expect(html).toContain("Turn membership unavailable")
     expect(html).toContain("without inferred turn membership")
@@ -316,8 +351,7 @@ describe("turn-centric run inspector", () => {
       }),
     )
 
-    expect(html).toContain("Timeline is truncated")
-    expect(html).toContain("6 of 306 entries are loaded")
+    expect(html).toContain("6 of 306 entries")
     expect(html).toContain("Timeline continues")
     expect(html).toContain("Load next 200")
   })
@@ -364,6 +398,7 @@ describe("turn-centric run inspector", () => {
         metrics: { turnCount: 100 },
         page: { returned: 100, total: 100 },
       }),
+      "all",
     )
 
     expect(html.match(/tabindex="0"/g)).toHaveLength(2)
@@ -394,16 +429,15 @@ describe("turn-centric run inspector", () => {
     expect(html).not.toContain('href="javascript:')
   })
 
-  test("never renders excluded telemetry content", () => {
+  test("renders only modeled dashboard telemetry", () => {
     const html = render()
-    for (const excluded of [
+    for (const unmodeled of [
       "private command",
       "raw tool output",
       "thinking prose",
       "/private/path",
     ])
-      expect(html).not.toContain(excluded)
-    expect(html).toContain("tool call identifiers")
+      expect(html).not.toContain(unmodeled)
   })
 })
 
@@ -557,6 +591,57 @@ describe("run inspector derivation", () => {
     expect(grouped.turns[0]?.phases).toHaveLength(0)
     expect(grouped.turns[1]?.phases).toEqual([assignedRetry])
     expect(grouped.unassigned).toEqual([unassignedCompaction])
+  })
+
+  test("treats successful retries as collapsed signals rather than errors", () => {
+    const detail = runDetailFixture({
+      entries: [...cleanEntries(), retry()],
+      metrics: { retryCount: 1 },
+    })
+    const first = groupTimeline(detail).turns[0]!
+    const html = render(detail, "all")
+
+    expect(first.hasSignal).toBe(true)
+    expect(first.needsAttention).toBe(false)
+    expect(html).toContain('class="turn turn-completed turn-signal"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain("turn-health needs-attention")
+  })
+
+  test("marks model error stop reasons as turn errors", () => {
+    const entries = cleanEntries().map((entry) =>
+      entry.type === "turn" && entry.ordinal === 2
+        ? { ...entry, stopReason: "error" }
+        : entry,
+    )
+    const detail = runDetailFixture({ entries })
+    const second = groupTimeline(detail).turns[1]!
+    const html = render(detail)
+
+    expect(second.needsAttention).toBe(true)
+    expect(html).toContain("First error")
+    expect(html).toContain("turn-health needs-attention")
+  })
+
+  test("keeps activity with an unloaded turn reference unassigned", () => {
+    const detail = runDetailFixture({
+      entries: [
+        turn(1, "2026-08-05T10:00:01.000Z", "2026-08-05T10:00:05.000Z"),
+        span(
+          1,
+          99,
+          "tool",
+          "Read",
+          "2026-08-05T10:00:02.000Z",
+          "2026-08-05T10:00:03.000Z",
+        ),
+      ],
+    })
+    const grouped = groupTimeline(detail)
+
+    expect(grouped.turns[0]?.spans).toHaveLength(0)
+    expect(grouped.unassigned).toHaveLength(1)
+    expect(render(detail)).toContain("Turn membership unavailable")
   })
 
   test("keeps spans with unknown turn membership unassigned", () => {

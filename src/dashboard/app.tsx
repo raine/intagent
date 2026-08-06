@@ -103,9 +103,6 @@ const runStates: Record<
   interrupted: { glyph: "◌", short: "STOP", label: "Interrupted" },
 }
 
-const privacyNote =
-  "Event identity, title, source link, typed effects, Bash commands, and read targets are shown. Prompt text, intake bodies, thinking text, other tool arguments, output, raw errors, call identifiers, and cwd are excluded."
-
 function positiveSafeInteger(value: string | null): number | null {
   if (value === null || !/^[1-9]\d*$/.test(value)) return null
   const parsed = Number(value)
@@ -129,9 +126,10 @@ function formatDuration(value: number): string {
 }
 
 function compactDuration(value: number): string {
-  if (value < 1000) return `${Math.round(value)}ms`
-  if (value < 60_000) return `${Math.round(value / 100) / 10}s`
-  return `${Math.floor(value / 60_000)}m${Math.round((value % 60_000) / 1000)}s`
+  const duration = Math.max(0, value)
+  if (duration < 1000) return `${Math.round(duration)}ms`
+  if (duration < 60_000) return `${Math.round(duration / 100) / 10}s`
+  return `${Math.floor(duration / 60_000)}m${Math.round((duration % 60_000) / 1000)}s`
 }
 
 function relativeTime(value: string, now: number): string {
@@ -347,7 +345,13 @@ function ActivityList({
   )
 }
 
-export function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
+export function ActiveRunCard({
+  run,
+  openRun = () => {},
+}: {
+  run: DashboardRun
+  openRun?: () => void
+}): JSX.Element {
   const [expanded, setExpanded] = useState(true)
   const now = useClock()
   const stalled = now - parseTime(run.lastActivityAt) > 120_000
@@ -388,6 +392,9 @@ export function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
         <span>
           last activity <b>{relativeTime(run.lastActivityAt, now)}</b>
         </span>
+        <button className="active-run-open" type="button" onClick={openRun}>
+          inspect run →
+        </button>
       </div>
       <div
         className={`active-run-activity${expanded ? " is-expanded" : ""}`}
@@ -400,7 +407,6 @@ export function ActiveRunCard({ run }: { run: DashboardRun }): JSX.Element {
       {expanded ? (
         <div className="activity-footer">
           <span>{run.steps.length} entries</span>
-          <span className="privacy-inline">{privacyNote}</span>
         </div>
       ) : null}
     </article>
@@ -478,47 +484,15 @@ export function SourceList({
             <b>{source.lastError ? "FAILING" : "HEALTHY"}</b>
           </div>
           <p className="source-poll">
-            last poll {relativeTime(source.updatedAt, now)}
+            last attempt {relativeTime(source.updatedAt, now)}
+            {source.lastError && source.lastSuccessAt
+              ? ` · last success ${relativeTime(source.lastSuccessAt, now)}`
+              : ""}
           </p>
           {source.lastError ? (
             <p className="source-error">{source.lastError}</p>
           ) : null}
         </article>
-      ))}
-    </div>
-  )
-}
-
-function RecentRuns({
-  runs,
-  now,
-  open,
-}: {
-  runs: DashboardRun[]
-  now: number
-  open: (run: DashboardRun) => void
-}): JSX.Element {
-  if (!runs.length)
-    return (
-      <p className="empty-state">
-        Run timelines appear after the watcher records triage activity.
-      </p>
-    )
-  return (
-    <div className="recent-runs">
-      {runs.map((run) => (
-        <button
-          className={`recent-run recent-run-${run.state}`}
-          type="button"
-          key={run.id}
-          onClick={() => open(run)}
-        >
-          <span className="recent-run-state" aria-hidden="true">
-            {runStates[run.state].glyph}
-          </span>
-          <strong>{run.eventTitle}</strong>
-          <time>{run.endedAt ? relativeTime(run.endedAt, now) : "active"}</time>
-        </button>
       ))}
     </div>
   )
@@ -573,7 +547,7 @@ function RouteLayer({
       if (event.key !== "Tab" || !panel.current) return
       const focusable = [
         ...panel.current.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])",
+          "button:not(:disabled), select:not(:disabled), a[href], summary, [tabindex]:not([tabindex='-1'])",
         ),
       ].filter((element) => element.offsetParent !== null)
       const first = focusable[0]
@@ -629,10 +603,6 @@ export function App(): JSX.Element {
   const { snapshot, connection, lastSuccess } = useSnapshot()
   const [filter, setFilter] = useState<Filter>("all")
   const [route, navigate] = useRoute()
-  const completed = useMemo(
-    () => snapshot?.runs.filter((run) => run.state !== "active") ?? [],
-    [snapshot],
-  )
   const filtered = useMemo(() => {
     if (!snapshot || filter === "all") return snapshot?.events ?? []
     if (filter === "open")
@@ -742,15 +712,6 @@ export function App(): JSX.Element {
               <article>
                 <span>HANDLED</span>
                 <strong>{snapshot.handled}</strong>
-                <small>succeeded + ignored</small>
-              </article>
-              <article>
-                <span>OLDEST OPEN</span>
-                <strong>
-                  {snapshot.oldestOpenAt
-                    ? compactDuration(now - parseTime(snapshot.oldestOpenAt))
-                    : "-"}
-                </strong>
                 <small>{snapshot.total} events retained</small>
               </article>
             </section>
@@ -767,7 +728,11 @@ export function App(): JSX.Element {
                     {snapshot.runs
                       .filter((run) => run.state === "active")
                       .map((run) => (
-                        <ActiveRunCard run={run} key={run.id} />
+                        <ActiveRunCard
+                          run={run}
+                          openRun={() => navigate({ kind: "run", id: run.id })}
+                          key={run.id}
+                        />
                       ))}
                     {snapshot.runs.every((run) => run.state !== "active") ? (
                       <p className="empty-state active-empty">
@@ -806,9 +771,14 @@ export function App(): JSX.Element {
                   <div className="events-list">
                     {filtered.map((event) => {
                       const run =
-                        snapshot.runs.find(
-                          (candidate) => candidate.eventId === event.id,
-                        ) ?? null
+                        snapshot.runs
+                          .filter((candidate) => candidate.eventId === event.id)
+                          .sort(
+                            (left, right) =>
+                              right.attempt - left.attempt ||
+                              parseTime(right.startedAt) -
+                                parseTime(left.startedAt),
+                          )[0] ?? null
                       return (
                         <EventRow
                           event={event}
@@ -831,28 +801,12 @@ export function App(): JSX.Element {
                   </p>
                 </section>
               </div>
-              <aside
-                className="side-column"
-                aria-label="Source health and completed runs"
-              >
+              <aside className="side-column" aria-label="Source health">
                 <section aria-labelledby="sources-title">
                   <h2 id="sources-title" className="section-label">
                     SOURCES
                   </h2>
                   <SourceList sources={snapshot.sources} now={now} />
-                </section>
-                <section
-                  className="recent-runs-section"
-                  aria-labelledby="recent-runs-title"
-                >
-                  <h2 id="recent-runs-title" className="section-label">
-                    RECENT RUNS
-                  </h2>
-                  <RecentRuns
-                    runs={completed}
-                    now={now}
-                    open={(run) => navigate({ kind: "run", id: run.id })}
-                  />
                 </section>
               </aside>
             </div>
