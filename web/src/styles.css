@@ -403,10 +403,9 @@
     border-bottom: 1px solid var(--edge-soft);
     display: grid;
     gap: 10px;
-    grid-template-columns: 14px minmax(
-        0,
-        max-content
-      ) max-content 1fr max-content;
+    grid-template-columns:
+      14px minmax(0, max-content)
+      max-content 1fr max-content;
     min-height: 42px;
     padding: 8px 14px;
     text-align: left;
@@ -1560,10 +1559,9 @@
     border-bottom: 1px solid var(--edge);
     display: grid;
     gap: 10px 14px;
-    grid-template-columns: max-content minmax(
-        220px,
-        1fr
-      ) max-content max-content max-content max-content;
+    grid-template-columns:
+      max-content minmax(220px, 1fr)
+      max-content max-content max-content max-content;
     min-height: 64px;
     padding: 8px 20px;
     position: sticky;
@@ -1688,10 +1686,9 @@
     border: 1px solid var(--edge);
     border-left: 3px solid var(--green);
     display: grid;
-    grid-template-columns: minmax(220px, 1.5fr) repeat(
-        6,
-        minmax(75px, 0.55fr)
-      ) minmax(155px, 1fr);
+    grid-template-columns:
+      minmax(220px, 1.5fr) repeat(6, minmax(75px, 0.55fr))
+      minmax(155px, 1fr);
   }
 
   .verdict-warning {
@@ -2101,10 +2098,9 @@
     border: 0;
     display: grid;
     gap: 9px;
-    grid-template-columns: 13px 44px minmax(130px, 0.8fr) minmax(
-        130px,
-        0.8fr
-      ) minmax(180px, 1.2fr) minmax(180px, 1fr) max-content;
+    grid-template-columns:
+      13px 44px minmax(130px, 0.8fr) minmax(130px, 0.8fr)
+      minmax(180px, 1.2fr) minmax(180px, 1fr) max-content;
     min-height: 58px;
     padding: 7px 14px;
     text-align: left;
@@ -2678,10 +2674,9 @@
 @layer responsive {
   @media (max-width: 1100px) {
     .inspector-identity {
-      grid-template-columns: max-content minmax(
-          180px,
-          1fr
-        ) max-content max-content;
+      grid-template-columns:
+        max-content minmax(180px, 1fr)
+        max-content max-content;
     }
 
     .identity-time {
@@ -2689,10 +2684,9 @@
     }
 
     .verdict-strip {
-      grid-template-columns: minmax(220px, 1.5fr) repeat(
-          3,
-          minmax(80px, 0.6fr)
-        ) minmax(150px, 1fr);
+      grid-template-columns:
+        minmax(220px, 1.5fr) repeat(3, minmax(80px, 0.6fr))
+        minmax(150px, 1fr);
     }
 
     .verdict-fact:nth-of-type(5),
@@ -2702,10 +2696,9 @@
     }
 
     .turn-disclosure {
-      grid-template-columns: 13px 40px minmax(105px, 0.8fr) minmax(
-          115px,
-          0.8fr
-        ) minmax(155px, 1fr) max-content;
+      grid-template-columns:
+        13px 40px minmax(105px, 0.8fr) minmax(115px, 0.8fr)
+        minmax(155px, 1fr) max-content;
     }
 
     .turn-usage {
@@ -2981,10 +2974,9 @@
   }
 
   .verdict-strip {
-    grid-template-columns: minmax(240px, 1.6fr) repeat(
-        5,
-        minmax(88px, 0.65fr)
-      ) minmax(180px, 1fr);
+    grid-template-columns:
+      minmax(240px, 1.6fr) repeat(5, minmax(88px, 0.65fr))
+      minmax(180px, 1fr);
   }
 
   .verdict-effects {
@@ -3121,10 +3113,9 @@
 @layer responsive {
   @media (max-width: 1100px) {
     .verdict-strip {
-      grid-template-columns: minmax(230px, 1.5fr) repeat(
-          3,
-          minmax(90px, 0.7fr)
-        ) minmax(170px, 1fr);
+      grid-template-columns:
+        minmax(230px, 1.5fr) repeat(3, minmax(90px, 0.7fr))
+        minmax(170px, 1fr);
     }
 
     .verdict-fact:nth-of-type(5),

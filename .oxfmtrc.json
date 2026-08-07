@@ -4,8 +4,9 @@
     "dist/**",
     "history/**",
     "node_modules/**",
-    "src/dashboard/generated/**",
+    "web/generated/**",
     "tests/fixtures/**/*.json",
+    "tests/fixtures/config/invalid-duplicate.yaml",
     "bun.lock"
   ],
   "printWidth": 80,

@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
-import { ActiveRunCard, EventRow, SourceList } from "../src/dashboard/app.tsx"
+import { ActiveRunCard, EventRow, SourceList } from "../src/app.tsx"
 
 const run: Parameters<typeof ActiveRunCard>[0]["run"] = {
   id: 7,

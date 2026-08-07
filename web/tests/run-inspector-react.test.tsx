@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
-import { RunInspector } from "../src/dashboard/run-inspector.tsx"
+import { RunInspector } from "../src/run-inspector.tsx"
 import {
   groupTimeline,
   mergeThinkingSpans,
   timeBudget,
-} from "../src/dashboard/run-inspector-data.ts"
+} from "../src/run-inspector-data.ts"
 import {
   cleanEntries,
   compaction,

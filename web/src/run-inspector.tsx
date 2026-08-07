@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { RunDetail, RunTimelineEntry } from "../run-detail.ts"
+import type { RunDetail, RunTimelineEntry } from "./run-detail-types.ts"
 import {
   entryEnd,
   entryPosition,

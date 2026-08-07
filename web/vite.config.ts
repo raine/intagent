@@ -4,16 +4,20 @@ import { defineConfig } from "vite"
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: "src/dashboard/generated",
+    copyPublicDir: false,
+    cssCodeSplit: false,
     emptyOutDir: true,
+    modulePreload: false,
+    outDir: "generated",
     rollupOptions: {
+      input: "src/main.tsx",
       output: {
-        entryFileNames: "app.js",
-        chunkFileNames: "[name].js",
         assetFileNames: (asset) =>
           asset.names.some((name) => name.endsWith(".css"))
             ? "app.css"
             : "[name][extname]",
+        entryFileNames: "app.js",
+        codeSplitting: false,
       },
     },
   },
