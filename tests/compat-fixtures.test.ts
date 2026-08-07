@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadConfig } from "../src/config.ts"
 import { pollRequestSchema, pollResponseSchema } from "../src/protocol.ts"
@@ -61,6 +62,96 @@ describe("Phase 0 compatibility fixtures", () => {
         ],
       }).success,
     ).toBe(false)
+  })
+
+  test("keeps configuration edge cases aligned with Zod", async () => {
+    const corpus = JSON.parse(
+      await readFile(join(fixtureRoot, "config/differential.json"), "utf8"),
+    ) as {
+      cases: Array<{
+        sourceYaml: string
+        accepted: boolean
+        optionValue?: unknown
+      }>
+    }
+    const original = await readFile(
+      join(fixtureRoot, "config/valid.yaml"),
+      "utf8",
+    )
+    const root = await mkdtemp(join(tmpdir(), "intake-config-differential-"))
+    const path = join(root, "config.yaml")
+    try {
+      for (const testCase of corpus.cases) {
+        const yaml = original.replace(
+          /sources:\n[\s\S]*?\ntriage:/,
+          `${testCase.sourceYaml}\ntriage:`,
+        )
+        await writeFile(path, yaml)
+        let config: Awaited<ReturnType<typeof loadConfig>> | undefined
+        try {
+          config = await loadConfig(path)
+        } catch {}
+        expect(config !== undefined).toBe(testCase.accepted)
+        if (testCase.optionValue !== undefined)
+          expect(Object.values(config?.sources[0]?.options ?? {})[0]).toEqual(
+            testCase.optionValue,
+          )
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps protocol edge cases aligned with Zod", async () => {
+    const corpus = JSON.parse(
+      await readFile(join(fixtureRoot, "protocol/differential.json"), "utf8"),
+    ) as {
+      request: Array<{
+        field: string
+        value: unknown
+        accepted: boolean
+      }>
+      item: Array<{
+        field: string
+        value?: unknown
+        repeat?: string
+        count?: number
+        accepted: boolean
+      }>
+      rawRequestNumbers: Array<{ value: string; accepted: boolean }>
+    }
+    const request = JSON.parse(
+      await readFile(join(fixtureRoot, "protocol/poll-request.json"), "utf8"),
+    )
+    const response = JSON.parse(
+      await readFile(join(fixtureRoot, "protocol/poll-response.json"), "utf8"),
+    )
+    for (const testCase of corpus.request) {
+      expect(
+        pollRequestSchema.safeParse({
+          ...request,
+          [testCase.field]: testCase.value,
+        }).success,
+      ).toBe(testCase.accepted)
+    }
+    for (const testCase of corpus.item) {
+      const value =
+        testCase.repeat?.repeat(testCase.count ?? 0) ?? testCase.value
+      expect(
+        pollResponseSchema.safeParse({
+          ...response,
+          items: [{ ...response.items[0], [testCase.field]: value }],
+        }).success,
+      ).toBe(testCase.accepted)
+    }
+    for (const testCase of corpus.rawRequestNumbers) {
+      const raw = `{"protocolVersion":1,"source":"source","checkpoint":${testCase.value},"now":"2026-08-07T10:00:00Z","itemLimit":1,"options":{}}`
+      let accepted = false
+      try {
+        accepted = pollRequestSchema.safeParse(JSON.parse(raw)).success
+      } catch {}
+      expect(accepted).toBe(testCase.accepted)
+    }
   })
 
   test("reconstruct every captured schema with canonical metadata", async () => {

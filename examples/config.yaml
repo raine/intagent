@@ -47,6 +47,8 @@ triage:
   timeout_minutes: 30
   max_attempts: 3
   retry_base_seconds: 60
+  compaction_trigger_tokens: 100000
+  compaction_keep_recent_messages: 12
 commands:
   path:
     - /opt/homebrew/bin

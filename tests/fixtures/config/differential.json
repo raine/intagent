@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {
+      "sourceYaml": "sources:\n  - name: unicode\n    command: source\n    options:\n      value: 😀",
+      "accepted": true,
+      "optionValue": "😀"
+    },
+    {
+      "sourceYaml": "sources:\n  - name: scalars\n    command: source\n    options:\n      no_value: no\n      off_value: off\n      yes_value: yes",
+      "accepted": true,
+      "optionValue": "no"
+    },
+    {
+      "sourceYaml": "sources:\n  - name: fraction\n    command: source\n    options:\n      value: 1.5",
+      "accepted": true,
+      "optionValue": 1.5
+    },
+    {
+      "sourceYaml": "sources:\n  - name: fraction\n    command: source\n    interval_seconds: 10.5",
+      "accepted": false
+    },
+    {
+      "sourceYaml": "sources:\n  - name: overflow\n    command: source\n    interval_seconds: 9007199254740992",
+      "accepted": false
+    },
+    {
+      "sourceYaml": "sources:\n  - name: overflow\n    command: source\n    options:\n      value: 1e400",
+      "accepted": false
+    }
+  ]
+}

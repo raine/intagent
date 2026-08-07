@@ -1,0 +1,30 @@
+{
+  "request": [
+    { "field": "source", "value": "😀", "accepted": true },
+    { "field": "source", "value": "", "accepted": false },
+    { "field": "now", "value": "2026-08-07T10:00Z", "accepted": true },
+    { "field": "now", "value": "2026-08-07T10:00:00.123456789012Z", "accepted": true },
+    { "field": "now", "value": "2026-08-07T10:00:00+00:00", "accepted": false },
+    { "field": "now", "value": "2026-02-29T10:00:00Z", "accepted": false },
+    { "field": "itemLimit", "value": 1.5, "accepted": false },
+    { "field": "itemLimit", "value": 1001, "accepted": false }
+  ],
+  "item": [
+    { "field": "entityId", "value": "😀", "accepted": true },
+    { "field": "entityId", "repeat": "😀", "count": 512, "accepted": true },
+    { "field": "entityId", "repeat": "😀", "count": 513, "accepted": false },
+    { "field": "title", "repeat": "😀", "count": 2048, "accepted": true },
+    { "field": "title", "repeat": "😀", "count": 2049, "accepted": false },
+    { "field": "url", "value": "https://example.com/%zz", "accepted": true },
+    { "field": "url", "value": "mailto:a@example.com", "accepted": true },
+    { "field": "url", "value": "custom:thing", "accepted": true },
+    { "field": "url", "value": "//example.com", "accepted": false },
+    { "field": "occurredAt", "value": "2026-08-07T10:00:00.000Z", "accepted": true },
+    { "field": "occurredAt", "value": "2026-08-07T10:00:00-00:00", "accepted": false }
+  ],
+  "rawRequestNumbers": [
+    { "value": "1.5", "accepted": true },
+    { "value": "1e400", "accepted": false },
+    { "value": "-1e400", "accepted": false }
+  ]
+}
