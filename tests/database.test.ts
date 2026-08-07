@@ -548,6 +548,28 @@ describe("intake persistence", () => {
     )
   })
 
+  test("rejects migration gaps and unsupported future schemas", () => {
+    for (const versions of [[2], [1, 8]]) {
+      const directory = mkdtempSync(join(tmpdir(), "intake-schema-version-"))
+      temporaryDirectories.push(directory)
+      const path = join(directory, "intake.sqlite")
+      const raw = new Database(path, { create: true })
+      raw.exec(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
+      )
+      const insert = raw.query(
+        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+      )
+      for (const version of versions)
+        insert.run(version, "2026-08-07T00:00:00.000Z")
+      raw.close()
+
+      expect(() => new IntakeDatabase(path)).toThrow(
+        versions.at(-1) === 8 ? "newer than supported" : "must be contiguous",
+      )
+    }
+  })
+
   test("derives durable Aven and investigation references", () => {
     const database = new IntakeDatabase(":memory:")
     databases.push(database)

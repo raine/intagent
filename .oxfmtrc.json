@@ -5,6 +5,7 @@
     "history/**",
     "node_modules/**",
     "src/dashboard/generated/**",
+    "tests/fixtures/**/*.json",
     "bun.lock"
   ],
   "printWidth": 80,

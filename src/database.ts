@@ -206,7 +206,7 @@ interface SafeUsage {
   }
 }
 
-const migrations = [
+export const databaseMigrations = [
   `
   CREATE TABLE source_state (
     source TEXT PRIMARY KEY,
@@ -497,7 +497,7 @@ const migrations = [
   );
   CREATE INDEX triage_run_prompts_run_idx ON triage_run_prompts(run_id, id);
   `,
-]
+] as const
 
 export class IntakeDatabase {
   readonly raw: Database
@@ -521,13 +521,22 @@ export class IntakeDatabase {
     this.raw.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
     )
-    const applied = new Set(
-      this.raw
-        .query("SELECT version FROM schema_migrations")
-        .all()
-        .map((row: any) => Number(row.version)),
-    )
-    for (const [index, sql] of migrations.entries()) {
+    const appliedVersions = this.raw
+      .query("SELECT version FROM schema_migrations ORDER BY version")
+      .all()
+      .map((row: any) => Number(row.version))
+    const newestVersion = appliedVersions.at(-1) ?? 0
+    if (newestVersion > databaseMigrations.length)
+      throw new Error(
+        `Database schema version ${newestVersion} is newer than supported version ${databaseMigrations.length}`,
+      )
+    for (const [index, version] of appliedVersions.entries())
+      if (version !== index + 1)
+        throw new Error(
+          `Database schema migrations must be contiguous from version 1; found ${version} at position ${index + 1}`,
+        )
+    const applied = new Set(appliedVersions)
+    for (const [index, sql] of databaseMigrations.entries()) {
       const version = index + 1
       if (applied.has(version)) continue
       this.raw.transaction(() => {

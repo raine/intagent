@@ -1,0 +1,42 @@
+{
+  "protocolVersion": 1,
+  "checkpoint": {
+    "repositories": {
+      "example/intake": {
+        "updatedAt": "2026-08-07T09:59:59.999Z",
+        "id": 43
+      }
+    }
+  },
+  "items": [
+    {
+      "entityId": "github:example/intake#42",
+      "revisionId": "issue-42-updated-2026-08-07T09:59:59.999Z",
+      "kind": "github-issue",
+      "title": "Investigate delayed notifications",
+      "body": "A deterministic compatibility fixture.",
+      "url": "https://github.example/example/intake/issues/42",
+      "occurredAt": "2026-08-07T09:59:59.999Z",
+      "metadata": {
+        "repository": "example/intake",
+        "labels": [
+          "bug",
+          "triage"
+        ],
+        "notificationReason": "comment"
+      }
+    },
+    {
+      "entityId": "mail:thread-7",
+      "revisionId": "message-9",
+      "kind": "email",
+      "title": "Follow up on the release",
+      "body": "The source protocol preserves camelCase fields.",
+      "occurredAt": "2026-08-07T09:58:00.000Z",
+      "metadata": {
+        "threadId": "thread-7",
+        "attachmentCount": 0
+      }
+    }
+  ]
+}

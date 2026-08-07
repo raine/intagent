@@ -1,0 +1,6 @@
+version: 1
+project_roots:
+  - ~/code
+project_roots:
+  - ~/projects
+sources: []

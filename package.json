@@ -23,6 +23,7 @@
     "check": "checkle run project",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
+    "fixtures:generate": "bun run tests/fixtures/generate.ts",
     "lint": "oxlint --type-aware .",
     "typecheck": "tsc --noEmit",
     "test": "bun test",

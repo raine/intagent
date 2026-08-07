@@ -1,0 +1,6540 @@
+{
+  "v0": {
+    "sqliteMaster": [
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      }
+    ],
+    "migrations": [],
+    "tableInfo": {
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": []
+  },
+  "v1": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      }
+    ]
+  },
+  "v2": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)"
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL, source TEXT,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 2,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 2,
+            "name": "external_id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      }
+    ]
+  },
+  "v3": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)"
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL, source TEXT,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_steps",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE TABLE triage_run_steps (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    step_key TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    label TEXT NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    UNIQUE(run_id, step_key)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_runs",
+        "tableName": "triage_runs",
+        "sql": "CREATE TABLE triage_runs (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    attempt INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    last_activity_at TEXT NOT NULL,\n    outcome TEXT,\n    model_id TEXT,\n    model_provider TEXT,\n    thinking_level TEXT,\n    turn_count INTEGER NOT NULL DEFAULT 0,\n    retry_count INTEGER NOT NULL DEFAULT 0,\n    compaction_count INTEGER NOT NULL DEFAULT 0\n  )"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 2,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 3,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_steps": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "step_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "label",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_runs": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "last_activity_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "model_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "model_provider",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "thinking_level",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "turn_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "retry_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "compaction_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 2,
+            "name": "external_id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 5,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "event_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      }
+    ]
+  },
+  "v4": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)"
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL, source TEXT,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_compactions",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE TABLE triage_run_compactions (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    reason TEXT,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    aborted INTEGER,\n    will_retry INTEGER,\n    tokens_before INTEGER,\n    estimated_tokens_after INTEGER,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    total_cost REAL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_effects",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE TABLE triage_run_effects (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    type TEXT NOT NULL,\n    value TEXT NOT NULL,\n    recorded_at TEXT NOT NULL,\n    UNIQUE(run_id, type, value)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_retries",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE TABLE triage_run_retries (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    attempt INTEGER NOT NULL,\n    max_attempts INTEGER NOT NULL,\n    delay_ms INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    wait_ended_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    error_category TEXT\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_steps",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE TABLE triage_run_steps (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    step_key TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    label TEXT NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT, turn_id INTEGER REFERENCES triage_run_turns(id),\n    UNIQUE(run_id, step_key)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_turns",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE TABLE triage_run_turns (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    ordinal INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    stop_reason TEXT,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    input_cost REAL,\n    output_cost REAL,\n    cache_read_cost REAL,\n    cache_write_cost REAL,\n    total_cost REAL,\n    context_tokens INTEGER,\n    context_window INTEGER,\n    UNIQUE(run_id, ordinal)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_runs",
+        "tableName": "triage_runs",
+        "sql": "CREATE TABLE triage_runs (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    attempt INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    last_activity_at TEXT NOT NULL,\n    outcome TEXT,\n    model_id TEXT,\n    model_provider TEXT,\n    thinking_level TEXT,\n    turn_count INTEGER NOT NULL DEFAULT 0,\n    retry_count INTEGER NOT NULL DEFAULT 0,\n    compaction_count INTEGER NOT NULL DEFAULT 0\n  , termination_reason TEXT, failure_category TEXT, context_window INTEGER, max_tokens INTEGER, telemetry_version INTEGER, telemetry_completeness TEXT NOT NULL DEFAULT 'legacy')"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 2,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 3,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 4,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_compactions": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "aborted",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "will_retry",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "tokens_before",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "estimated_tokens_after",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_effects": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "value",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "recorded_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_retries": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "max_attempts",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "delay_ms",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "wait_ended_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "error_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_steps": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "step_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "label",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_turns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "stop_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "input_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "output_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_read_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "cache_write_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "context_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_runs": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "last_activity_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "model_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "model_provider",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "thinking_level",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "turn_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "retry_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "compaction_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "termination_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "failure_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "max_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "telemetry_version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "telemetry_completeness",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'legacy'",
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 2,
+            "name": "external_id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "recorded_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 6,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 5,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 2,
+            "name": "ordinal"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "event_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      }
+    ]
+  },
+  "v5": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)"
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL, source TEXT,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_compactions",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE TABLE triage_run_compactions (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    reason TEXT,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    aborted INTEGER,\n    will_retry INTEGER,\n    tokens_before INTEGER,\n    estimated_tokens_after INTEGER,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    total_cost REAL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_effects",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE TABLE triage_run_effects (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    type TEXT NOT NULL,\n    value TEXT NOT NULL,\n    recorded_at TEXT NOT NULL,\n    UNIQUE(run_id, type, value)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_retries",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE TABLE triage_run_retries (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    attempt INTEGER NOT NULL,\n    max_attempts INTEGER NOT NULL,\n    delay_ms INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    wait_ended_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    error_category TEXT\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_steps",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE TABLE triage_run_steps (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    step_key TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    label TEXT NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT, turn_id INTEGER REFERENCES triage_run_turns(id),\n    UNIQUE(run_id, step_key)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_turns",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE TABLE triage_run_turns (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    ordinal INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    stop_reason TEXT,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    input_cost REAL,\n    output_cost REAL,\n    cache_read_cost REAL,\n    cache_write_cost REAL,\n    total_cost REAL,\n    context_tokens INTEGER,\n    context_window INTEGER,\n    UNIQUE(run_id, ordinal)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_runs",
+        "tableName": "triage_runs",
+        "sql": "CREATE TABLE triage_runs (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    attempt INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    last_activity_at TEXT NOT NULL,\n    outcome TEXT,\n    model_id TEXT,\n    model_provider TEXT,\n    thinking_level TEXT,\n    turn_count INTEGER NOT NULL DEFAULT 0,\n    retry_count INTEGER NOT NULL DEFAULT 0,\n    compaction_count INTEGER NOT NULL DEFAULT 0\n  , termination_reason TEXT, failure_category TEXT, context_window INTEGER, max_tokens INTEGER, telemetry_version INTEGER, telemetry_completeness TEXT NOT NULL DEFAULT 'legacy')"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 2,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 3,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 4,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 5,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_compactions": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "aborted",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "will_retry",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "tokens_before",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "estimated_tokens_after",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_effects": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "value",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "recorded_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_retries": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "max_attempts",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "delay_ms",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "wait_ended_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "error_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_steps": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "step_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "label",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_turns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "stop_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "input_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "output_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_read_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "cache_write_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "context_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_runs": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "last_activity_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "model_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "model_provider",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "thinking_level",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "turn_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "retry_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "compaction_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "termination_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "failure_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "max_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "telemetry_version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "telemetry_completeness",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'legacy'",
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 2,
+            "name": "external_id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "recorded_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 6,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 5,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 2,
+            "name": "ordinal"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "event_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      }
+    ]
+  },
+  "v6": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)"
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL, source TEXT,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_compactions",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE TABLE triage_run_compactions (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    reason TEXT,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    aborted INTEGER,\n    will_retry INTEGER,\n    tokens_before INTEGER,\n    estimated_tokens_after INTEGER,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    total_cost REAL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_effects",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE TABLE triage_run_effects (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    type TEXT NOT NULL,\n    value TEXT NOT NULL,\n    recorded_at TEXT NOT NULL,\n    UNIQUE(run_id, type, value)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_retries",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE TABLE triage_run_retries (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    attempt INTEGER NOT NULL,\n    max_attempts INTEGER NOT NULL,\n    delay_ms INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    wait_ended_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    error_category TEXT\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_steps",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE TABLE triage_run_steps (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    step_key TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    label TEXT NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT, turn_id INTEGER REFERENCES triage_run_turns(id), summary TEXT,\n    UNIQUE(run_id, step_key)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_turns",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE TABLE triage_run_turns (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    ordinal INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    stop_reason TEXT,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    input_cost REAL,\n    output_cost REAL,\n    cache_read_cost REAL,\n    cache_write_cost REAL,\n    total_cost REAL,\n    context_tokens INTEGER,\n    context_window INTEGER,\n    UNIQUE(run_id, ordinal)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_runs",
+        "tableName": "triage_runs",
+        "sql": "CREATE TABLE triage_runs (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    attempt INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    last_activity_at TEXT NOT NULL,\n    outcome TEXT,\n    model_id TEXT,\n    model_provider TEXT,\n    thinking_level TEXT,\n    turn_count INTEGER NOT NULL DEFAULT 0,\n    retry_count INTEGER NOT NULL DEFAULT 0,\n    compaction_count INTEGER NOT NULL DEFAULT 0\n  , termination_reason TEXT, failure_category TEXT, context_window INTEGER, max_tokens INTEGER, telemetry_version INTEGER, telemetry_completeness TEXT NOT NULL DEFAULT 'legacy')"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 2,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 3,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 4,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 5,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 6,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_compactions": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "aborted",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "will_retry",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "tokens_before",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "estimated_tokens_after",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_effects": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "value",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "recorded_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_retries": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "max_attempts",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "delay_ms",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "wait_ended_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "error_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_steps": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "step_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "label",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "summary",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_turns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "stop_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "input_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "output_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_read_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "cache_write_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "context_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_runs": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "last_activity_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "model_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "model_provider",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "thinking_level",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "turn_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "retry_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "compaction_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "termination_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "failure_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "max_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "telemetry_version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "telemetry_completeness",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'legacy'",
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 2,
+            "name": "external_id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "recorded_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 6,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 5,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 2,
+            "name": "ordinal"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "event_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      }
+    ]
+  },
+  "v7": {
+    "sqliteMaster": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)"
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_prompts_run_idx",
+        "tableName": "triage_run_prompts",
+        "sql": "CREATE INDEX triage_run_prompts_run_idx ON triage_run_prompts(run_id, id)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)"
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)"
+      },
+      {
+        "type": "table",
+        "name": "command_events",
+        "tableName": "command_events",
+        "sql": "CREATE TABLE command_events (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    command TEXT NOT NULL,\n    exit_code INTEGER NOT NULL,\n    output_summary TEXT NOT NULL,\n    created_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "entities",
+        "tableName": "entities",
+        "sql": "CREATE TABLE entities (\n    id INTEGER PRIMARY KEY,\n    source TEXT NOT NULL,\n    external_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    title TEXT NOT NULL,\n    aven_ref TEXT,\n    investigation_handle TEXT,\n    last_event_at TEXT NOT NULL,\n    handling_status TEXT NOT NULL DEFAULT 'pending',\n    operational_metadata TEXT NOT NULL DEFAULT '{}',\n    UNIQUE(source, external_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "events",
+        "tableName": "events",
+        "sql": "CREATE TABLE events (\n    id INTEGER PRIMARY KEY,\n    entity_id INTEGER NOT NULL REFERENCES entities(id),\n    revision_id TEXT NOT NULL,\n    payload TEXT,\n    occurred_at TEXT NOT NULL,\n    observed_at TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending',\n    attempt_count INTEGER NOT NULL DEFAULT 0,\n    next_attempt_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL, source TEXT,\n    UNIQUE(entity_id, revision_id)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "schema_migrations",
+        "tableName": "schema_migrations",
+        "sql": "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "source_state",
+        "tableName": "source_state",
+        "sql": "CREATE TABLE source_state (\n    source TEXT PRIMARY KEY,\n    checkpoint TEXT,\n    last_success_at TEXT,\n    last_error TEXT,\n    updated_at TEXT NOT NULL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_compactions",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE TABLE triage_run_compactions (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    reason TEXT,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    aborted INTEGER,\n    will_retry INTEGER,\n    tokens_before INTEGER,\n    estimated_tokens_after INTEGER,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    total_cost REAL\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_effects",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE TABLE triage_run_effects (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    type TEXT NOT NULL,\n    value TEXT NOT NULL,\n    recorded_at TEXT NOT NULL,\n    UNIQUE(run_id, type, value)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_prompts",
+        "tableName": "triage_run_prompts",
+        "sql": "CREATE TABLE triage_run_prompts (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    role TEXT NOT NULL,\n    content TEXT NOT NULL,\n    recorded_at TEXT NOT NULL,\n    UNIQUE(run_id, role)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_retries",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE TABLE triage_run_retries (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    turn_id INTEGER REFERENCES triage_run_turns(id),\n    attempt INTEGER NOT NULL,\n    max_attempts INTEGER NOT NULL,\n    delay_ms INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    wait_ended_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT,\n    error_category TEXT\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_steps",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE TABLE triage_run_steps (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    step_key TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    label TEXT NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    outcome TEXT, turn_id INTEGER REFERENCES triage_run_turns(id), summary TEXT,\n    UNIQUE(run_id, step_key)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_run_turns",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE TABLE triage_run_turns (\n    id INTEGER PRIMARY KEY,\n    run_id INTEGER NOT NULL REFERENCES triage_runs(id),\n    ordinal INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    stop_reason TEXT,\n    input_tokens INTEGER,\n    output_tokens INTEGER,\n    cache_read_tokens INTEGER,\n    cache_write_tokens INTEGER,\n    reasoning_tokens INTEGER,\n    total_tokens INTEGER,\n    input_cost REAL,\n    output_cost REAL,\n    cache_read_cost REAL,\n    cache_write_cost REAL,\n    total_cost REAL,\n    context_tokens INTEGER,\n    context_window INTEGER,\n    UNIQUE(run_id, ordinal)\n  )"
+      },
+      {
+        "type": "table",
+        "name": "triage_runs",
+        "tableName": "triage_runs",
+        "sql": "CREATE TABLE triage_runs (\n    id INTEGER PRIMARY KEY,\n    event_id INTEGER NOT NULL REFERENCES events(id),\n    attempt INTEGER NOT NULL,\n    started_at TEXT NOT NULL,\n    ended_at TEXT,\n    last_activity_at TEXT NOT NULL,\n    outcome TEXT,\n    model_id TEXT,\n    model_provider TEXT,\n    thinking_level TEXT,\n    turn_count INTEGER NOT NULL DEFAULT 0,\n    retry_count INTEGER NOT NULL DEFAULT 0,\n    compaction_count INTEGER NOT NULL DEFAULT 0\n  , termination_reason TEXT, failure_category TEXT, context_window INTEGER, max_tokens INTEGER, telemetry_version INTEGER, telemetry_completeness TEXT NOT NULL DEFAULT 'legacy')"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 1,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 2,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 3,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 4,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 5,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 6,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      },
+      {
+        "version": 7,
+        "appliedAt": "2026-08-07T00:00:00.000Z"
+      }
+    ],
+    "tableInfo": {
+      "command_events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "command",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "exit_code",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "output_summary",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "entities": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "title",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "aven_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "investigation_handle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "last_event_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handling_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "operational_metadata",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        }
+      ],
+      "events": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "occurred_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "observed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "attempt_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "next_attempt_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "schema_migrations": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "source_state": [
+        {
+          "cid": 0,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "checkpoint",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "last_success_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_compactions": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "aborted",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "will_retry",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "tokens_before",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "estimated_tokens_after",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_effects": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "value",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "recorded_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_prompts": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "role",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "content",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "recorded_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_retries": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "max_attempts",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "delay_ms",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "wait_ended_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "error_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_steps": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "step_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "label",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "turn_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "summary",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_run_turns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "run_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "stop_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "input_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "output_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "cache_read_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "cache_write_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "reasoning_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "total_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "input_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "output_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "cache_read_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "cache_write_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "total_cost",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "context_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "triage_runs": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "event_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "attempt",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "started_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "ended_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "last_activity_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "outcome",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "model_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "model_provider",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "thinking_level",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "turn_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "retry_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "compaction_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "termination_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "failure_category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "context_window",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "max_tokens",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "telemetry_version",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "telemetry_completeness",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'legacy'",
+          "pk": 0
+        }
+      ]
+    },
+    "indexes": [
+      {
+        "type": "index",
+        "name": "entities_external_id_idx",
+        "tableName": "entities",
+        "sql": "CREATE UNIQUE INDEX entities_external_id_idx ON entities(external_id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 2,
+            "name": "external_id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "events_queue_idx",
+        "tableName": "events",
+        "sql": "CREATE INDEX events_queue_idx ON events(status, next_attempt_at, observed_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 6,
+            "name": "status"
+          },
+          {
+            "seqno": 1,
+            "cid": 8,
+            "name": "next_attempt_at"
+          },
+          {
+            "seqno": 2,
+            "cid": 5,
+            "name": "observed_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_compactions_run_idx",
+        "tableName": "triage_run_compactions",
+        "sql": "CREATE INDEX triage_run_compactions_run_idx ON triage_run_compactions(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_effects_run_idx",
+        "tableName": "triage_run_effects",
+        "sql": "CREATE INDEX triage_run_effects_run_idx ON triage_run_effects(run_id, recorded_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 4,
+            "name": "recorded_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_prompts_run_idx",
+        "tableName": "triage_run_prompts",
+        "sql": "CREATE INDEX triage_run_prompts_run_idx ON triage_run_prompts(run_id, id)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 0,
+            "name": "id"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_retries_run_idx",
+        "tableName": "triage_run_retries",
+        "sql": "CREATE INDEX triage_run_retries_run_idx ON triage_run_retries(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 6,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_steps_run_idx",
+        "tableName": "triage_run_steps",
+        "sql": "CREATE INDEX triage_run_steps_run_idx ON triage_run_steps(run_id, started_at)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 5,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_run_turns_run_idx",
+        "tableName": "triage_run_turns",
+        "sql": "CREATE INDEX triage_run_turns_run_idx ON triage_run_turns(run_id, ordinal)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "run_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 2,
+            "name": "ordinal"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_event_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_event_idx ON triage_runs(event_id, started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 1,
+            "name": "event_id"
+          },
+          {
+            "seqno": 1,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      },
+      {
+        "type": "index",
+        "name": "triage_runs_recent_idx",
+        "tableName": "triage_runs",
+        "sql": "CREATE INDEX triage_runs_recent_idx ON triage_runs(started_at DESC)",
+        "columns": [
+          {
+            "seqno": 0,
+            "cid": 3,
+            "name": "started_at"
+          }
+        ]
+      }
+    ]
+  }
+}

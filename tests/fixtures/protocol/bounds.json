@@ -1,0 +1,65 @@
+{
+  "protocolVersion": 1,
+  "request": {
+    "source": {
+      "minUtf16CodeUnits": 1
+    },
+    "now": {
+      "format": "UTC ISO 8601 date-time"
+    },
+    "itemLimit": {
+      "integer": true,
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "options": {
+      "default": {}
+    }
+  },
+  "response": {
+    "items": {
+      "maximum": 1000
+    }
+  },
+  "item": {
+    "entityId": {
+      "minUtf16CodeUnits": 1,
+      "maxUtf16CodeUnits": 1024
+    },
+    "revisionId": {
+      "minUtf16CodeUnits": 1,
+      "maxUtf16CodeUnits": 1024
+    },
+    "kind": [
+      "email",
+      "github-issue",
+      "github-pull-request",
+      "generic"
+    ],
+    "title": {
+      "maxUtf16CodeUnits": 4096
+    },
+    "body": {
+      "maxUtf16CodeUnits": 1000000
+    },
+    "url": {
+      "format": "URL",
+      "optional": true
+    },
+    "occurredAt": {
+      "format": "UTC ISO 8601 date-time"
+    },
+    "metadata": {
+      "default": {}
+    }
+  },
+  "unknownFields": "rejected",
+  "jsonValues": [
+    "string",
+    "number",
+    "boolean",
+    "null",
+    "array",
+    "object"
+  ]
+}

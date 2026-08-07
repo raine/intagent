@@ -1,0 +1,211 @@
+{
+  "generatedAt": "2026-08-07T10:05:00.000Z",
+  "run": {
+    "id": 1,
+    "eventId": 4,
+    "attempt": 1,
+    "startedAt": "2026-08-07T10:00:00.000Z",
+    "endedAt": "2026-08-07T10:03:00.000Z",
+    "lastActivityAt": "2026-08-07T10:03:00.000Z",
+    "state": "succeeded",
+    "terminationReason": "completed",
+    "failureCategory": null,
+    "model": {
+      "id": "gpt-5.6-luna",
+      "provider": "openai-codex",
+      "thinkingLevel": "max",
+      "contextWindow": 200000,
+      "maxTokens": 16000
+    },
+    "telemetry": {
+      "schemaVersion": 1,
+      "completeness": "complete"
+    }
+  },
+  "event": {
+    "id": 4,
+    "source": "fastmail",
+    "entityId": "mail:thread-7",
+    "kind": "email",
+    "title": "Follow up on the release",
+    "url": null,
+    "occurredAt": "2026-08-07T09:58:00.000Z",
+    "observedAt": "2026-08-07T09:58:30.000Z",
+    "status": "succeeded",
+    "avenRef": null,
+    "investigationHandle": null
+  },
+  "siblingAttempts": [
+    {
+      "id": 1,
+      "attempt": 1,
+      "startedAt": "2026-08-07T10:00:00.000Z",
+      "endedAt": "2026-08-07T10:03:00.000Z",
+      "state": "succeeded",
+      "failureCategory": null,
+      "telemetryCompleteness": "complete"
+    }
+  ],
+  "metrics": {
+    "durationMs": {
+      "wall": 180000,
+      "setup": 10000,
+      "thinking": 15000,
+      "tool": 10000,
+      "compaction": 30000,
+      "retryWait": 1000,
+      "gaps": 94000,
+      "finalization": 20000
+    },
+    "toolCallCount": 1,
+    "failedToolCount": 0,
+    "turnCount": 2,
+    "retryCount": 1,
+    "compactionCount": 1,
+    "usage": {
+      "inputTokens": 2200,
+      "outputTokens": 280,
+      "cacheReadTokens": 900,
+      "cacheWriteTokens": 20,
+      "reasoningTokens": 160,
+      "totalTokens": 3560,
+      "totalCost": 0.036000000000000004
+    },
+    "peakContextTokens": 80000,
+    "peakContextPercent": 40,
+    "sourceLagMs": 120000,
+    "queueWaitMs": 90000
+  },
+  "effects": [
+    {
+      "type": "aven_reference",
+      "value": "APP-7KQ9",
+      "recordedAt": "2026-08-07T10:02:50.000Z"
+    },
+    {
+      "type": "investigation_handle",
+      "value": "inspect-notifications",
+      "recordedAt": "2026-08-07T10:02:55.000Z"
+    }
+  ],
+  "prompts": [
+    {
+      "role": "system",
+      "content": "Triage intake events using restricted tools.",
+      "recordedAt": "2026-08-07T10:00:00.000Z"
+    },
+    {
+      "role": "user",
+      "content": "Triage the fixture event.",
+      "recordedAt": "2026-08-07T10:00:00.000Z"
+    }
+  ],
+  "limits": {
+    "maxTurns": 50,
+    "wallTimeoutMs": 1800000,
+    "modelContextWindow": 200000,
+    "modelMaxTokens": 16000
+  },
+  "timeline": {
+    "entries": [
+      {
+        "type": "turn",
+        "id": 1,
+        "ordinal": 1,
+        "startedAt": "2026-08-07T10:00:10.000Z",
+        "endedAt": "2026-08-07T10:01:00.000Z",
+        "state": "completed",
+        "stopReason": "toolUse",
+        "usage": {
+          "inputTokens": 800,
+          "outputTokens": 120,
+          "cacheReadTokens": 400,
+          "cacheWriteTokens": 20,
+          "reasoningTokens": 80,
+          "totalTokens": 1420,
+          "totalCost": 0.017
+        },
+        "contextTokens": 45000,
+        "contextWindow": 200000
+      },
+      {
+        "type": "span",
+        "id": 3,
+        "turnOrdinal": 1,
+        "kind": "thinking",
+        "label": "thinking",
+        "summary": null,
+        "startedAt": "2026-08-07T10:00:10.000Z",
+        "endedAt": "2026-08-07T10:00:25.000Z",
+        "state": "succeeded"
+      },
+      {
+        "type": "span",
+        "id": 1,
+        "turnOrdinal": 1,
+        "kind": "tool",
+        "label": "bash",
+        "summary": "rg -n compatibility tests",
+        "startedAt": "2026-08-07T10:00:30.000Z",
+        "endedAt": "2026-08-07T10:00:40.000Z",
+        "state": "succeeded"
+      },
+      {
+        "type": "retry",
+        "id": 1,
+        "turnOrdinal": 1,
+        "attempt": 1,
+        "maxAttempts": 3,
+        "delayMs": 1000,
+        "startedAt": "2026-08-07T10:01:00.000Z",
+        "waitEndedAt": "2026-08-07T10:01:01.000Z",
+        "endedAt": "2026-08-07T10:01:01.000Z",
+        "state": "succeeded",
+        "errorCategory": "rate_limit"
+      },
+      {
+        "type": "compaction",
+        "id": 1,
+        "turnOrdinal": 1,
+        "reason": "threshold",
+        "startedAt": "2026-08-07T10:01:20.000Z",
+        "endedAt": "2026-08-07T10:01:50.000Z",
+        "state": "succeeded",
+        "aborted": false,
+        "willRetry": false,
+        "tokensBefore": 180000,
+        "estimatedTokensAfter": 80000,
+        "totalTokens": 1350,
+        "totalCost": 0.01
+      },
+      {
+        "type": "turn",
+        "id": 2,
+        "ordinal": 2,
+        "startedAt": "2026-08-07T10:02:00.000Z",
+        "endedAt": "2026-08-07T10:02:40.000Z",
+        "state": "completed",
+        "stopReason": "stop",
+        "usage": {
+          "inputTokens": 500,
+          "outputTokens": 60,
+          "cacheReadTokens": 200,
+          "cacheWriteTokens": 0,
+          "reasoningTokens": 30,
+          "totalTokens": 790,
+          "totalCost": 0.009
+        },
+        "contextTokens": 80000,
+        "contextWindow": 200000
+      }
+    ],
+    "page": {
+      "offset": 0,
+      "limit": 200,
+      "returned": 6,
+      "total": 6,
+      "hasMore": false,
+      "nextOffset": null
+    }
+  }
+}
