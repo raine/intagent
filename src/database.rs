@@ -302,6 +302,79 @@ pub struct TriageStepRecord {
     pub outcome: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriageRunSummary {
+    pub run: TriageRunRecord,
+    pub step_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriageTurnRecord {
+    pub id: i64,
+    pub ordinal: i64,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub stop_reason: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub total_cost: Option<f64>,
+    pub context_tokens: Option<i64>,
+    pub context_window: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriageRetryRecord {
+    pub id: i64,
+    pub turn_id: Option<i64>,
+    pub attempt: i64,
+    pub max_attempts: i64,
+    pub delay_ms: i64,
+    pub started_at: String,
+    pub wait_ended_at: String,
+    pub ended_at: Option<String>,
+    pub outcome: Option<String>,
+    pub error_category: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriageCompactionRecord {
+    pub id: i64,
+    pub turn_id: Option<i64>,
+    pub reason: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub outcome: Option<String>,
+    pub aborted: Option<bool>,
+    pub will_retry: Option<bool>,
+    pub tokens_before: Option<i64>,
+    pub estimated_tokens_after: Option<i64>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub total_cost: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriageRunPromptRecord {
+    pub role: String,
+    pub content: String,
+    pub recorded_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriageEffectRecord {
+    pub effect_type: String,
+    pub value: String,
+    pub recorded_at: String,
+}
+
 #[derive(Clone, Debug)]
 struct OpenTarget {
     value: String,
@@ -791,6 +864,71 @@ impl DatabaseReaders {
             .await
     }
 
+    pub async fn list_triage_run_summaries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<TriageRunSummary>, DatabaseError> {
+        self.request(|reply| ReadOperation::ListTriageRunSummaries { limit, reply })
+            .await
+    }
+
+    pub async fn recent_triage_run_steps(
+        &self,
+        id: RunId,
+        limit: usize,
+    ) -> Result<Vec<TriageStepRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::RecentTriageRunSteps { id, limit, reply })
+            .await
+    }
+
+    pub async fn triage_runs_for_event(
+        &self,
+        event_id: i64,
+    ) -> Result<Vec<TriageRunRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::TriageRunsForEvent { event_id, reply })
+            .await
+    }
+
+    pub async fn triage_run_turns(
+        &self,
+        id: RunId,
+    ) -> Result<Vec<TriageTurnRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::TriageRunTurns { id, reply })
+            .await
+    }
+
+    pub async fn triage_run_retries(
+        &self,
+        id: RunId,
+    ) -> Result<Vec<TriageRetryRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::TriageRunRetries { id, reply })
+            .await
+    }
+
+    pub async fn triage_run_compactions(
+        &self,
+        id: RunId,
+    ) -> Result<Vec<TriageCompactionRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::TriageRunCompactions { id, reply })
+            .await
+    }
+
+    pub async fn triage_run_prompts(
+        &self,
+        id: RunId,
+    ) -> Result<Vec<TriageRunPromptRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::TriageRunPrompts { id, reply })
+            .await
+    }
+
+    pub async fn triage_run_effects(
+        &self,
+        id: RunId,
+    ) -> Result<Vec<TriageEffectRecord>, DatabaseError> {
+        self.request(|reply| ReadOperation::TriageRunEffects { id, reply })
+            .await
+    }
+
     pub async fn integrity_check(&self) -> Result<String, DatabaseError> {
         self.request(ReadOperation::IntegrityCheck).await
     }
@@ -978,6 +1116,39 @@ enum ReadOperation {
     TriageRunSteps {
         id: RunId,
         reply: Reply<Vec<TriageStepRecord>>,
+    },
+    ListTriageRunSummaries {
+        limit: usize,
+        reply: Reply<Vec<TriageRunSummary>>,
+    },
+    RecentTriageRunSteps {
+        id: RunId,
+        limit: usize,
+        reply: Reply<Vec<TriageStepRecord>>,
+    },
+    TriageRunsForEvent {
+        event_id: i64,
+        reply: Reply<Vec<TriageRunRecord>>,
+    },
+    TriageRunTurns {
+        id: RunId,
+        reply: Reply<Vec<TriageTurnRecord>>,
+    },
+    TriageRunRetries {
+        id: RunId,
+        reply: Reply<Vec<TriageRetryRecord>>,
+    },
+    TriageRunCompactions {
+        id: RunId,
+        reply: Reply<Vec<TriageCompactionRecord>>,
+    },
+    TriageRunPrompts {
+        id: RunId,
+        reply: Reply<Vec<TriageRunPromptRecord>>,
+    },
+    TriageRunEffects {
+        id: RunId,
+        reply: Reply<Vec<TriageEffectRecord>>,
     },
     IntegrityCheck(Reply<String>),
 }
@@ -1317,6 +1488,34 @@ fn dispatch_read(connection: &Connection, operation: ReadOperation) {
         }
         ReadOperation::TriageRunSteps { id, reply: sender } => {
             reply!(sender, triage_run_steps(connection, id))
+        }
+        ReadOperation::ListTriageRunSummaries {
+            limit,
+            reply: sender,
+        } => reply!(sender, list_triage_run_summaries(connection, limit)),
+        ReadOperation::RecentTriageRunSteps {
+            id,
+            limit,
+            reply: sender,
+        } => reply!(sender, recent_triage_run_steps(connection, id, limit)),
+        ReadOperation::TriageRunsForEvent {
+            event_id,
+            reply: sender,
+        } => reply!(sender, triage_runs_for_event(connection, event_id)),
+        ReadOperation::TriageRunTurns { id, reply: sender } => {
+            reply!(sender, triage_run_turns(connection, id))
+        }
+        ReadOperation::TriageRunRetries { id, reply: sender } => {
+            reply!(sender, triage_run_retries(connection, id))
+        }
+        ReadOperation::TriageRunCompactions { id, reply: sender } => {
+            reply!(sender, triage_run_compactions(connection, id))
+        }
+        ReadOperation::TriageRunPrompts { id, reply: sender } => {
+            reply!(sender, triage_run_prompts(connection, id))
+        }
+        ReadOperation::TriageRunEffects { id, reply: sender } => {
+            reply!(sender, triage_run_effects(connection, id))
         }
         ReadOperation::IntegrityCheck(sender) => reply!(sender, integrity_check(connection)),
     }
@@ -2099,32 +2298,34 @@ fn triage_run(
                telemetry_completeness, turn_count, retry_count, compaction_count
              FROM triage_runs WHERE id = ?1",
             [id.0],
-            |row| {
-                Ok(TriageRunRecord {
-                    id: row.get(0)?,
-                    event_id: row.get(1)?,
-                    attempt: row.get(2)?,
-                    started_at: row.get(3)?,
-                    ended_at: row.get(4)?,
-                    last_activity_at: row.get(5)?,
-                    outcome: row.get(6)?,
-                    termination_reason: row.get(7)?,
-                    failure_category: row.get(8)?,
-                    model_id: row.get(9)?,
-                    model_provider: row.get(10)?,
-                    thinking_level: row.get(11)?,
-                    context_window: row.get(12)?,
-                    max_tokens: row.get(13)?,
-                    telemetry_version: row.get(14)?,
-                    telemetry_completeness: row.get(15)?,
-                    turn_count: row.get(16)?,
-                    retry_count: row.get(17)?,
-                    compaction_count: row.get(18)?,
-                })
-            },
+            triage_run_from_row,
         )
         .optional()
         .map_err(DatabaseError::from)
+}
+
+fn triage_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TriageRunRecord> {
+    Ok(TriageRunRecord {
+        id: row.get(0)?,
+        event_id: row.get(1)?,
+        attempt: row.get(2)?,
+        started_at: row.get(3)?,
+        ended_at: row.get(4)?,
+        last_activity_at: row.get(5)?,
+        outcome: row.get(6)?,
+        termination_reason: row.get(7)?,
+        failure_category: row.get(8)?,
+        model_id: row.get(9)?,
+        model_provider: row.get(10)?,
+        thinking_level: row.get(11)?,
+        context_window: row.get(12)?,
+        max_tokens: row.get(13)?,
+        telemetry_version: row.get(14)?,
+        telemetry_completeness: row.get(15)?,
+        turn_count: row.get(16)?,
+        retry_count: row.get(17)?,
+        compaction_count: row.get(18)?,
+    })
 }
 
 fn triage_run_steps(
@@ -2153,6 +2354,216 @@ fn triage_run_steps(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn list_triage_run_summaries(
+    connection: &Connection,
+    limit: usize,
+) -> Result<Vec<TriageRunSummary>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT run.id, run.event_id, run.attempt, run.started_at, run.ended_at,
+           run.last_activity_at, run.outcome, run.termination_reason,
+           run.failure_category, run.model_id, run.model_provider,
+           run.thinking_level, run.context_window, run.max_tokens,
+           run.telemetry_version, run.telemetry_completeness, run.turn_count,
+           run.retry_count, run.compaction_count,
+           (SELECT COUNT(*) FROM triage_run_steps step WHERE step.run_id = run.id)
+         FROM triage_runs run ORDER BY run.started_at DESC, run.id DESC LIMIT ?1",
+    )?;
+    Ok(statement
+        .query_map([saturating_i64(limit)], |row| {
+            Ok(TriageRunSummary {
+                run: triage_run_from_row(row)?,
+                step_count: usize::try_from(row.get::<_, i64>(19)?).unwrap_or(usize::MAX),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn recent_triage_run_steps(
+    connection: &Connection,
+    id: RunId,
+    limit: usize,
+) -> Result<Vec<TriageStepRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT recent.id, recent.turn_id, recent.turn_ordinal, recent.kind,
+           recent.label, recent.summary, recent.started_at, recent.ended_at,
+           recent.outcome
+         FROM (
+           SELECT step.id, step.turn_id, turn.ordinal AS turn_ordinal, step.kind,
+             step.label, step.summary, step.started_at, step.ended_at, step.outcome
+           FROM triage_run_steps step
+           LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
+           WHERE step.run_id = ?1
+           ORDER BY step.started_at DESC, step.id DESC LIMIT ?2
+         ) recent ORDER BY recent.started_at, recent.id",
+    )?;
+    Ok(statement
+        .query_map(params![id.0, saturating_i64(limit)], triage_step_from_row)?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_runs_for_event(
+    connection: &Connection,
+    event_id: i64,
+) -> Result<Vec<TriageRunRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT id, event_id, attempt, started_at, ended_at, last_activity_at,
+           outcome, termination_reason, failure_category, model_id, model_provider,
+           thinking_level, context_window, max_tokens, telemetry_version,
+           telemetry_completeness, turn_count, retry_count, compaction_count
+         FROM triage_runs WHERE event_id = ?1 ORDER BY attempt, id",
+    )?;
+    Ok(statement
+        .query_map([event_id], triage_run_from_row)?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_run_turns(
+    connection: &Connection,
+    id: RunId,
+) -> Result<Vec<TriageTurnRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT id, ordinal, started_at, ended_at, stop_reason, input_tokens,
+           output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+           total_tokens, total_cost, context_tokens, context_window
+         FROM triage_run_turns WHERE run_id = ?1 ORDER BY ordinal",
+    )?;
+    Ok(statement
+        .query_map([id.0], |row| {
+            Ok(TriageTurnRecord {
+                id: row.get(0)?,
+                ordinal: row.get(1)?,
+                started_at: row.get(2)?,
+                ended_at: row.get(3)?,
+                stop_reason: row.get(4)?,
+                input_tokens: row.get(5)?,
+                output_tokens: row.get(6)?,
+                cache_read_tokens: row.get(7)?,
+                cache_write_tokens: row.get(8)?,
+                reasoning_tokens: row.get(9)?,
+                total_tokens: row.get(10)?,
+                total_cost: row.get(11)?,
+                context_tokens: row.get(12)?,
+                context_window: row.get(13)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_run_retries(
+    connection: &Connection,
+    id: RunId,
+) -> Result<Vec<TriageRetryRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT id, turn_id, attempt, max_attempts, delay_ms, started_at,
+           wait_ended_at, ended_at, outcome, error_category
+         FROM triage_run_retries WHERE run_id = ?1 ORDER BY started_at, id",
+    )?;
+    Ok(statement
+        .query_map([id.0], |row| {
+            Ok(TriageRetryRecord {
+                id: row.get(0)?,
+                turn_id: row.get(1)?,
+                attempt: row.get(2)?,
+                max_attempts: row.get(3)?,
+                delay_ms: row.get(4)?,
+                started_at: row.get(5)?,
+                wait_ended_at: row.get(6)?,
+                ended_at: row.get(7)?,
+                outcome: row.get(8)?,
+                error_category: row.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_run_compactions(
+    connection: &Connection,
+    id: RunId,
+) -> Result<Vec<TriageCompactionRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT id, turn_id, reason, started_at, ended_at, outcome, aborted,
+           will_retry, tokens_before, estimated_tokens_after, input_tokens,
+           output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+           total_tokens, total_cost
+         FROM triage_run_compactions WHERE run_id = ?1 ORDER BY started_at, id",
+    )?;
+    Ok(statement
+        .query_map([id.0], |row| {
+            Ok(TriageCompactionRecord {
+                id: row.get(0)?,
+                turn_id: row.get(1)?,
+                reason: row.get(2)?,
+                started_at: row.get(3)?,
+                ended_at: row.get(4)?,
+                outcome: row.get(5)?,
+                aborted: row.get(6)?,
+                will_retry: row.get(7)?,
+                tokens_before: row.get(8)?,
+                estimated_tokens_after: row.get(9)?,
+                input_tokens: row.get(10)?,
+                output_tokens: row.get(11)?,
+                cache_read_tokens: row.get(12)?,
+                cache_write_tokens: row.get(13)?,
+                reasoning_tokens: row.get(14)?,
+                total_tokens: row.get(15)?,
+                total_cost: row.get(16)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_run_prompts(
+    connection: &Connection,
+    id: RunId,
+) -> Result<Vec<TriageRunPromptRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT role, content, recorded_at FROM triage_run_prompts
+         WHERE run_id = ?1 ORDER BY id",
+    )?;
+    Ok(statement
+        .query_map([id.0], |row| {
+            Ok(TriageRunPromptRecord {
+                role: row.get(0)?,
+                content: row.get(1)?,
+                recorded_at: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_run_effects(
+    connection: &Connection,
+    id: RunId,
+) -> Result<Vec<TriageEffectRecord>, DatabaseError> {
+    let mut statement = connection.prepare(
+        "SELECT type, value, recorded_at FROM triage_run_effects
+         WHERE run_id = ?1 ORDER BY recorded_at, id",
+    )?;
+    Ok(statement
+        .query_map([id.0], |row| {
+            Ok(TriageEffectRecord {
+                effect_type: row.get(0)?,
+                value: row.get(1)?,
+                recorded_at: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn triage_step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TriageStepRecord> {
+    Ok(TriageStepRecord {
+        id: row.get(0)?,
+        turn_id: row.get(1)?,
+        turn_ordinal: row.get(2)?,
+        kind: row.get(3)?,
+        label: row.get(4)?,
+        summary: row.get(5)?,
+        started_at: row.get(6)?,
+        ended_at: row.get(7)?,
+        outcome: row.get(8)?,
+    })
 }
 
 fn integrity_check(connection: &Connection) -> Result<String, DatabaseError> {
