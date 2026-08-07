@@ -35,9 +35,14 @@ interface Email {
   bodyStructure?: BodyPart
 }
 
-interface HeaderExclusion {
+interface HeaderRule {
   property: string
   values: Set<string>
+}
+
+interface HeaderFilters {
+  include: HeaderRule[]
+  exclude: HeaderRule[]
 }
 
 interface Address {
@@ -102,7 +107,7 @@ export async function pollFastmail(
     integerOption(request, "bootstrap_limit") ?? 0,
     request.itemLimit,
   )
-  const exclusions = headerExclusions(request)
+  const filters = headerFilters(request)
 
   if (!request.checkpoint) {
     const baseline = await queryMailbox(
@@ -120,7 +125,7 @@ export async function pollFastmail(
             accountId,
             token,
             baseline.ids,
-            exclusions,
+            filters,
             fetcher,
           )
         : []
@@ -133,7 +138,7 @@ export async function pollFastmail(
         token,
         messages,
         sentMailboxId,
-        exclusions,
+        filters,
         fetcher,
       ),
     }
@@ -179,14 +184,7 @@ export async function pollFastmail(
     .slice(0, request.itemLimit)
   const messages =
     ids.length > 0
-      ? await getEmails(
-          session.apiUrl,
-          accountId,
-          token,
-          ids,
-          exclusions,
-          fetcher,
-        )
+      ? await getEmails(session.apiUrl, accountId, token, ids, filters, fetcher)
       : []
 
   return {
@@ -198,7 +196,7 @@ export async function pollFastmail(
       token,
       messages,
       sentMailboxId,
-      exclusions,
+      filters,
       fetcher,
     ),
   }
@@ -238,7 +236,7 @@ async function normalizeMessages(
   token: string,
   messages: Email[],
   sentMailboxId: string | null,
-  exclusions: HeaderExclusion[],
+  filters: HeaderFilters,
   fetcher: typeof fetch,
 ): Promise<IntakeItem[]> {
   const threadCache = new Map<string, Email[]>()
@@ -247,7 +245,7 @@ async function normalizeMessages(
     messageTimestamp(left).localeCompare(messageTimestamp(right)),
   )
   for (const email of ordered) {
-    if (isExcluded(email, exclusions)) continue
+    if (!isAllowed(email, filters)) continue
     let thread = threadCache.get(email.threadId)
     if (!thread) {
       thread = await getThread(
@@ -255,7 +253,7 @@ async function normalizeMessages(
         accountId,
         token,
         email.threadId,
-        exclusions,
+        filters,
         fetcher,
       )
       threadCache.set(email.threadId, thread)
@@ -294,7 +292,7 @@ async function getEmails(
   accountId: string,
   token: string,
   ids: string[],
-  exclusions: HeaderExclusion[],
+  filters: HeaderFilters,
   fetcher: typeof fetch,
 ): Promise<Email[]> {
   const result = await jmapCall<any>(
@@ -321,7 +319,11 @@ async function getEmails(
           "htmlBody",
           "bodyValues",
           "bodyStructure",
-          ...exclusions.map((exclusion) => exclusion.property),
+          ...new Set(
+            [...filters.include, ...filters.exclude].map(
+              (rule) => rule.property,
+            ),
+          ),
         ],
         fetchTextBodyValues: true,
         fetchHTMLBodyValues: true,
@@ -339,7 +341,7 @@ async function getThread(
   accountId: string,
   token: string,
   threadId: string,
-  exclusions: HeaderExclusion[],
+  filters: HeaderFilters,
   fetcher: typeof fetch,
 ): Promise<Email[]> {
   const thread = await jmapCall<any>(
@@ -354,11 +356,11 @@ async function getThread(
     accountId,
     token,
     ids,
-    exclusions,
+    filters,
     fetcher,
   )
   return emails
-    .filter((email) => !isExcluded(email, exclusions))
+    .filter((email) => isAllowed(email, filters))
     .sort((left, right) =>
       messageTimestamp(left).localeCompare(messageTimestamp(right)),
     )
@@ -494,22 +496,29 @@ function parseCheckpoint(value: unknown): Checkpoint | undefined {
   return checkpoint as Checkpoint
 }
 
-function headerExclusions(request: PollRequest): HeaderExclusion[] {
-  const option = request.options.exclude_headers
+function headerFilters(request: PollRequest): HeaderFilters {
+  return {
+    include: headerRules(request, "include_headers"),
+    exclude: headerRules(request, "exclude_headers"),
+  }
+}
+
+function headerRules(request: PollRequest, optionName: string): HeaderRule[] {
+  const option = request.options[optionName]
   if (option === undefined) return []
   if (!option || typeof option !== "object" || Array.isArray(option))
-    throw new Error("Fastmail exclude_headers must map header names to values")
+    throw new Error(`Fastmail ${optionName} must map header names to values`)
 
   return Object.entries(option).map(([name, values]) => {
     if (!/^[A-Za-z0-9-]+$/.test(name))
-      throw new Error(`Fastmail excluded header name is invalid: ${name}`)
+      throw new Error(`Fastmail ${optionName} header name is invalid: ${name}`)
     if (
       !Array.isArray(values) ||
       values.length === 0 ||
       values.some((value) => typeof value !== "string" || !value.trim())
     )
       throw new Error(
-        `Fastmail excluded header ${name} must have a non-empty value list`,
+        `Fastmail ${optionName} header ${name} must have a non-empty value list`,
       )
     return {
       property: `header:${name}:asText`,
@@ -520,14 +529,18 @@ function headerExclusions(request: PollRequest): HeaderExclusion[] {
   })
 }
 
-function isExcluded(email: Email, exclusions: HeaderExclusion[]): boolean {
-  return exclusions.some((exclusion) => {
-    const value = Reflect.get(email, exclusion.property)
-    return (
-      typeof value === "string" &&
-      exclusion.values.has(value.trim().toLowerCase())
-    )
-  })
+function isAllowed(email: Email, filters: HeaderFilters): boolean {
+  return (
+    filters.include.every((rule) => matchesHeaderRule(email, rule)) &&
+    !filters.exclude.some((rule) => matchesHeaderRule(email, rule))
+  )
+}
+
+function matchesHeaderRule(email: Email, rule: HeaderRule): boolean {
+  const value = Reflect.get(email, rule.property)
+  return (
+    typeof value === "string" && rule.values.has(value.trim().toLowerCase())
+  )
 }
 
 function stringOption(request: PollRequest, name: string): string | undefined {

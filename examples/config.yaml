@@ -21,11 +21,13 @@ sources:
       - FASTMAIL_API_TOKEN
     options:
       mailbox_id: inbox
-      # Header names map to case-insensitive values. Matching messages are omitted
-      # from intake events and from the context of later messages in the thread.
-      exclude_headers:
+      # Header names map to case-insensitive values. Every include rule must
+      # match. Exclude rules use the same mapping and reject matches. Filtered
+      # messages are omitted from events and later thread context.
+      include_headers:
         X-GitHub-Reason:
-          - push
+          - comment
+          - subscribed
   - name: github
     command: intake-github-source
     interval_seconds: 60

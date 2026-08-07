@@ -255,6 +255,104 @@ describe("Fastmail source", () => {
     })
   })
 
+  test("includes only configured header values", async () => {
+    process.env.FASTMAIL_API_TOKEN = "source-only-token"
+    const messages = [
+      {
+        ...email(
+          "comment-message",
+          "2026-08-03T10:00:00.000Z",
+          "Useful comment",
+        ),
+        "header:X-GitHub-Reason:asText": "comment",
+      },
+      {
+        ...email(
+          "subscribed-message",
+          "2026-08-03T10:01:00.000Z",
+          "Useful pull request",
+        ),
+        "header:X-GitHub-Reason:asText": "subscribed",
+      },
+      {
+        ...email(
+          "mention-message",
+          "2026-08-03T10:02:00.000Z",
+          "Noisy mention",
+        ),
+        "header:X-GitHub-Reason:asText": "mention",
+      },
+    ]
+    const fetcher = (async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      if (!init?.method) {
+        return json({
+          apiUrl: "https://mail.test/jmap",
+          primaryAccounts: { "urn:ietf:params:jmap:mail": "account-1" },
+        })
+      }
+      const body = JSON.parse(init.body as string)
+      const [method, arguments_, callId] = body.methodCalls[0]
+      if (method === "Email/queryChanges") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                added: messages.map((message, index) => ({
+                  id: message.id,
+                  index,
+                })),
+                removed: [],
+                newQueryState: "query-state-2",
+                hasMoreChanges: false,
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Thread/get") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                list: [
+                  { id: "thread-1", emailIds: messages.map(({ id }) => id) },
+                ],
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Email/get") {
+        expect(arguments_.properties).toContain("header:X-GitHub-Reason:asText")
+        return json({ methodResponses: [[method, { list: messages }, callId]] })
+      }
+      throw new Error(`unexpected method ${method}`)
+    }) as typeof fetch
+    const pollRequest = request({
+      queryState: "query-state-1",
+      mailboxId: "inbox",
+      sentMailboxId: "sent",
+    })
+    pollRequest.options.include_headers = {
+      "X-GitHub-Reason": ["comment", "subscribed"],
+    }
+
+    const result = await pollFastmail(pollRequest, fetcher)
+
+    expect(result.items.map(({ revisionId }) => revisionId)).toEqual([
+      "comment-message",
+      "subscribed-message",
+    ])
+    expect(result.items[0]?.body).not.toContain("Noisy mention")
+  })
+
   test("omits excluded messages from later thread context", async () => {
     process.env.FASTMAIL_API_TOKEN = "source-only-token"
     const fetcher = (async (
