@@ -1,11 +1,14 @@
-use intake::protocol::{ProtocolError, source_main};
+use intake::protocol::source_main;
+use intake::sources::{github::poll_github, http_client};
 
 #[tokio::main]
 async fn main() {
-    let success = source_main(|_| async {
-        Err(ProtocolError::SourceUnavailable(
-            "GitHub HTTP polling belongs to the source implementation",
-        ))
+    let success = source_main(|request| async move {
+        let token = std::env::var("GITHUB_TOKEN").map_err(|_| {
+            intake::protocol::ProtocolError::Source("GITHUB_TOKEN is required".into())
+        })?;
+        let client = http_client()?;
+        poll_github(request, &client, &token).await
     })
     .await;
     if !success {

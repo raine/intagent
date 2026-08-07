@@ -21,6 +21,8 @@ pub enum ProtocolError {
     InvalidRequest(String),
     #[error("invalid poll response: {0}")]
     InvalidResponse(String),
+    #[error("source polling failed: {0}")]
+    Source(String),
     #[error("source polling is unavailable: {0}")]
     SourceUnavailable(&'static str),
     #[error("standard stream error: {0}")]

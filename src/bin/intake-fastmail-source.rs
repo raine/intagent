@@ -1,11 +1,14 @@
-use intake::protocol::{ProtocolError, source_main};
+use intake::protocol::source_main;
+use intake::sources::{fastmail::poll_fastmail, http_client};
 
 #[tokio::main]
 async fn main() {
-    let success = source_main(|_| async {
-        Err(ProtocolError::SourceUnavailable(
-            "Fastmail HTTP polling belongs to the source implementation",
-        ))
+    let success = source_main(|request| async move {
+        let token = std::env::var("FASTMAIL_API_TOKEN").map_err(|_| {
+            intake::protocol::ProtocolError::Source("FASTMAIL_API_TOKEN is required".into())
+        })?;
+        let client = http_client()?;
+        poll_fastmail(request, &client, &token).await
     })
     .await;
     if !success {
