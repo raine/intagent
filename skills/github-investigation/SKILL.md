@@ -23,10 +23,12 @@ Use these skills for command syntax:
 3. When `priorHandling.investigationHandle` resolves to an existing workmux
    agent, send the update there regardless of whether its status is `working`,
    `waiting`, or `done`. Do not create another worktree or invoke `/investigate`
-   again for the same issue or pull request. Send this prompt:
+   again for the same issue or pull request. Include the most specific activity
+   permalink present in the intake, such as a comment or review URL. Omit the
+   activity sentence when no permalink is available. Send this prompt:
 
    ```text
-   New GitHub activity is available for this <issue-or-pull-request>: <url>. Reassess it using the existing investigation context. Investigate the activity, perform any additional verification it warrants, update your conclusions and recommended next action, and report only decision-relevant findings.
+   New GitHub activity is available for this <issue-or-pull-request>: <entity-url>. Activity: <activity-permalink>. Reassess it using the existing investigation context. Investigate the activity, perform any additional verification it warrants, update your conclusions and recommended next action, and report only decision-relevant findings.
    ```
 
    Create a replacement investigation only when the prior handle is unavailable.
