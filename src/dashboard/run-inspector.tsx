@@ -110,6 +110,10 @@ function stateLabel(value: string): string {
   return value.replaceAll("_", " ")
 }
 
+function plainSummary(value: string): string {
+  return value.replace(/\*\*(.+?)\*\*/gs, "$1").replace(/__(.+?)__/gs, "$1")
+}
+
 function useInspectorClock(active: boolean): number {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -882,6 +886,10 @@ function PhaseRow({
   const interrupted = entry.state === "interrupted"
   const hasToolDetail = entry.kind === "tool" && entry.summary !== null
   const showToolStatus = !hasToolDetail || entry.state !== "succeeded"
+  const thinkingSummary =
+    entry.kind === "thinking" && entry.summary
+      ? plainSummary(entry.summary)
+      : null
   return (
     <div className={`phase-row phase-${entry.kind} phase-${entry.state}`}>
       <div className="phase-copy">
@@ -905,13 +913,13 @@ function PhaseRow({
               <strong>
                 {entry.kind === "thinking" ? "Thinking" : entry.label}
               </strong>
-              {entry.kind === "thinking" && entry.summary ? (
+              {thinkingSummary ? (
                 <button
                   className="thinking-summary-trigger"
                   type="button"
-                  aria-label={`Thinking summary: ${entry.summary}`}
-                  data-summary={entry.summary}
-                  title={entry.summary}
+                  aria-label={`Thinking summary: ${thinkingSummary}`}
+                  data-summary={thinkingSummary}
+                  title={thinkingSummary}
                 >
                   i
                 </button>

@@ -77,7 +77,10 @@ describe("activity-first run inspector", () => {
   test("offers thinking summaries without adding row noise", () => {
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.kind === "thinking" && entry.id === 1
-        ? { ...entry, summary: "Checked queue state before reading the event." }
+        ? {
+            ...entry,
+            summary: "**Checked queue state** before reading the event.",
+          }
         : entry,
     )
     const html = render(runDetailFixture({ entries }))
@@ -88,6 +91,7 @@ describe("activity-first run inspector", () => {
     expect(html).toContain(
       'data-summary="Checked queue state before reading the event."',
     )
+    expect(html).not.toContain("**Checked queue state**")
   })
 
   test("shows commands and read targets on tool rows", () => {
