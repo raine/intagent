@@ -34,6 +34,18 @@ test:
 build:
     bun run build
 
+rust-format:
+    checkle run rust-format
+
+rust-clippy:
+    checkle run rust-clippy
+
+rust-build:
+    checkle run rust-build
+
+rust-test:
+    checkle run rust-test
+
 package-check:
     scripts/package-check
 

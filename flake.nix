@@ -27,6 +27,7 @@
     {
       packages = eachSystem (system: {
         default = pkgsFor.${system}.callPackage ./default.nix { };
+        rust-compat = pkgsFor.${system}.callPackage ./rust-compat.nix { };
       });
 
       apps = eachSystem (system: {
@@ -38,6 +39,7 @@
 
       checks = eachSystem (system: {
         package = inputs.self.packages.${system}.default;
+        rust-compat = inputs.self.packages.${system}.rust-compat;
       });
 
       devShells = eachSystem (system: {
@@ -45,7 +47,12 @@
           packages = with pkgsFor.${system}; [
             bun
             bun2nix
+            cargo
+            clippy
             just
+            rust-analyzer
+            rustc
+            rustfmt
             shellcheck
           ];
         };
