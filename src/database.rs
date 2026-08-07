@@ -262,6 +262,7 @@ pub struct RunFinish {
     pub outcome: RunOutcome,
     pub termination_reason: String,
     pub failure_category: Option<ErrorCategory>,
+    pub recording_complete: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -681,6 +682,23 @@ impl IntakeDatabase {
         .await
     }
 
+    pub async fn record_assistant_text(
+        &self,
+        run_id: RunId,
+        turn_id: Option<TurnId>,
+        text: String,
+        now: DateTime<Utc>,
+    ) -> Result<(), DatabaseError> {
+        self.request(|reply| WriteOperation::RecordAssistantText {
+            run_id,
+            turn_id,
+            text,
+            now: timestamp(now),
+            reply,
+        })
+        .await
+    }
+
     pub async fn record_reasoning(
         &self,
         run_id: RunId,
@@ -1045,6 +1063,13 @@ enum WriteOperation {
         now: String,
         reply: Reply<()>,
     },
+    RecordAssistantText {
+        run_id: RunId,
+        turn_id: Option<TurnId>,
+        text: String,
+        now: String,
+        reply: Reply<()>,
+    },
     RecordReasoning {
         run_id: RunId,
         turn_id: Option<TurnId>,
@@ -1392,6 +1417,16 @@ fn dispatch_write(connection: &mut Connection, operation: WriteOperation) {
         } => reply!(
             sender,
             finish_compaction(connection, run_id, compaction_id, finish, &now)
+        ),
+        WriteOperation::RecordAssistantText {
+            run_id,
+            turn_id,
+            text,
+            now,
+            reply: sender,
+        } => reply!(
+            sender,
+            record_assistant_text(connection, run_id, turn_id, &text, &now)
         ),
         WriteOperation::RecordReasoning {
             run_id,
@@ -1945,6 +1980,28 @@ fn finish_compaction(
     Ok(())
 }
 
+fn record_assistant_text(
+    connection: &Connection,
+    run_id: RunId,
+    turn_id: Option<TurnId>,
+    text: &str,
+    now: &str,
+) -> Result<(), DatabaseError> {
+    connection.execute(
+        "INSERT INTO triage_run_steps(run_id, step_key, turn_id, kind, label,
+           summary, started_at, ended_at, outcome)
+         VALUES (?1, lower(hex(randomblob(16))), ?2, 'message', 'assistant',
+           ?3, ?4, ?4, 'succeeded')",
+        params![
+            run_id.0,
+            turn_id.map(|id| id.0),
+            bounded_detail(text, 1000),
+            now,
+        ],
+    )?;
+    touch_run(connection, run_id, now)
+}
+
 fn record_reasoning(
     connection: &Connection,
     run_id: RunId,
@@ -1986,7 +2043,8 @@ fn finish_run(
     )?;
     close_open_telemetry(&transaction, run_id, now)?;
     refresh_counts(&transaction, run_id, now)?;
-    let complete = open_count == 0 && finish.outcome != RunOutcome::Interrupted;
+    let complete =
+        open_count == 0 && finish.outcome != RunOutcome::Interrupted && finish.recording_complete;
     transaction.execute(
         "UPDATE triage_runs SET ended_at = ?1, last_activity_at = ?1,
            outcome = ?2, termination_reason = ?3, failure_category = ?4,

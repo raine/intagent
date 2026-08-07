@@ -78,6 +78,52 @@ pub fn compatibility_tools() -> Vec<ToolDefinition> {
         .collect()
 }
 
+pub fn triage_tools() -> Vec<ToolDefinition> {
+    vec![
+        ToolDefinition {
+            name: "bash".into(),
+            description: "Run one executable-allowlisted command or pipeline without a shell. Pass untrusted or multiline input through stdin.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "minLength": 1, "maxLength": 32768 },
+                    "cwd": { "type": "string" },
+                    "stdin": { "type": "string", "maxLength": 262144 }
+                },
+                "required": ["command"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "read".into(),
+            description: "Read line-numbered UTF-8 text beneath approved project and skill roots.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                    "offset": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 2000 }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "write".into(),
+            description: "Replace the complete project registry with a valid YAML list of canonical repository paths.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                    "content": { "type": "string", "maxLength": 65536 }
+                },
+                "required": ["path", "content"],
+                "additionalProperties": false
+            }),
+        },
+    ]
+}
+
 pub fn completion_request(
     system_instructions: impl Into<String>,
     user_prompt: impl Into<String>,
@@ -90,17 +136,42 @@ pub fn completion_request(
     )
 }
 
+pub fn summary_completion_request_for_history(
+    system_instructions: impl Into<String>,
+    history: Vec<Message>,
+    level: ThinkingLevel,
+) -> CompletionRequest {
+    request_for_history(system_instructions, history, level, Vec::new())
+}
+
+pub fn triage_completion_request_for_history(
+    system_instructions: impl Into<String>,
+    history: Vec<Message>,
+    level: ThinkingLevel,
+) -> CompletionRequest {
+    request_for_history(system_instructions, history, level, triage_tools())
+}
+
 pub fn completion_request_for_history(
     system_instructions: impl Into<String>,
     history: Vec<Message>,
     level: ThinkingLevel,
+) -> CompletionRequest {
+    request_for_history(system_instructions, history, level, compatibility_tools())
+}
+
+fn request_for_history(
+    system_instructions: impl Into<String>,
+    history: Vec<Message>,
+    level: ThinkingLevel,
+    tools: Vec<ToolDefinition>,
 ) -> CompletionRequest {
     CompletionRequest {
         model: None,
         preamble: Some(system_instructions.into()),
         chat_history: OneOrMany::many(history).expect("an agent request always has a prompt"),
         documents: Vec::new(),
-        tools: compatibility_tools(),
+        tools,
         temperature: None,
         max_tokens: None,
         tool_choice: None,
