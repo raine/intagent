@@ -96,7 +96,13 @@ impl ContextManager {
         let groups = canonical_groups(history);
         let recent_start = groups.len().saturating_sub(self.config.keep_recent_groups);
         let mut start = 0;
-        while start < groups.len() && groups[start].preserve_before_summary {
+        while start < groups.len()
+            && (groups[start].preserve_before_summary
+                || groups[start]
+                    .messages
+                    .iter()
+                    .any(|message| message == &self.event_prompt))
+        {
             start += 1;
         }
         let mut end_group = start;

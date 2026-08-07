@@ -311,6 +311,7 @@ async fn typed_telemetry_version_two_closes_before_complete() {
                 outcome: RunOutcome::Succeeded,
                 termination_reason: "completed".into(),
                 failure_category: None,
+                recording_complete: true,
             },
             at("2026-08-03T10:02:08.000Z"),
         )
@@ -387,6 +388,7 @@ async fn open_typed_span_makes_run_partial_and_interrupted() {
                 outcome: RunOutcome::Failed,
                 termination_reason: "model_error".into(),
                 failure_category: Some(ErrorCategory::ModelUnavailable),
+                recording_complete: true,
             },
             at("2026-08-03T10:02:03.000Z"),
         )

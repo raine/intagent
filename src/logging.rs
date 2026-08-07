@@ -294,6 +294,10 @@ impl TriageRunLog {
         self.record("compaction_end", details).await;
     }
 
+    pub async fn assistant(&mut self, text: &str) {
+        self.record("assistant_text", json!({ "text": text })).await;
+    }
+
     pub async fn reasoning(&mut self, summary: Option<&str>) {
         self.record("reasoning", json!({ "summary": summary }))
             .await;
