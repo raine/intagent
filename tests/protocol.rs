@@ -182,6 +182,8 @@ fn source_binary_shells_parse_one_request_without_stdout_diagnostics() {
         env!("CARGO_BIN_EXE_intake-github-source"),
     ] {
         let mut child = Command::new(executable)
+            .env_remove("FASTMAIL_API_TOKEN")
+            .env_remove("GITHUB_TOKEN")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -196,10 +198,8 @@ fn source_binary_shells_parse_one_request_without_stdout_diagnostics() {
         let output = child.wait_with_output().unwrap();
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stdout.is_empty());
-        assert!(
-            String::from_utf8(output.stderr)
-                .unwrap()
-                .contains("source polling is unavailable")
-        );
+        let diagnostics = String::from_utf8(output.stderr).unwrap();
+        assert!(diagnostics.contains("source polling failed"));
+        assert!(diagnostics.contains("_TOKEN is required"));
     }
 }

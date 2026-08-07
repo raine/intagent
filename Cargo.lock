@@ -1090,6 +1090,7 @@ dependencies = [
  "chrono",
  "http",
  "libc",
+ "reqwest",
  "rig-agent",
  "rig-core",
  "rusqlite",

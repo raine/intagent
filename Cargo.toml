@@ -19,6 +19,10 @@ chrono = "0.4"
 libc = "0.2"
 rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f" }
 rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f" }
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "rustls",
+] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
