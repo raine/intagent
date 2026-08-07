@@ -40,9 +40,10 @@ interface HeaderRule {
   values: Set<string>
 }
 
-interface HeaderFilters {
-  include: HeaderRule[]
-  exclude: HeaderRule[]
+interface EmailFilters {
+  includeHeaders: HeaderRule[]
+  excludeHeaders: HeaderRule[]
+  includeMessageIdContains: string[]
 }
 
 interface Address {
@@ -107,7 +108,7 @@ export async function pollFastmail(
     integerOption(request, "bootstrap_limit") ?? 0,
     request.itemLimit,
   )
-  const filters = headerFilters(request)
+  const filters = emailFilters(request)
 
   if (!request.checkpoint) {
     const baseline = await queryMailbox(
@@ -236,7 +237,7 @@ async function normalizeMessages(
   token: string,
   messages: Email[],
   sentMailboxId: string | null,
-  filters: HeaderFilters,
+  filters: EmailFilters,
   fetcher: typeof fetch,
 ): Promise<IntakeItem[]> {
   const threadCache = new Map<string, Email[]>()
@@ -292,7 +293,7 @@ async function getEmails(
   accountId: string,
   token: string,
   ids: string[],
-  filters: HeaderFilters,
+  filters: EmailFilters,
   fetcher: typeof fetch,
 ): Promise<Email[]> {
   const result = await jmapCall<any>(
@@ -320,7 +321,7 @@ async function getEmails(
           "bodyValues",
           "bodyStructure",
           ...new Set(
-            [...filters.include, ...filters.exclude].map(
+            [...filters.includeHeaders, ...filters.excludeHeaders].map(
               (rule) => rule.property,
             ),
           ),
@@ -341,7 +342,7 @@ async function getThread(
   accountId: string,
   token: string,
   threadId: string,
-  filters: HeaderFilters,
+  filters: EmailFilters,
   fetcher: typeof fetch,
 ): Promise<Email[]> {
   const thread = await jmapCall<any>(
@@ -496,10 +497,14 @@ function parseCheckpoint(value: unknown): Checkpoint | undefined {
   return checkpoint as Checkpoint
 }
 
-function headerFilters(request: PollRequest): HeaderFilters {
+function emailFilters(request: PollRequest): EmailFilters {
   return {
-    include: headerRules(request, "include_headers"),
-    exclude: headerRules(request, "exclude_headers"),
+    includeHeaders: headerRules(request, "include_headers"),
+    excludeHeaders: headerRules(request, "exclude_headers"),
+    includeMessageIdContains: stringListOption(
+      request,
+      "include_message_id_contains",
+    ).map((value) => value.toLowerCase()),
   }
 }
 
@@ -529,10 +534,18 @@ function headerRules(request: PollRequest, optionName: string): HeaderRule[] {
   })
 }
 
-function isAllowed(email: Email, filters: HeaderFilters): boolean {
+function isAllowed(email: Email, filters: EmailFilters): boolean {
+  const includedByMessageId =
+    filters.includeMessageIdContains.length === 0 ||
+    (email.messageId ?? []).some((messageId) =>
+      filters.includeMessageIdContains.some((value) =>
+        messageId.toLowerCase().includes(value),
+      ),
+    )
   return (
-    filters.include.every((rule) => matchesHeaderRule(email, rule)) &&
-    !filters.exclude.some((rule) => matchesHeaderRule(email, rule))
+    includedByMessageId &&
+    filters.includeHeaders.every((rule) => matchesHeaderRule(email, rule)) &&
+    !filters.excludeHeaders.some((rule) => matchesHeaderRule(email, rule))
   )
 }
 
@@ -541,6 +554,18 @@ function matchesHeaderRule(email: Email, rule: HeaderRule): boolean {
   return (
     typeof value === "string" && rule.values.has(value.trim().toLowerCase())
   )
+}
+
+function stringListOption(request: PollRequest, name: string): string[] {
+  const value = request.options[name]
+  if (value === undefined) return []
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((item) => typeof item !== "string" || !item.trim())
+  )
+    throw new Error(`Fastmail ${name} must be a non-empty string list`)
+  return value.map((item) => (item as string).trim())
 }
 
 function stringOption(request: PollRequest, name: string): string | undefined {

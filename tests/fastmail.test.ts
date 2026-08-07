@@ -255,7 +255,7 @@ describe("Fastmail source", () => {
     })
   })
 
-  test("includes only configured header values", async () => {
+  test("includes only configured headers and message ID kinds", async () => {
     process.env.FASTMAIL_API_TOKEN = "source-only-token"
     const messages = [
       {
@@ -265,6 +265,7 @@ describe("Fastmail source", () => {
           "Useful comment",
         ),
         "header:X-GitHub-Reason:asText": "comment",
+        messageId: ["raine/example/issues/1/123@github.com"],
       },
       {
         ...email(
@@ -273,6 +274,7 @@ describe("Fastmail source", () => {
           "Useful pull request",
         ),
         "header:X-GitHub-Reason:asText": "subscribed",
+        messageId: ["raine/example/pull/2@github.com"],
       },
       {
         ...email(
@@ -281,6 +283,16 @@ describe("Fastmail source", () => {
           "Noisy mention",
         ),
         "header:X-GitHub-Reason:asText": "mention",
+        messageId: ["raine/example/issues/3@github.com"],
+      },
+      {
+        ...email(
+          "release-message",
+          "2026-08-03T10:03:00.000Z",
+          "Noisy release",
+        ),
+        "header:X-GitHub-Reason:asText": "subscribed",
+        messageId: ["raine/example/releases/123@github.com"],
       },
     ]
     const fetcher = (async (
@@ -343,6 +355,7 @@ describe("Fastmail source", () => {
     pollRequest.options.include_headers = {
       "X-GitHub-Reason": ["comment", "subscribed"],
     }
+    pollRequest.options.include_message_id_contains = ["/issues/", "/pull/"]
 
     const result = await pollFastmail(pollRequest, fetcher)
 
@@ -351,6 +364,7 @@ describe("Fastmail source", () => {
       "subscribed-message",
     ])
     expect(result.items[0]?.body).not.toContain("Noisy mention")
+    expect(result.items[0]?.body).not.toContain("Noisy release")
   })
 
   test("omits excluded messages from later thread context", async () => {

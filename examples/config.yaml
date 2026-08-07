@@ -28,6 +28,10 @@ sources:
         X-GitHub-Reason:
           - comment
           - subscribed
+      # GitHub Message-IDs identify the notification resource type.
+      include_message_id_contains:
+        - /issues/
+        - /pull/
   - name: github
     command: intake-github-source
     interval_seconds: 60
