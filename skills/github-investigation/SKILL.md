@@ -26,7 +26,7 @@ Use these skills for command syntax:
    again for the same issue or pull request. Send this prompt:
 
    ```text
-   New GitHub activity was received for this <issue-or-pull-request>: <url>. Compare the current GitHub state with the existing investigation and report what changed.
+   New GitHub activity is available for this <issue-or-pull-request>: <url>. Reassess it using the existing investigation context. Investigate the activity, perform any additional verification it warrants, update your conclusions and recommended next action, and report only decision-relevant findings.
    ```
 
    Create a replacement investigation only when the prior handle is unavailable.
