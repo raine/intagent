@@ -19,6 +19,34 @@ name = "build"
 command = ["bun", "run", "build"]
 
 [[check]]
+name = "rust-format"
+mode = "rustfmt"
+command = ["cargo", "fmt", "--all", "--", "--check"]
+
+[[check]]
+name = "rust-clippy"
+mode = "cargo"
+command = [
+  "cargo",
+  "clippy",
+  "--all-targets",
+  "--message-format=json",
+  "--",
+  "-D",
+  "warnings",
+]
+
+[[check]]
+name = "rust-build"
+mode = "cargo"
+command = ["cargo", "build", "--all-targets", "--message-format=json"]
+
+[[check]]
+name = "rust-test"
+mode = "cargo"
+command = ["cargo", "test", "--all-targets", "--message-format=json"]
+
+[[check]]
 name = "package"
 command = ["scripts/package-check"]
 
@@ -32,4 +60,16 @@ command = [
 
 [[group]]
 name = "project"
-checks = ["format", "lint", "types", "test", "build", "package", "scripts"]
+checks = [
+  "format",
+  "lint",
+  "types",
+  "test",
+  "build",
+  "rust-format",
+  "rust-clippy",
+  "rust-build",
+  "rust-test",
+  "package",
+  "scripts",
+]

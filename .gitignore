@@ -15,6 +15,7 @@ state/
 .workmux/
 result
 result-*
+target/
 history/*
 !history/2026-08-03-usage-and-security.md
 !history/2026-08-03-release-process.md

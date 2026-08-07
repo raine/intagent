@@ -1,0 +1,51 @@
+[package]
+name = "personal-intake"
+version = "0.1.0"
+edition = "2024"
+description = "Local intake monitor with restricted agent triage"
+license = "MIT"
+
+[lib]
+name = "intake"
+path = "src/lib.rs"
+
+[[example]]
+name = "rig-compat"
+path = "examples/rig-compat.rs"
+
+[dependencies]
+anyhow = "1"
+libc = "0.2"
+rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f" }
+rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f" }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = [
+  "fs",
+  "io-util",
+  "macros",
+  "net",
+  "process",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time",
+] }
+tokio-util = "0.7"
+
+[dev-dependencies]
+http = "1"
+rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f", features = [
+  "test-utils",
+] }
+rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f", features = [
+  "test-utils",
+] }
+tempfile = "3"
+
+[patch."https://github.com/0xPlaygrounds/rig"]
+rig-agent = { path = "vendor/rig/crates/rig-agent" }
+rig-core = { path = "vendor/rig/crates/rig-core" }
+rig-derive = { path = "vendor/rig/crates/rig-derive" }
