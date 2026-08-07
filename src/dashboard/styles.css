@@ -199,14 +199,14 @@
 
   .connection strong {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     text-transform: uppercase;
   }
 
   .connection-note,
   .dashboard-clock {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .connection-live .connection-dot {
@@ -315,7 +315,7 @@
 @layer components {
   .section-label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.12em;
   }
@@ -328,7 +328,7 @@
     align-items: center;
     color: var(--ink-3);
     display: inline-flex;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     gap: 5px;
   }
@@ -443,7 +443,7 @@
     border: 1px solid var(--yellow);
     border-radius: 3px;
     color: var(--yellow);
-    font-size: 11px;
+    font-size: 12px;
     justify-self: end;
     padding: 1px 6px;
   }
@@ -475,7 +475,7 @@
     color: var(--muted);
     content: "ACTIVITY · ALL RECORDED ENTRIES";
     display: block;
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.12em;
     margin-bottom: 5px;
   }
@@ -483,7 +483,7 @@
   .activity-row {
     align-items: center;
     display: grid;
-    font-size: 11px;
+    font-size: 12px;
     gap: 10px;
     grid-template-columns: 62px 46px 100px 100px minmax(60px, 1fr);
     min-height: 24px;
@@ -584,7 +584,7 @@
     color: var(--muted);
     display: flex;
     flex-wrap: wrap;
-    font-size: 11px;
+    font-size: 12px;
     gap: 6px 14px;
     margin: 0 14px;
     padding: 8px 0 9px;
@@ -696,7 +696,7 @@
 
   .detail-field dt {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .detail-field dd {
@@ -735,7 +735,7 @@
 
   .window-note {
     color: var(--faint);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .window-note {
@@ -770,7 +770,7 @@
 
   .source-heading b {
     color: var(--green);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     margin-left: auto;
   }
@@ -786,14 +786,14 @@
 
   .source-poll {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     margin-top: 4px;
   }
 
   .source-error {
     border-left: 2px solid color-mix(in srgb, var(--red) 42%, var(--edge));
     color: var(--red);
-    font-size: 11px;
+    font-size: 12px;
     margin-top: 5px;
     padding-left: 8px;
   }
@@ -829,7 +829,7 @@
 
   .recent-run strong {
     color: var(--ink-2);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -838,7 +838,7 @@
 
   .recent-run time {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .empty-state {
@@ -856,7 +856,7 @@
   .source-poll,
   .source-error,
   .recent-run strong {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .slow-badge,
@@ -866,7 +866,7 @@
   .source-heading b,
   .recent-run time,
   .stat-strip span {
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
@@ -894,7 +894,7 @@
 
   .stat-strip span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.1em;
   }
 
@@ -1022,7 +1022,7 @@
     border-right: 1px solid var(--edge);
     display: flex;
     flex-direction: column;
-    font-size: 11px;
+    font-size: 12px;
     gap: 8px;
     padding: 16px 20px;
   }
@@ -1073,7 +1073,7 @@
 
   .timeline-heading > span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .inspector-activity .activity-row {
@@ -1085,7 +1085,7 @@
     border-top: 1px solid var(--edge-soft);
     color: var(--muted);
     display: flex;
-    font-size: 11px;
+    font-size: 12px;
     gap: 14px;
     margin-top: 12px;
     padding-top: 8px;
@@ -1378,7 +1378,7 @@
     }
 
     #route-finished {
-      font-size: 11px;
+      font-size: 12px;
       grid-column: 3;
       grid-row: 2;
     }
@@ -1582,7 +1582,7 @@
   .attempt-select > span,
   .turn-ordinal small {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -1601,7 +1601,7 @@
     border: 1px solid var(--edge);
     border-radius: 999px;
     color: var(--ink-2);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     padding: 4px 8px;
     text-transform: uppercase;
@@ -1650,7 +1650,7 @@
 
   .identity-time span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .refresh-run {
@@ -1726,7 +1726,7 @@
   .verdict-outcome p,
   .verdict-disposition small {
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .verdict-fact strong,
@@ -1776,7 +1776,7 @@
 
   .attention-banner p {
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
     margin-top: 1px;
   }
 
@@ -1808,7 +1808,7 @@
 
   .metric-grid small {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     margin-top: auto;
   }
 
@@ -1845,7 +1845,7 @@
 
   .section-heading > strong {
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .budget-bar {
@@ -1920,12 +1920,12 @@
 
   .budget-legend span {
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .budget-legend strong {
     color: var(--ink-2);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .secondary-timings {
@@ -1938,7 +1938,7 @@
 
   .secondary-timings span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .secondary-timings strong {
@@ -1960,7 +1960,7 @@
   .minimap-axis {
     color: var(--muted);
     display: flex;
-    font-size: 11px;
+    font-size: 12px;
     justify-content: space-between;
     margin-bottom: 3px;
   }
@@ -1988,7 +1988,7 @@
     border: 1px solid var(--blue-track);
     bottom: 4px;
     color: var(--ink-2);
-    font-size: 11px;
+    font-size: 12px;
     min-width: 0;
     overflow: hidden;
     padding: 0 2px;
@@ -2042,7 +2042,7 @@
     border: 1px solid var(--edge);
     border-radius: 3px;
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
     min-height: 27px;
     padding: 3px 7px;
   }
@@ -2074,7 +2074,7 @@
 
   .gap-summary span {
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .turn-list {
@@ -2142,7 +2142,7 @@
   .turn-counts strong,
   .turn-usage strong {
     color: var(--ink-2);
-    font-size: 11px;
+    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2153,7 +2153,7 @@
   .turn-counts small,
   .turn-usage small {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2163,7 +2163,7 @@
     border: 1px solid color-mix(in srgb, var(--green) 45%, var(--edge));
     border-radius: 999px;
     color: var(--green);
-    font-size: 11px;
+    font-size: 12px;
     padding: 3px 6px;
     text-transform: uppercase;
   }
@@ -2210,7 +2210,7 @@
 
   .phase-copy strong {
     color: var(--ink-2);
-    font-size: 11px;
+    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2231,7 +2231,7 @@
     color: var(--muted);
     display: inline-flex;
     flex: 0 0 auto;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     height: 14px;
     justify-content: center;
@@ -2247,7 +2247,7 @@
     color: var(--ink-2);
     content: attr(data-summary);
     display: none;
-    font: 11px/1.5 var(--mono);
+    font: 12px/1.5 var(--mono);
     left: 20px;
     max-height: 180px;
     max-width: min(420px, calc(100vw - 100px));
@@ -2272,7 +2272,7 @@
     color: var(--ink);
     display: -webkit-box;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.35;
     overflow: hidden;
     overflow-wrap: anywhere;
@@ -2285,7 +2285,7 @@
   .phase-row time,
   .phase-value {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .phase-copy small {
@@ -2416,7 +2416,7 @@
     );
     border-top: 1px solid var(--edge-soft);
     color: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
     padding: 6px 14px 6px 70px;
   }
 
@@ -2434,13 +2434,13 @@
 
   .unassigned-activity h3 {
     color: var(--ink);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .unassigned-activity header span,
   .unassigned-activity header p {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .timeline-pagination {
@@ -2463,7 +2463,7 @@
 
   .timeline-pagination span {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .timeline-pagination button {
@@ -2484,7 +2484,7 @@
 
   .run-prompts summary small {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 400;
     margin-left: 8px;
   }
@@ -2510,21 +2510,21 @@
 
   .prompt-list h3 {
     color: var(--ink);
-    font-size: 11px;
+    font-size: 12px;
     text-transform: uppercase;
   }
 
   .prompt-list time,
   .prompt-unavailable {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .prompt-list pre {
     background: var(--page);
     border: 1px solid var(--edge-soft);
     color: var(--ink-2);
-    font: 11px/1.55 var(--mono);
+    font: 12px/1.55 var(--mono);
     margin: 0;
     max-height: 420px;
     overflow: auto;
@@ -2557,7 +2557,7 @@
 
   .details-grid h3 {
     color: var(--ink);
-    font-size: 11px;
+    font-size: 12px;
     margin: 0 0 7px;
     text-transform: uppercase;
   }
@@ -2572,7 +2572,7 @@
   .details-grid dt,
   .details-grid p {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .details-grid dd {
@@ -2584,7 +2584,7 @@
   .details-grid dd small {
     color: var(--muted);
     display: block;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .identity-title > span,
@@ -2593,7 +2593,7 @@
   .metric-grid article > span,
   .attempt-select > span,
   .turn-ordinal small {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .identity-title h1 {
@@ -2612,7 +2612,7 @@
   .unassigned-activity header p,
   .timeline-pagination span,
   .details-grid dd small {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .verdict-outcome p,
@@ -2623,7 +2623,7 @@
   .details-grid h3,
   .details-grid dt,
   .details-grid p {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .verdict-outcome h2 {
@@ -2647,16 +2647,16 @@
   .phase-copy small,
   .phase-row time,
   .phase-value {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .turn-health,
   .minimap-turn {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .minimap-axis {
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
@@ -3014,7 +3014,7 @@
 
   .tool-detail-long summary > small {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .tool-detail-long summary {
@@ -3064,12 +3064,15 @@
 
   .section-label,
   .activity-row,
-  .event-summary,
   .source-poll,
   .source-error,
   .recent-run strong,
   .recent-run time {
-    font-size: 11px;
+    font-size: 12px;
+  }
+
+  .event-summary {
+    font-size: 13px;
   }
 
   .turn-time small,
@@ -3080,7 +3083,7 @@
   .phase-row time,
   .phase-value,
   .minimap-axis {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .turn-time strong,
