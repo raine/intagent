@@ -1,4 +1,4 @@
-import type { RunDetail, RunTimelineEntry } from "../run-detail.ts"
+import type { RunDetail, RunTimelineEntry } from "./run-detail-types.ts"
 
 export type TimelineFilter =
   | "all"

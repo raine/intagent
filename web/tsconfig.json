@@ -11,7 +11,8 @@
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx",
-    "types": ["bun"],
+    "lib": ["DOM", "DOM.Iterable", "ES2024"],
+    "types": ["vite/client"],
     "skipLibCheck": true
   },
   "include": [
@@ -19,6 +20,7 @@
     "src/**/*.tsx",
     "tests/**/*.ts",
     "tests/**/*.tsx",
-    "scripts/**/*.ts"
+    "vite.config.ts",
+    "vitest.config.ts"
   ]
 }

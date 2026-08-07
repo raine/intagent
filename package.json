@@ -17,8 +17,8 @@
   },
   "scripts": {
     "build": "bun run dashboard:build && bun build src/cli.ts src/sources/fastmail.ts src/sources/github.ts --outdir dist --target bun",
-    "dashboard:build": "vite build",
-    "dashboard:dev": "vite",
+    "dashboard:build": "cd web && npm run build",
+    "dashboard:dev": "cd web && npm run dev",
     "install:local": "scripts/install",
     "check": "checkle run project",
     "format": "oxfmt --write .",

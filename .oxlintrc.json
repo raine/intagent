@@ -4,7 +4,7 @@
     "dist/**",
     "history/**",
     "node_modules/**",
-    "src/dashboard/generated/**"
+    "web/generated/**"
   ],
   "options": {
     "typeAware": true
@@ -25,7 +25,7 @@
   },
   "overrides": [
     {
-      "files": ["tests/**/*.ts"],
+      "files": ["tests/**/*.ts", "web/tests/**/*.ts", "web/tests/**/*.tsx"],
       "rules": {
         "typescript/await-thenable": "off"
       }

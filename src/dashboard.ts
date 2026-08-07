@@ -1,5 +1,5 @@
-import dashboardScript from "./dashboard/generated/app.js" with { type: "text" }
-import dashboardStyles from "./dashboard/generated/app.css" with { type: "text" }
+import dashboardScript from "../web/generated/app.js" with { type: "text" }
+import dashboardStyles from "../web/generated/app.css" with { type: "text" }
 import type {
   EventRecord,
   EventStatus,
