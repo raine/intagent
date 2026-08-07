@@ -1,6 +1,10 @@
 pub mod auth;
+pub mod command_policy;
 pub mod context;
 pub mod model;
+pub mod process;
+pub mod read_policy;
 pub mod rig_runner;
+pub mod skills;
 pub mod telemetry;
 pub mod tools;

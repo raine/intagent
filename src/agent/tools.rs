@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
-use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
+
+pub use super::process::supervise_process;
 
 const MAX_DENIAL_BYTES: usize = 512;
 
@@ -181,86 +180,5 @@ impl CountingTools {
             Err(poisoned) => poisoned.into_inner(),
         };
         tools.get(name).map_or(0, CountingTool::executions)
-    }
-}
-
-pub async fn supervise_process<I, S>(
-    program: &Path,
-    arguments: I,
-    cancellation: CancellationToken,
-    termination_grace: Duration,
-) -> Result<std::process::ExitStatus>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let mut command = Command::new(program);
-    command
-        .args(arguments)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    configure_process_group(&mut command);
-
-    let mut child = command.spawn().context("spawn supervised process")?;
-    let pid = child.id().context("supervised process has no process ID")? as i32;
-    let mut guard = ProcessGroupGuard::new(pid);
-
-    tokio::select! {
-        status = child.wait() => {
-            let status = status.context("wait for supervised process")?;
-            guard.disarm();
-            Ok(status)
-        }
-        () = cancellation.cancelled() => {
-            terminate_group(pid, libc::SIGTERM);
-            tokio::time::sleep(termination_grace).await;
-            terminate_group(pid, libc::SIGKILL);
-            child.wait().await.context("reap canceled supervised process")?;
-            guard.disarm();
-            bail!("supervised process canceled")
-        }
-    }
-}
-
-#[cfg(unix)]
-fn configure_process_group(command: &mut Command) {
-    command.process_group(0);
-}
-
-#[cfg(not(unix))]
-fn configure_process_group(_command: &mut Command) {}
-
-#[cfg(unix)]
-fn terminate_group(pid: i32, signal: i32) {
-    unsafe {
-        libc::kill(-pid, signal);
-    }
-}
-
-#[cfg(not(unix))]
-fn terminate_group(_pid: i32, _signal: i32) {}
-
-struct ProcessGroupGuard {
-    pid: i32,
-    armed: bool,
-}
-
-impl ProcessGroupGuard {
-    fn new(pid: i32) -> Self {
-        Self { pid, armed: true }
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for ProcessGroupGuard {
-    fn drop(&mut self) {
-        if self.armed {
-            terminate_group(self.pid, libc::SIGKILL);
-        }
     }
 }
