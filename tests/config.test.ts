@@ -45,6 +45,26 @@ describe("configuration", () => {
     await expect(loadConfig(path)).rejects.toThrow("mailboxId")
   })
 
+  test("loads nested source options", async () => {
+    const root = await mkdtemp(join(tmpdir(), "intake-config-"))
+    paths.push(root)
+    const path = join(root, "config.yaml")
+    await initializePrivateConfig(path, { XDG_STATE_HOME: join(root, "state") })
+    const contents = await readFile(path, "utf8")
+    await writeFile(
+      path,
+      contents.replace(
+        "sources: []",
+        "sources:\n  - name: fastmail\n    command: intake-fastmail-source\n    options:\n      exclude_headers:\n        X-GitHub-Reason:\n          - push",
+      ),
+    )
+
+    const config = await loadConfig(path)
+    expect(config.sources[0]?.options.exclude_headers).toEqual({
+      "X-GitHub-Reason": ["push"],
+    })
+  })
+
   test("loads configured triage model and thinking level", async () => {
     const root = await mkdtemp(join(tmpdir(), "intake-config-"))
     paths.push(root)

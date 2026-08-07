@@ -183,6 +183,163 @@ describe("Fastmail source", () => {
     })
   })
 
+  test("excludes messages by configured header before thread assembly", async () => {
+    process.env.FASTMAIL_API_TOKEN = "source-only-token"
+    const fetcher = (async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      if (!init?.method) {
+        return json({
+          apiUrl: "https://mail.test/jmap",
+          primaryAccounts: { "urn:ietf:params:jmap:mail": "account-1" },
+        })
+      }
+      const body = JSON.parse(init.body as string)
+      const [method, arguments_, callId] = body.methodCalls[0]
+      if (method === "Email/queryChanges") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                added: [{ id: "push-message", index: 0 }],
+                removed: [],
+                newQueryState: "query-state-2",
+                hasMoreChanges: false,
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Email/get") {
+        expect(arguments_.properties).toContain("header:X-GitHub-Reason:asText")
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                list: [
+                  {
+                    ...email(
+                      "push-message",
+                      "2026-08-03T10:05:00.000Z",
+                      "Pushed one commit",
+                    ),
+                    "header:X-GitHub-Reason:asText": "push",
+                  },
+                ],
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      throw new Error(`unexpected method ${method}`)
+    }) as typeof fetch
+    const pollRequest = request({
+      queryState: "query-state-1",
+      mailboxId: "inbox",
+      sentMailboxId: "sent",
+    })
+    pollRequest.options.exclude_headers = { "X-GitHub-Reason": ["push"] }
+
+    const result = await pollFastmail(pollRequest, fetcher)
+
+    expect(result.items).toEqual([])
+    expect(result.checkpoint).toEqual({
+      queryState: "query-state-2",
+      mailboxId: "inbox",
+      sentMailboxId: "sent",
+    })
+  })
+
+  test("omits excluded messages from later thread context", async () => {
+    process.env.FASTMAIL_API_TOKEN = "source-only-token"
+    const fetcher = (async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      if (!init?.method) {
+        return json({
+          apiUrl: "https://mail.test/jmap",
+          primaryAccounts: { "urn:ietf:params:jmap:mail": "account-1" },
+        })
+      }
+      const body = JSON.parse(init.body as string)
+      const [method, arguments_, callId] = body.methodCalls[0]
+      if (method === "Email/queryChanges") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                added: [{ id: "comment-message", index: 0 }],
+                removed: [],
+                newQueryState: "query-state-2",
+                hasMoreChanges: false,
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Thread/get") {
+        return json({
+          methodResponses: [
+            [
+              method,
+              {
+                list: [
+                  {
+                    id: "thread-1",
+                    emailIds: ["push-message", "comment-message"],
+                  },
+                ],
+              },
+              callId,
+            ],
+          ],
+        })
+      }
+      if (method === "Email/get") {
+        const push = {
+          ...email(
+            "push-message",
+            "2026-08-03T10:00:00.000Z",
+            "Pushed one commit",
+          ),
+          "header:X-GitHub-Reason:asText": "push",
+        }
+        const comment = {
+          ...email(
+            "comment-message",
+            "2026-08-03T10:05:00.000Z",
+            "Useful review comment",
+          ),
+          "header:X-GitHub-Reason:asText": "subscribed",
+        }
+        const messages =
+          arguments_.ids.length === 1 ? [comment] : [push, comment]
+        return json({ methodResponses: [[method, { list: messages }, callId]] })
+      }
+      throw new Error(`unexpected method ${method}`)
+    }) as typeof fetch
+    const pollRequest = request({
+      queryState: "query-state-1",
+      mailboxId: "inbox",
+      sentMailboxId: "sent",
+    })
+    pollRequest.options.exclude_headers = { "X-GitHub-Reason": ["push"] }
+
+    const result = await pollFastmail(pollRequest, fetcher)
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]?.body).toContain("Useful review comment")
+    expect(result.items[0]?.body).not.toContain("Pushed one commit")
+  })
+
   test("suppresses a thread when its newest message is sent mail", async () => {
     process.env.FASTMAIL_API_TOKEN = "source-only-token"
     const fetcher = (async (

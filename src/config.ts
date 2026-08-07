@@ -4,12 +4,18 @@ import { mkdir, readFile, realpath, writeFile } from "node:fs/promises"
 import { parse, stringify } from "yaml"
 import { z } from "zod"
 
-const scalar = z.union([z.string(), z.number(), z.boolean(), z.null()])
-const configurationKey = z.string().regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/)
-const sourceOptions = z.record(
-  configurationKey,
-  z.union([scalar, z.array(scalar)]),
+const sourceOptionValue: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(sourceOptionValue),
+    z.record(z.string(), sourceOptionValue),
+  ]),
 )
+const configurationKey = z.string().regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/)
+const sourceOptions = z.record(configurationKey, sourceOptionValue)
 
 const sourceSchema = z
   .object({

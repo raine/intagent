@@ -35,6 +35,11 @@ interface Email {
   bodyStructure?: BodyPart
 }
 
+interface HeaderExclusion {
+  property: string
+  values: Set<string>
+}
+
 interface Address {
   name?: string
   email: string
@@ -97,6 +102,7 @@ export async function pollFastmail(
     integerOption(request, "bootstrap_limit") ?? 0,
     request.itemLimit,
   )
+  const exclusions = headerExclusions(request)
 
   if (!request.checkpoint) {
     const baseline = await queryMailbox(
@@ -114,6 +120,7 @@ export async function pollFastmail(
             accountId,
             token,
             baseline.ids,
+            exclusions,
             fetcher,
           )
         : []
@@ -126,6 +133,7 @@ export async function pollFastmail(
         token,
         messages,
         sentMailboxId,
+        exclusions,
         fetcher,
       ),
     }
@@ -171,7 +179,14 @@ export async function pollFastmail(
     .slice(0, request.itemLimit)
   const messages =
     ids.length > 0
-      ? await getEmails(session.apiUrl, accountId, token, ids, fetcher)
+      ? await getEmails(
+          session.apiUrl,
+          accountId,
+          token,
+          ids,
+          exclusions,
+          fetcher,
+        )
       : []
 
   return {
@@ -183,6 +198,7 @@ export async function pollFastmail(
       token,
       messages,
       sentMailboxId,
+      exclusions,
       fetcher,
     ),
   }
@@ -222,6 +238,7 @@ async function normalizeMessages(
   token: string,
   messages: Email[],
   sentMailboxId: string | null,
+  exclusions: HeaderExclusion[],
   fetcher: typeof fetch,
 ): Promise<IntakeItem[]> {
   const threadCache = new Map<string, Email[]>()
@@ -230,6 +247,7 @@ async function normalizeMessages(
     messageTimestamp(left).localeCompare(messageTimestamp(right)),
   )
   for (const email of ordered) {
+    if (isExcluded(email, exclusions)) continue
     let thread = threadCache.get(email.threadId)
     if (!thread) {
       thread = await getThread(
@@ -237,6 +255,7 @@ async function normalizeMessages(
         accountId,
         token,
         email.threadId,
+        exclusions,
         fetcher,
       )
       threadCache.set(email.threadId, thread)
@@ -275,6 +294,7 @@ async function getEmails(
   accountId: string,
   token: string,
   ids: string[],
+  exclusions: HeaderExclusion[],
   fetcher: typeof fetch,
 ): Promise<Email[]> {
   const result = await jmapCall<any>(
@@ -301,6 +321,7 @@ async function getEmails(
           "htmlBody",
           "bodyValues",
           "bodyStructure",
+          ...exclusions.map((exclusion) => exclusion.property),
         ],
         fetchTextBodyValues: true,
         fetchHTMLBodyValues: true,
@@ -318,6 +339,7 @@ async function getThread(
   accountId: string,
   token: string,
   threadId: string,
+  exclusions: HeaderExclusion[],
   fetcher: typeof fetch,
 ): Promise<Email[]> {
   const thread = await jmapCall<any>(
@@ -327,10 +349,19 @@ async function getThread(
     fetcher,
   )
   const ids = (thread.list?.[0]?.emailIds ?? []).slice(-THREAD_MESSAGE_LIMIT)
-  const emails = await getEmails(apiUrl, accountId, token, ids, fetcher)
-  return emails.sort((left, right) =>
-    messageTimestamp(left).localeCompare(messageTimestamp(right)),
+  const emails = await getEmails(
+    apiUrl,
+    accountId,
+    token,
+    ids,
+    exclusions,
+    fetcher,
   )
+  return emails
+    .filter((email) => !isExcluded(email, exclusions))
+    .sort((left, right) =>
+      messageTimestamp(left).localeCompare(messageTimestamp(right)),
+    )
 }
 
 async function jmapCall<T>(
@@ -461,6 +492,42 @@ function parseCheckpoint(value: unknown): Checkpoint | undefined {
     return undefined
   }
   return checkpoint as Checkpoint
+}
+
+function headerExclusions(request: PollRequest): HeaderExclusion[] {
+  const option = request.options.exclude_headers
+  if (option === undefined) return []
+  if (!option || typeof option !== "object" || Array.isArray(option))
+    throw new Error("Fastmail exclude_headers must map header names to values")
+
+  return Object.entries(option).map(([name, values]) => {
+    if (!/^[A-Za-z0-9-]+$/.test(name))
+      throw new Error(`Fastmail excluded header name is invalid: ${name}`)
+    if (
+      !Array.isArray(values) ||
+      values.length === 0 ||
+      values.some((value) => typeof value !== "string" || !value.trim())
+    )
+      throw new Error(
+        `Fastmail excluded header ${name} must have a non-empty value list`,
+      )
+    return {
+      property: `header:${name}:asText`,
+      values: new Set(
+        values.map((value) => (value as string).trim().toLowerCase()),
+      ),
+    }
+  })
+}
+
+function isExcluded(email: Email, exclusions: HeaderExclusion[]): boolean {
+  return exclusions.some((exclusion) => {
+    const value = Reflect.get(email, exclusion.property)
+    return (
+      typeof value === "string" &&
+      exclusion.values.has(value.trim().toLowerCase())
+    )
+  })
 }
 
 function stringOption(request: PollRequest, name: string): string | undefined {
