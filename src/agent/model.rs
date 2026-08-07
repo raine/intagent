@@ -83,10 +83,22 @@ pub fn completion_request(
     user_prompt: impl Into<String>,
     level: ThinkingLevel,
 ) -> CompletionRequest {
+    completion_request_for_history(
+        system_instructions,
+        vec![Message::user(user_prompt.into())],
+        level,
+    )
+}
+
+pub fn completion_request_for_history(
+    system_instructions: impl Into<String>,
+    history: Vec<Message>,
+    level: ThinkingLevel,
+) -> CompletionRequest {
     CompletionRequest {
         model: None,
         preamble: Some(system_instructions.into()),
-        chat_history: OneOrMany::one(Message::user(user_prompt.into())),
+        chat_history: OneOrMany::many(history).expect("an agent request always has a prompt"),
         documents: Vec::new(),
         tools: compatibility_tools(),
         temperature: None,
