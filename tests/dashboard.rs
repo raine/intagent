@@ -1,0 +1,227 @@
+use axum::body::{Body, to_bytes};
+use chrono::{TimeZone, Utc};
+use http::{Method, Request, StatusCode};
+use intake::dashboard::{
+    DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT, DashboardBindError, DashboardRunLimits,
+    NON_LOOPBACK_WARNING, dashboard_bind, dashboard_router, dashboard_snapshot,
+};
+use intake::database::IntakeDatabase;
+use rusqlite::Connection;
+use serde_json::Value;
+use tempfile::TempDir;
+use tower::ServiceExt;
+
+#[tokio::test]
+async fn matches_phase_zero_snapshot_fixture() {
+    let (_directory, database) = fixture_database().await;
+    let snapshot = dashboard_snapshot(
+        &database.readers(),
+        Utc.with_ymd_and_hms(2026, 8, 7, 10, 5, 0).unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let actual = serde_json::to_value(snapshot).unwrap();
+    let expected: Value =
+        serde_json::from_str(include_str!("fixtures/dashboard/snapshot.json")).unwrap();
+    assert_eq!(actual, expected);
+    let serialized = actual.to_string();
+    assert!(!serialized.contains("retained retry payload"));
+    assert!(!serialized.contains("token=private"));
+}
+
+#[tokio::test]
+async fn serves_only_the_read_only_dashboard_surface_with_security_headers() {
+    let (_directory, database) = fixture_database().await;
+    let router = dashboard_router(
+        database.readers(),
+        DashboardRunLimits {
+            max_turns: Some(50),
+            wall_timeout_ms: Some(1_800_000),
+        },
+    );
+
+    for path in ["/", "/index.html", "/api/snapshot", "/api/runs/1"] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_security_headers(&response);
+    }
+
+    for path in [
+        "/app.js",
+        "/app.css",
+        "/api",
+        "/api/runs/0",
+        "/api/runs/-1",
+        "/api/runs/1.5",
+        "/api/runs/9007199254740992",
+        "/api/runs/1/extra",
+    ] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert_security_headers(&response);
+    }
+
+    for method in [Method::POST, Method::HEAD, Method::OPTIONS] {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method.clone())
+                    .uri("/api/snapshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method}"
+        );
+        assert_eq!(response.headers().get("allow").unwrap(), "GET");
+        assert_security_headers(&response);
+    }
+}
+
+#[tokio::test]
+async fn serves_inlined_assets_and_observable_content_types() {
+    let (_directory, database) = fixture_database().await;
+    let router = dashboard_router(database.readers(), DashboardRunLimits::default());
+    let page = router
+        .clone()
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        page.headers().get("content-type").unwrap(),
+        "text/html; charset=utf-8"
+    );
+    let html = String::from_utf8(
+        to_bytes(page.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("<div id=\"root\"></div>"));
+    assert!(html.contains("<script type=\"module\">"));
+    assert!(html.contains("ACTIVE RUNS"));
+    assert!(html.contains("RECENT EVENTS"));
+    assert!(html.contains("SOURCES"));
+    assert!(html.contains("localStorage.getItem(\"im-theme\")"));
+    assert!(html.contains("@media (width<=700px)"));
+
+    let api = router
+        .oneshot(
+            Request::builder()
+                .uri("/api/runs/1?offset=1&limit=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        api.headers().get("content-type").unwrap(),
+        "application/json;charset=utf-8"
+    );
+    let detail: Value =
+        serde_json::from_slice(&to_bytes(api.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(detail["timeline"]["page"]["offset"], 1);
+    assert_eq!(detail["timeline"]["page"]["limit"], 2);
+}
+
+#[test]
+fn maps_errors_to_public_categories() {
+    use intake::dashboard::public_error;
+
+    for (raw, expected) in [
+        ("credential rejected", "Authentication failed"),
+        ("too many requests", "Rate limited"),
+        ("request timed out", "Request timed out"),
+        ("connection reset by peer", "Connection reset"),
+        ("resource returned 404", "Resource not found (404)"),
+        ("configured model unavailable", "Model unavailable"),
+        ("triage interrupted", "Triage interrupted"),
+        ("secret internal detail", "Operation failed"),
+    ] {
+        assert_eq!(public_error(Some(raw)).as_deref(), Some(expected));
+    }
+    assert_eq!(public_error(None), None);
+}
+
+#[test]
+fn requires_acknowledgement_for_non_loopback_hosts() {
+    let defaults = dashboard_bind(None, None, false).unwrap();
+    assert_eq!(defaults.host(), DEFAULT_DASHBOARD_HOST);
+    assert_eq!(defaults.port(), DEFAULT_DASHBOARD_PORT);
+    assert_eq!(defaults.warning(), None);
+
+    assert_eq!(
+        dashboard_bind(Some("0.0.0.0"), None, false),
+        Err(DashboardBindError::NonLoopbackRequiresAcknowledgement {
+            host: "0.0.0.0".into(),
+        })
+    );
+    let acknowledged = dashboard_bind(Some("0.0.0.0"), Some(8080), true).unwrap();
+    assert_eq!(acknowledged.warning(), Some(NON_LOOPBACK_WARNING));
+    assert!(dashboard_bind(Some("::1"), None, false).is_ok());
+    assert!(dashboard_bind(Some("localhost"), None, false).is_ok());
+    assert_eq!(
+        dashboard_bind(None, Some(0), false),
+        Err(DashboardBindError::InvalidPort)
+    );
+}
+
+fn assert_security_headers(response: &http::Response<Body>) {
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    assert!(
+        response
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("default-src 'none'")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("cross-origin-resource-policy")
+            .unwrap(),
+        "same-origin"
+    );
+    assert_eq!(response.headers().get("x-frame-options").unwrap(), "DENY");
+    assert_eq!(
+        response.headers().get("referrer-policy").unwrap(),
+        "no-referrer"
+    );
+    assert_eq!(
+        response.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
+    assert_eq!(
+        response.headers().get("permissions-policy").unwrap(),
+        "camera=(), microphone=(), geolocation=()"
+    );
+}
+
+async fn fixture_database() -> (TempDir, IntakeDatabase) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("dashboard.sqlite");
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute_batch(include_str!("fixtures/database/schema-v7.sql"))
+        .unwrap();
+    drop(connection);
+    let database = IntakeDatabase::open(&path).await.unwrap();
+    (directory, database)
+}
