@@ -7,13 +7,11 @@ import type {
 import {
   entryEnd,
   entryPosition,
-  eventRunDisagree,
   groupTimeline,
   matchesFilter,
   runEnd,
   runSummaryCounts,
   timeBudget,
-  type CompactionEntry,
   type GroupedSpan,
   type PhaseEntry,
   type RetryEntry,
@@ -21,25 +19,20 @@ import {
   type TimelineFilter,
 } from "./run-inspector-data.ts"
 
-const staleThreshold = 120_000
 const pageSize = 200
 
 const filterLabels: Record<TimelineFilter, string> = {
   all: "All activity",
   tools: "Tool calls",
-  attention: "Attention",
   thinking: "Thinking",
   retries: "Retries",
-  compactions: "Compactions",
 }
 
 const timelineTitles: Record<TimelineFilter, string> = {
   tools: "Tool activity",
   all: "Activity timeline",
-  attention: "Activity needing attention",
   thinking: "Model activity",
   retries: "Model retries",
-  compactions: "Compactions",
 }
 
 function safeExternalUrl(value: string | null): string | null {
@@ -329,69 +322,6 @@ export function RunRoute({
   )
 }
 
-function attentionItems(
-  detail: RunDetail,
-  now: number,
-): Array<{
-  tone: "critical" | "warning" | "info"
-  title: string
-  body: string
-}> {
-  const counts = runSummaryCounts(detail)
-  const items: Array<{
-    tone: "critical" | "warning" | "info"
-    title: string
-    body: string
-  }> = []
-  if (detail.run.state === "failed")
-    items.push({
-      tone: "critical",
-      title: "Run failed",
-      body: detail.run.failureCategory
-        ? `Failure category: ${stateLabel(detail.run.failureCategory)}.`
-        : "No safe failure category was recorded.",
-    })
-  if (detail.run.state === "interrupted")
-    items.push({
-      tone: "critical",
-      title: "Run interrupted",
-      body: detail.run.terminationReason
-        ? `Termination reason: ${stateLabel(detail.run.terminationReason)}.`
-        : "Execution ended before a normal terminal outcome.",
-    })
-  if (counts.failedTools.value > 0 && detail.run.state !== "succeeded")
-    items.push({
-      tone: "critical",
-      title: `${countQualifier(counts.failedTools)} tool ${counts.failedTools.value === 1 ? "failure" : "failures"}`,
-      body: "Review the failed tool phases in the timeline.",
-    })
-  if (
-    counts.incompleteCompactions.value > 0 &&
-    detail.run.state !== "succeeded"
-  )
-    items.push({
-      tone: "warning",
-      title: `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`,
-      body: "A compaction failed, was aborted, or was interrupted.",
-    })
-  if (
-    detail.run.state === "active" &&
-    now - parseTime(detail.run.lastActivityAt) > staleThreshold
-  )
-    items.push({
-      tone: "warning",
-      title: `No telemetry for ${formatDuration(now - parseTime(detail.run.lastActivityAt))}`,
-      body: "The run remains active. Dashboard connection health is reported separately.",
-    })
-  if (eventRunDisagree(detail))
-    items.push({
-      tone: "warning",
-      title: "Event and run states disagree",
-      body: `Event is ${detail.event.status}; execution is ${detail.run.state}.`,
-    })
-  return items
-}
-
 function countQualifier(count: SummaryCount): string {
   return count.exact ? `${count.value}` : `at least ${count.value}`
 }
@@ -409,15 +339,10 @@ function outcomeVerdict(detail: RunDetail): {
     counts.retries.value > 0
       ? `${countQualifier(counts.retries)} model ${counts.retries.value === 1 ? "retry" : "retries"}`
       : null,
-    counts.incompleteCompactions.value > 0
-      ? `${countQualifier(counts.incompleteCompactions)} incomplete ${counts.incompleteCompactions.value === 1 ? "compaction" : "compactions"}`
-      : null,
   ].filter((value): value is string => value !== null)
   if (
     detail.run.state === "succeeded" &&
-    (counts.failedTools.value > 0 ||
-      counts.retries.value > 0 ||
-      counts.incompleteCompactions.value > 0)
+    (counts.failedTools.value > 0 || counts.retries.value > 0)
   ) {
     return {
       title: "Succeeded with recovered error",
@@ -428,8 +353,7 @@ function outcomeVerdict(detail: RunDetail): {
   if (
     detail.run.state === "succeeded" &&
     counts.failedTools.exact &&
-    counts.retries.exact &&
-    counts.incompleteCompactions.exact
+    counts.retries.exact
   )
     return {
       title: "Succeeded cleanly",
@@ -486,7 +410,6 @@ export function RunInspector({
 }): JSX.Element {
   const now = useInspectorClock(detail.run.state === "active")
   const grouped = useMemo(() => groupTimeline(detail), [detail])
-  const notices = useMemo(() => attentionItems(detail, now), [detail, now])
   const verdict = useMemo(() => outcomeVerdict(detail), [detail])
   const counts = useMemo(() => runSummaryCounts(detail), [detail])
   const budget = useMemo(() => timeBudget(detail.metrics), [detail.metrics])
@@ -635,29 +558,6 @@ export function RunInspector({
 
         <DispatchStrip detail={detail} onNavigateAttempt={onNavigateAttempt} />
         <ConclusionPanel detail={detail} />
-
-        {notices.length ? (
-          <section className="attention-stack" aria-label="Run attention">
-            {notices.map((notice, index) => (
-              <article
-                className={`attention-banner attention-${notice.tone}`}
-                key={`${notice.title}-${index}`}
-              >
-                <span aria-hidden="true">
-                  {notice.tone === "critical"
-                    ? "✕"
-                    : notice.tone === "warning"
-                      ? "!"
-                      : "i"}
-                </span>
-                <div>
-                  <strong>{notice.title}</strong>
-                  <p>{notice.body}</p>
-                </div>
-              </article>
-            ))}
-          </section>
-        ) : null}
 
         <ExecutionTimeline
           detail={detail}
@@ -1012,15 +912,6 @@ function PhaseRow({
   const position = entryPosition(detail, entry, now)
   if (entry.type === "retry")
     return <RetryRow detail={detail} entry={entry} position={position} />
-  if (entry.type === "compaction")
-    return (
-      <CompactionRow
-        detail={detail}
-        now={now}
-        entry={entry}
-        position={position}
-      />
-    )
   const elapsed = timelineDuration(detail, entry, now)
   const interrupted = entry.state === "interrupted"
   const hasToolDetail = entry.kind === "tool" && entry.summary !== null
@@ -1136,53 +1027,6 @@ function RetryRow({
         position={position}
         label={`Model retry, ${formatDuration(entry.delayMs)} delay`}
         kind="retry"
-        state={entry.state}
-      />
-    </div>
-  )
-}
-
-function CompactionRow({
-  detail,
-  now,
-  entry,
-  position,
-}: {
-  detail: RunDetail
-  now: number
-  entry: CompactionEntry
-  position: ReturnType<typeof entryPosition>
-}): JSX.Element {
-  const numeric =
-    entry.tokensBefore !== null
-      ? `${formatNumber(entry.tokensBefore)} before${entry.estimatedTokensAfter !== null ? ` · ${formatNumber(entry.estimatedTokensAfter)} estimated after` : ""}`
-      : "token detail unavailable"
-  return (
-    <div className={`phase-row phase-compaction phase-${entry.state}`}>
-      <div className="phase-copy">
-        <span className="phase-glyph" aria-hidden="true">
-          ⇲
-        </span>
-        <div>
-          <strong>
-            {entry.reason
-              ? `${stateLabel(entry.reason)} compaction`
-              : "Compaction"}
-          </strong>
-          <small>
-            {stateLabel(entry.state)} · {numeric}
-            {entry.willRetry === true ? " · retry planned" : ""}
-          </small>
-        </div>
-      </div>
-      <time>{offsetTime(detail, entry.startedAt)}</time>
-      <span className="phase-value">
-        {formatDuration(timelineDuration(detail, entry, now))}
-      </span>
-      <WallTrack
-        position={position}
-        label={`Compaction, ${stateLabel(entry.state)}`}
-        kind="compaction"
         state={entry.state}
       />
     </div>
