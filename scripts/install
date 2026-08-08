@@ -48,6 +48,10 @@ if [[ "$web_directory" != /* ]]; then
 fi
 bin_directory="$prefix/bin"
 skills_directory="$prefix/share/intake/skills"
+target_directory="${CARGO_TARGET_DIR:-$repository_root/target}"
+if [[ "$target_directory" != /* ]]; then
+  target_directory="$repository_root/$target_directory"
+fi
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/intake-install.XXXXXX")"
 cleanup() {
   rm -rf "$temporary_directory"
@@ -57,16 +61,29 @@ trap cleanup EXIT
 cd "$repository_root"
 printf 'Installing browser dependencies with npm %s...\n' "$(npm --version)"
 npm ci --prefix "$web_directory"
+asset_backup_directory="$temporary_directory/dashboard"
+mkdir -p "$asset_backup_directory"
+for asset in app.js app.css; do
+  if [[ -f "$web_directory/generated/$asset" ]]; then
+    cp -p "$web_directory/generated/$asset" "$asset_backup_directory/$asset"
+  fi
+done
 npm run build --prefix "$web_directory"
+for asset in app.js app.css; do
+  if [[ -f "$asset_backup_directory/$asset" ]] && \
+    cmp -s "$asset_backup_directory/$asset" "$web_directory/generated/$asset"; then
+    cp -p "$asset_backup_directory/$asset" "$web_directory/generated/$asset"
+  fi
+done
 
 printf 'Compiling release executables with %s...\n' "$(rustc --version)"
-CARGO_TARGET_DIR="$temporary_directory/target" \
+CARGO_TARGET_DIR="$target_directory" \
   INTAKE_DASHBOARD_DIR="$web_directory/generated" \
   cargo build --release --locked --bins
 
 install -d -m 755 "$bin_directory" "$(dirname "$skills_directory")"
 for executable in intake intake-fastmail-source intake-github-source; do
-  install -m 755 "$temporary_directory/target/release/$executable" \
+  install -m 755 "$target_directory/release/$executable" \
     "$bin_directory/$executable"
 done
 
