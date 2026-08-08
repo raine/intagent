@@ -7,7 +7,6 @@ use intake::config::{
     CommandRule, CommandsConfig, IntakeConfig, SkillsConfig, StateConfig, TriageConfig,
 };
 use intake::database::{EventRecord, EventStatus, IntakeDatabase};
-use intake::logging::DurableLogStore;
 use intake::monitor::IntakeMonitor;
 use intake::protocol::{IntakeItem, IntakeItemKind};
 use serde_json::Map;
@@ -115,8 +114,7 @@ async fn drains_events_serially_with_one_fresh_run_per_event() {
         .unwrap();
     let runner = FakeRunner::successful();
     let observed_runner = runner.clone();
-    let logs = DurableLogStore::new(root.path().join("logs"), str::to_owned);
-    let monitor = IntakeMonitor::new(config, database.clone(), runner, logs);
+    let monitor = IntakeMonitor::new(config, database.clone(), runner);
 
     let result = monitor.check().await.unwrap();
 
@@ -135,7 +133,7 @@ async fn drains_events_serially_with_one_fresh_run_per_event() {
 }
 
 #[tokio::test]
-async fn applies_event_retries_and_records_safe_failure_categories() {
+async fn applies_event_retries() {
     let root = tempfile::tempdir().unwrap();
     let config = config(&root);
     let database = IntakeDatabase::open(":memory:").await.unwrap();
@@ -152,10 +150,7 @@ async fn applies_event_retries_and_records_safe_failure_categories() {
         failure: Some("timeout reading /private/project/file".into()),
         ..FakeRunner::successful()
     };
-    let logs = DurableLogStore::new(root.path().join("logs"), |value| {
-        value.replace("/private/project/file", "[REDACTED]")
-    });
-    let monitor = IntakeMonitor::new(config, database.clone(), runner, logs);
+    let monitor = IntakeMonitor::new(config, database.clone(), runner);
 
     let result = monitor.check().await.unwrap();
 
@@ -164,10 +159,6 @@ async fn applies_event_retries_and_records_safe_failure_categories() {
     assert_eq!(event.status, EventStatus::Retryable);
     assert_eq!(event.attempt_count, 1);
     assert!(event.next_attempt_at.is_some());
-    let log = std::fs::read_to_string(root.path().join("logs/monitor.jsonl")).unwrap();
-    assert!(log.contains("\"failureCategory\":\"timeout\""));
-    assert!(!log.contains("/private/project/file"));
-    assert!(!log.contains("private-title"));
 }
 
 #[tokio::test]
@@ -188,8 +179,7 @@ async fn recovers_stale_processing_events_before_claiming() {
     database.claim_next(old).await.unwrap().unwrap();
     let runner = FakeRunner::successful();
     let observed_runner = runner.clone();
-    let logs = DurableLogStore::new(root.path().join("logs"), str::to_owned);
-    let monitor = IntakeMonitor::new(config, database.clone(), runner, logs);
+    let monitor = IntakeMonitor::new(config, database.clone(), runner);
 
     let result = monitor.check().await.unwrap();
 

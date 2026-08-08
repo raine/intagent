@@ -12,9 +12,10 @@ use crate::agent::auth::{AuthPaths, authorize};
 use crate::agent::command_policy::CommandPolicy;
 use crate::agent::rig_runner::{ChatGptTriageRunner, TriageRunnerCore};
 use crate::agent::skills::validate_skills;
+use crate::application_log::{application_log_directory, redact_log_text};
 use crate::config::{
     IntakeConfig, canonical_roots, config_directory, default_config_path, expand_path,
-    initialize_private_config, load_config, project_registry_path,
+    initialize_private_config, load_config, project_registry_path, state_directory,
 };
 use crate::dashboard::{DashboardRunLimits, dashboard_bind, dashboard_router};
 use crate::database::{IntakeDatabase, QueueOwnerLock};
@@ -22,9 +23,35 @@ use crate::logging::DurableLogStore;
 use crate::monitor::IntakeMonitor;
 use crate::project_registry::ensure_project_registry;
 use crate::protocol::IntakeItem;
-use crate::terminal::stderr_line;
 
-pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n";
+pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs use state.logs/application and retain eight daily files.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n";
+
+pub fn tracing_log_directory(argv: &[String]) -> Option<PathBuf> {
+    let default = state_directory()
+        .ok()
+        .map(|state| application_log_directory(state.join("logs")));
+    let parsed = match parse_global_options(argv.to_vec()) {
+        Ok(parsed) => parsed,
+        Err(_) => return default,
+    };
+    let command = parsed.args.first().map(String::as_str);
+    if command.is_none_or(|command| matches!(command, "help" | "--help" | "-h" | "login" | "init"))
+    {
+        return default;
+    }
+    let config_path = parsed
+        .config_path
+        .map(expand_path)
+        .transpose()
+        .ok()
+        .flatten()
+        .or_else(|| default_config_path().ok());
+    let configured = config_path
+        .and_then(|path| load_config(path).ok())
+        .and_then(|config| expand_path(config.state.logs).ok())
+        .map(application_log_directory);
+    configured.or(default)
+}
 
 pub async fn run(argv: Vec<String>) -> Result<i32> {
     let parsed = parse_global_options(argv)?;
@@ -38,6 +65,11 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         return Ok(0);
     }
     let command = args.remove(0);
+    tracing::info!(
+        target: "intake::cli",
+        command = safe_cli_command(&command),
+        "command started"
+    );
 
     if command == "login" {
         let auth = auth_paths()?;
@@ -126,12 +158,12 @@ async fn run_monitor(watch: bool, config: IntakeConfig, database: IntakeDatabase
         config.clone(),
         database.clone(),
         policy,
-        logs.clone(),
+        logs,
         std::io::stdout(),
         registry,
     );
     let runner = ChatGptTriageRunner::new(core, auth_paths()?);
-    let monitor = IntakeMonitor::new(config, database, runner, logs);
+    let monitor = IntakeMonitor::new(config, database, runner);
 
     if !watch {
         let result = monitor.check().await?;
@@ -142,7 +174,13 @@ async fn run_monitor(watch: bool, config: IntakeConfig, database: IntakeDatabase
             result.errors.len()
         );
         if !result.errors.is_empty() {
-            eprintln!("{}", result.errors.join("\n"));
+            for error in &result.errors {
+                eprintln!(
+                    "{}",
+                    crate::dashboard::public_error(Some(error))
+                        .unwrap_or_else(|| "Operation failed".into())
+                );
+            }
             return Ok(false);
         }
         return Ok(true);
@@ -170,6 +208,12 @@ async fn dashboard(
     }
     let listener = tokio::net::TcpListener::bind((bind.host(), bind.port())).await?;
     let address = listener.local_addr()?;
+    tracing::info!(
+        target: "intake::dashboard",
+        host = bind.host(),
+        port = address.port(),
+        "dashboard started"
+    );
     println!("Intake dashboard: http://{address}/");
     axum::serve(
         listener,
@@ -183,6 +227,7 @@ async fn dashboard(
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    tracing::info!(target: "intake::dashboard", "dashboard stopped");
     Ok(())
 }
 
@@ -398,13 +443,16 @@ where
             _ = interrupt.recv() => {}
             _ = terminate.recv() => {}
         }
-        stderr_line("Stopping schedules and waiting for active triage.");
+        tracing::info!(
+            target: "intake::terminal::error",
+            "Stopping schedules and waiting for active triage."
+        );
         monitor.stop();
         tokio::select! {
             _ = interrupt.recv() => {}
             _ = terminate.recv() => {}
         }
-        stderr_line("Forced shutdown requested.");
+        tracing::warn!(target: "intake::terminal::error", "Forced shutdown requested.");
         std::process::exit(130);
     }))
 }
@@ -416,10 +464,13 @@ where
 {
     Ok(tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
-        stderr_line("Stopping schedules and waiting for active triage.");
+        tracing::info!(
+            target: "intake::terminal::error",
+            "Stopping schedules and waiting for active triage."
+        );
         monitor.stop();
         let _ = tokio::signal::ctrl_c().await;
-        stderr_line("Forced shutdown requested.");
+        tracing::warn!(target: "intake::terminal::error", "Forced shutdown requested.");
         std::process::exit(130);
     }))
 }
@@ -441,6 +492,23 @@ async fn shutdown_signal() {
     }
 }
 
+fn safe_cli_command(command: &str) -> &'static str {
+    match command {
+        "watch" => "watch",
+        "check" => "check",
+        "status" => "status",
+        "dashboard" => "dashboard",
+        "inject" => "inject",
+        "show" => "show",
+        "retry" => "retry",
+        "ignore" => "ignore",
+        "login" => "login",
+        "init" => "init",
+        "validate-config" => "validate-config",
+        _ => "unknown",
+    }
+}
+
 fn event_status_name(status: crate::database::EventStatus) -> &'static str {
     match status {
         crate::database::EventStatus::Pending => "pending",
@@ -452,7 +520,31 @@ fn event_status_name(status: crate::database::EventStatus) -> &'static str {
     }
 }
 
+pub fn public_cli_error(error: &str) -> String {
+    let message = redact_log_text(error);
+    let lowercase = message.to_ascii_lowercase();
+    if [
+        "auth",
+        "bearer",
+        "credential",
+        "oauth",
+        "password",
+        "payload",
+        "prompt",
+        "secret",
+        "token",
+    ]
+    .iter()
+    .any(|keyword| lowercase.contains(keyword))
+    {
+        crate::dashboard::public_error(Some(&message)).unwrap_or_else(|| "Operation failed".into())
+    } else {
+        message
+    }
+}
+
 pub fn write_error(error: &anyhow::Error) {
+    let public = public_cli_error(&error.to_string());
     let mut stderr = std::io::stderr().lock();
-    let _ = writeln!(stderr, "intake: {error}");
+    let _ = writeln!(stderr, "intake: {public}");
 }

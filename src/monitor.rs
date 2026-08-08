@@ -4,16 +4,13 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Utc};
-use serde_json::json;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::rig_runner::{TriageError, TriageRunner};
 use crate::config::{IntakeConfig, SourceConfig};
 use crate::database::{ErrorCategory, EventRecord, IntakeDatabase};
-use crate::logging::DurableLogStore;
-use crate::source_runner::poll_source;
-use crate::terminal::{stderr_line, stdout_line};
+use crate::source_runner::{SourceRunnerError, poll_source};
 
 const TRIAGE_RECOVERY_GRACE_SECONDS: i64 = 60;
 const RECOVERY_INTERVAL_MILLISECONDS: i64 = 60_000;
@@ -33,7 +30,6 @@ struct MonitorInner<R> {
     config: IntakeConfig,
     database: IntakeDatabase,
     runner: R,
-    logs: DurableLogStore,
     stopping: AtomicBool,
     schedule_cancellation: CancellationToken,
     next_recovery_at: AtomicI64,
@@ -51,18 +47,12 @@ impl<R> IntakeMonitor<R>
 where
     R: TriageRunner + Send + Sync + 'static,
 {
-    pub fn new(
-        config: IntakeConfig,
-        database: IntakeDatabase,
-        runner: R,
-        logs: DurableLogStore,
-    ) -> Self {
+    pub fn new(config: IntakeConfig, database: IntakeDatabase, runner: R) -> Self {
         Self {
             inner: Arc::new(MonitorInner {
                 config,
                 database,
                 runner,
-                logs,
                 stopping: AtomicBool::new(false),
                 schedule_cancellation: CancellationToken::new(),
                 next_recovery_at: AtomicI64::new(0),
@@ -73,46 +63,22 @@ where
     pub fn stop(&self) {
         self.inner.stopping.store(true, Ordering::Release);
         self.inner.schedule_cancellation.cancel();
-        let logs = self.inner.logs.clone();
-        tokio::spawn(async move {
-            logs.monitor("stop_requested", json!({})).await;
-        });
+        tracing::info!(target: "intake::monitor", "stop requested");
     }
 
     pub async fn check(&self) -> Result<CheckResult> {
-        self.inner
-            .logs
-            .monitor(
-                "process_start",
-                json!({
-                    "mode": "check",
-                    "pid": std::process::id(),
-                    "sources": self.inner.config.sources.iter().map(|source| &source.name).collect::<Vec<_>>(),
-                    "queue": self.inner.database.readers().status().await?,
-                }),
-            )
-            .await;
+        tracing::info!(
+            target: "intake::monitor",
+            mode = "check",
+            source_count = self.inner.config.sources.len(),
+            "monitor started"
+        );
 
         let result = self.check_inner().await;
-        if let Err(error) = &result {
-            self.inner
-                .logs
-                .monitor(
-                    "operational_error",
-                    json!({ "operation": "check", "error": error.to_string() }),
-                )
-                .await;
+        if result.is_err() {
+            tracing::error!(target: "intake::monitor", mode = "check", "monitor failed");
         }
-        self.inner
-            .logs
-            .monitor(
-                "process_stop",
-                json!({
-                    "mode": "check",
-                    "queue": self.inner.database.readers().status().await.unwrap_or_default(),
-                }),
-            )
-            .await;
+        tracing::info!(target: "intake::monitor", mode = "check", "monitor stopped");
         result
     }
 
@@ -131,17 +97,11 @@ where
                 Err(error) => errors.push(error.to_string()),
             }
         }
-        self.inner
-            .logs
-            .monitor(
-                "queue_state",
-                json!({
-                    "reason": "polls_complete",
-                    "observed": observed,
-                    "counts": self.inner.database.readers().status().await?,
-                }),
-            )
-            .await;
+        tracing::debug!(
+            target: "intake::monitor",
+            observed,
+            "source polls completed"
+        );
 
         let mut handled = 0;
         while !self.is_stopping() {
@@ -180,48 +140,27 @@ where
             })
             .collect::<Vec<_>>()
             .join(", ");
-        stdout_line(&format!(
+        tracing::info!(
+            target: "intake::terminal",
             "Watching {}. Press Ctrl-C to stop.",
             if schedules.is_empty() {
                 "no configured sources"
             } else {
                 &schedules
             }
-        ));
-        self.inner
-            .logs
-            .monitor(
-                "process_start",
-                json!({
-                    "mode": "watch",
-                    "pid": std::process::id(),
-                    "schedules": schedules,
-                    "sources": self.inner.config.sources.iter().map(|source| &source.name).collect::<Vec<_>>(),
-                    "queue": self.inner.database.readers().status().await?,
-                }),
-            )
-            .await;
+        );
+        tracing::info!(
+            target: "intake::monitor",
+            mode = "watch",
+            source_count = self.inner.config.sources.len(),
+            "monitor started"
+        );
 
         let result = self.watch_inner().await;
-        if let Err(error) = &result {
-            self.inner
-                .logs
-                .monitor(
-                    "operational_error",
-                    json!({ "operation": "watch", "error": error.to_string() }),
-                )
-                .await;
+        if result.is_err() {
+            tracing::error!(target: "intake::monitor", mode = "watch", "monitor failed");
         }
-        self.inner
-            .logs
-            .monitor(
-                "process_stop",
-                json!({
-                    "mode": "watch",
-                    "queue": self.inner.database.readers().status().await.unwrap_or_default(),
-                }),
-            )
-            .await;
+        tracing::info!(target: "intake::monitor", mode = "watch", "monitor stopped");
         result
     }
 
@@ -255,40 +194,32 @@ where
 
     async fn poll(&self, source: &SourceConfig) -> Result<usize> {
         let started = std::time::Instant::now();
-        self.inner
-            .logs
-            .monitor("source_poll_start", json!({ "source": source.name }))
-            .await;
+        tracing::debug!(
+            target: "intake::monitor",
+            source = source.name,
+            "source poll started"
+        );
         let result =
             poll_source(source, &self.inner.config, &self.inner.database, Utc::now()).await;
         match result {
             Ok(observed) => {
-                self.inner
-                    .logs
-                    .monitor(
-                        "source_poll_succeeded",
-                        json!({
-                            "source": source.name,
-                            "queued": observed,
-                            "durationMs": duration_millis(started.elapsed()),
-                            "queue": self.inner.database.readers().status().await.unwrap_or_default(),
-                        }),
-                    )
-                    .await;
+                tracing::info!(
+                    target: "intake::monitor",
+                    source = source.name,
+                    queued = observed,
+                    duration_ms = duration_millis(started.elapsed()),
+                    "source poll succeeded"
+                );
                 Ok(observed)
             }
             Err(error) => {
-                self.inner
-                    .logs
-                    .monitor(
-                        "source_poll_failed",
-                        json!({
-                            "source": source.name,
-                            "durationMs": duration_millis(started.elapsed()),
-                            "error": error.to_string(),
-                        }),
-                    )
-                    .await;
+                tracing::error!(
+                    target: "intake::monitor",
+                    source = source.name,
+                    duration_ms = duration_millis(started.elapsed()),
+                    failure_category = source_failure_category(&error),
+                    "source poll failed"
+                );
                 Err(error.into())
             }
         }
@@ -308,14 +239,19 @@ where
                 break;
             }
             match self.poll(&source).await {
-                Ok(observed) if observed > 0 => stdout_line(&format!(
+                Ok(observed) if observed > 0 => tracing::info!(
+                    target: "intake::terminal",
                     "{}: queued {} event{}",
                     source.name,
                     observed,
                     if observed == 1 { "" } else { "s" }
-                )),
+                ),
                 Ok(_) => {}
-                Err(error) => stderr_line(&format!("{}: {error}", source.name)),
+                Err(_) => tracing::error!(
+                    target: "intake::terminal::error",
+                    "{}: source poll failed",
+                    source.name
+                ),
             }
         }
     }
@@ -330,8 +266,17 @@ where
                 continue;
             };
             match self.triage(event.clone()).await? {
-                Some(error) => stderr_line(&format!("event {}: {error}", event.id)),
-                None => stdout_line(&format!("event {}: handled {}", event.id, event.title)),
+                Some(_) => tracing::error!(
+                    target: "intake::terminal::error",
+                    "event {}: triage failed",
+                    event.id
+                ),
+                None => tracing::info!(
+                    target: "intake::terminal",
+                    "event {}: handled {}",
+                    event.id,
+                    event.title
+                ),
             }
         }
         Ok(())
@@ -366,18 +311,13 @@ where
 
     async fn triage(&self, event: EventRecord) -> Result<Option<String>> {
         let started = std::time::Instant::now();
-        self.inner
-            .logs
-            .monitor(
-                "triage_start",
-                json!({
-                    "eventId": event.id,
-                    "attempt": event.attempt_count,
-                    "source": event.source,
-                    "queue": self.inner.database.readers().status().await?,
-                }),
-            )
-            .await;
+        tracing::info!(
+            target: "intake::monitor",
+            event_id = event.id,
+            attempt = event.attempt_count,
+            source = event.source,
+            "triage started"
+        );
         let result = self
             .inner
             .runner
@@ -386,18 +326,13 @@ where
         match result {
             Ok(()) => {
                 self.inner.database.succeed(event.id, Utc::now()).await?;
-                self.inner
-                    .logs
-                    .monitor(
-                        "triage_succeeded",
-                        json!({
-                            "eventId": event.id,
-                            "attempt": event.attempt_count,
-                            "durationMs": duration_millis(started.elapsed()),
-                            "queue": self.inner.database.readers().status().await?,
-                        }),
-                    )
-                    .await;
+                tracing::info!(
+                    target: "intake::monitor",
+                    event_id = event.id,
+                    attempt = event.attempt_count,
+                    duration_ms = duration_millis(started.elapsed()),
+                    "triage succeeded"
+                );
                 Ok(None)
             }
             Err(error) => {
@@ -413,22 +348,15 @@ where
                     )
                     .await?;
                 let failed = self.inner.database.readers().event(event.id).await?;
-                self.inner
-                    .logs
-                    .monitor(
-                        "triage_failed",
-                        json!({
-                            "eventId": event.id,
-                            "attempt": event.attempt_count,
-                            "durationMs": duration_millis(started.elapsed()),
-                            "failureCategory": safe_error_category(&error),
-                            "outcome": failed.as_ref().map(|record| record.status),
-                            "retry": failed.as_ref().is_some_and(|record| record.status == crate::database::EventStatus::Retryable),
-                            "nextAttemptAt": failed.and_then(|record| record.next_attempt_at),
-                            "queue": self.inner.database.readers().status().await?,
-                        }),
-                    )
-                    .await;
+                tracing::error!(
+                    target: "intake::monitor",
+                    event_id = event.id,
+                    attempt = event.attempt_count,
+                    duration_ms = duration_millis(started.elapsed()),
+                    failure_category = safe_error_category(&error),
+                    retry = failed.as_ref().is_some_and(|record| record.status == crate::database::EventStatus::Retryable),
+                    "triage failed"
+                );
                 Ok(Some(message))
             }
         }
@@ -436,6 +364,36 @@ where
 
     fn is_stopping(&self) -> bool {
         self.inner.stopping.load(Ordering::Acquire)
+    }
+}
+
+fn source_failure_category(error: &SourceRunnerError) -> &'static str {
+    match error {
+        SourceRunnerError::RequestTooLarge | SourceRunnerError::OutputTooLarge { .. } => "limit",
+        SourceRunnerError::Spawn(_) => "spawn",
+        SourceRunnerError::Timeout => "timeout",
+        SourceRunnerError::Exit { .. } => "exit",
+        SourceRunnerError::Stream(_) | SourceRunnerError::Utf8(_) => "stream",
+        SourceRunnerError::Json(_)
+        | SourceRunnerError::Schema(_)
+        | SourceRunnerError::ItemLimit { .. } => "protocol",
+        SourceRunnerError::Database(_) | SourceRunnerError::FailureRecording { .. } => "database",
+        SourceRunnerError::Poll(message) => safe_message_category(message),
+    }
+}
+
+fn safe_message_category(message: &str) -> &'static str {
+    let message = message.to_ascii_lowercase();
+    if message.contains("auth") || message.contains("credential") || message.contains("token") {
+        "authentication"
+    } else if message.contains("rate limit") || message.contains("429") {
+        "rate_limit"
+    } else if message.contains("timeout") || message.contains("timed out") {
+        "timeout"
+    } else if message.contains("connection") || message.contains("socket") {
+        "connection"
+    } else {
+        "unknown"
     }
 }
 

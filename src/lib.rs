@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod application_log;
 pub mod cli;
 pub mod config;
 pub mod dashboard;

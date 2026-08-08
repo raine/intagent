@@ -325,8 +325,12 @@ async fn index() -> Response {
 async fn snapshot(State(state): State<DashboardState>) -> Response {
     match dashboard_snapshot(&state.database, Utc::now()).await {
         Ok(snapshot) => json_response(StatusCode::OK, &snapshot),
-        Err(error) => {
-            eprintln!("dashboard snapshot failed: {error}");
+        Err(_) => {
+            tracing::error!(
+                target: "intake::dashboard",
+                endpoint = "/api/snapshot",
+                "dashboard request failed"
+            );
             response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "text/plain;charset=utf-8",
@@ -355,11 +359,19 @@ async fn run(
     match run_detail(&state.database, RunId(id), options).await {
         Ok(Some(detail)) => json_response(StatusCode::OK, &detail),
         Ok(None) => not_found(),
-        Err(_) => response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "text/plain;charset=utf-8",
-            "Operation failed",
-        ),
+        Err(_) => {
+            tracing::error!(
+                target: "intake::dashboard",
+                endpoint = "/api/runs/{id}",
+                run_id = id,
+                "dashboard request failed"
+            );
+            response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "text/plain;charset=utf-8",
+                "Operation failed",
+            )
+        }
     }
 }
 

@@ -76,7 +76,7 @@ cp -R skills/. "$skills_directory/"
 find "$skills_directory" -type d -exec chmod 755 {} +
 find "$skills_directory" -type f -exec chmod 644 {} +
 
-"$bin_directory/intake" --help >/dev/null
+XDG_STATE_HOME="$temporary_directory/state" "$bin_directory/intake" --help >/dev/null
 printf 'Installed intake to %s\n' "$bin_directory"
 printf 'Installed application skills to %s\n' "$skills_directory"
 if [[ ":$PATH:" != *":$bin_directory:"* ]]; then
