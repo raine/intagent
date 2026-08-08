@@ -17,7 +17,8 @@ use crate::database::{
     TriageConclusion,
 };
 pub use crate::errors::public_error;
-use crate::run_detail::{RunDetailOptions, displayed_conclusion, run_detail, safe_event_url};
+use crate::presentation::{present_event, present_run};
+use crate::run_detail::{RunDetailOptions, run_detail};
 
 const DASHBOARD_SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 const DASHBOARD_STYLES: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
@@ -206,63 +207,37 @@ pub async fn dashboard_snapshot(
         .collect();
     let mut runs = Vec::new();
     for summary in database.list_triage_run_summaries(50).await? {
-        let Some(event) = database.event(summary.run.event_id).await? else {
-            continue;
-        };
-        let state = summary.run.outcome.clone().unwrap_or_else(|| {
-            if event.status == EventStatus::Processing {
-                "active"
-            } else {
-                "interrupted"
-            }
-            .into()
-        });
+        let presented = present_run(summary.run, &summary.event);
+        let run = presented.run;
+        let event = summary.event;
+        let state = run.outcome.clone().unwrap_or_else(|| "active".into());
         let steps = if state == "active" {
-            database
-                .recent_triage_run_steps(RunId(summary.run.id), 12)
-                .await?
+            database.recent_triage_run_steps(RunId(run.id), 12).await?
         } else {
             Vec::new()
         };
-        let dispatch_trigger = summary.run.dispatch_trigger.unwrap_or_else(|| {
-            if event.source == "manual-injection" {
-                DispatchTrigger::ManualInjection
-            } else if summary.run.attempt > 1 {
-                DispatchTrigger::BackoffRetry
-            } else {
-                DispatchTrigger::Initial
-            }
-        });
-        let dispatch_sequence = summary
-            .run
-            .dispatch_sequence
-            .unwrap_or(summary.run.attempt.max(1));
-        let conclusion = displayed_conclusion(&summary.run);
         runs.push(DashboardRun {
-            id: summary.run.id,
-            event_id: summary.run.event_id,
+            id: run.id,
+            event_id: run.event_id,
             event_title: event.title,
             source: event.source,
             event_kind: event.kind,
-            attempt: summary.run.attempt,
-            started_at: summary.run.started_at,
-            ended_at: summary
-                .run
-                .ended_at
-                .or_else(|| (state == "interrupted").then(|| summary.run.last_activity_at.clone())),
-            last_activity_at: summary.run.last_activity_at,
+            attempt: run.attempt,
+            started_at: run.started_at,
+            ended_at: run.ended_at,
+            last_activity_at: run.last_activity_at,
             state,
-            model_id: summary.run.model_id,
-            model_provider: summary.run.model_provider,
-            thinking_level: summary.run.thinking_level,
-            turn_count: summary.run.turn_count,
-            retry_count: summary.run.retry_count,
-            compaction_count: summary.run.compaction_count,
-            telemetry_completeness: summary.run.telemetry_completeness,
+            model_id: run.model_id,
+            model_provider: run.model_provider,
+            thinking_level: run.thinking_level,
+            turn_count: run.turn_count,
+            retry_count: run.retry_count,
+            compaction_count: run.compaction_count,
+            telemetry_completeness: run.telemetry_completeness,
             timeline_truncated: summary.step_count > steps.len(),
-            dispatch_sequence,
-            dispatch_trigger,
-            conclusion,
+            dispatch_sequence: presented.dispatch_sequence,
+            dispatch_trigger: presented.dispatch_trigger,
+            conclusion: presented.conclusion,
             investigation_handle: event.investigation_handle,
             steps: steps
                 .into_iter()
@@ -299,22 +274,22 @@ pub async fn dashboard_snapshot(
 }
 
 fn event_projection(event: EventRecord) -> DashboardEvent {
-    let url = safe_event_url(&event);
+    let presented = present_event(&event);
     DashboardEvent {
-        id: event.id,
-        source: event.source,
-        entity_id: event.entity_id,
-        kind: event.kind,
-        title: event.title,
-        url,
-        occurred_at: event.occurred_at,
-        observed_at: event.observed_at,
-        status: event.status,
+        id: presented.id,
+        source: presented.source,
+        entity_id: presented.entity_id,
+        kind: presented.kind,
+        title: presented.title,
+        url: presented.url,
+        occurred_at: presented.occurred_at,
+        observed_at: presented.observed_at,
+        status: presented.status,
         attempt_count: event.attempt_count,
         next_attempt_at: event.next_attempt_at,
         last_error: public_error(event.last_error.as_deref()),
-        aven_ref: event.aven_ref,
-        investigation_handle: event.investigation_handle,
+        aven_ref: presented.aven_ref,
+        investigation_handle: presented.investigation_handle,
     }
 }
 

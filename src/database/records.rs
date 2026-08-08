@@ -329,6 +329,7 @@ pub struct TriageStepRecord {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TriageRunSummary {
     pub run: TriageRunRecord,
+    pub event: EventRecord,
     pub step_count: usize,
 }
 

@@ -7,6 +7,7 @@ pub mod database;
 pub mod errors;
 pub mod logging;
 pub mod monitor;
+mod presentation;
 pub mod project_registry;
 pub mod protocol;
 pub mod run_detail;
