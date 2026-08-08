@@ -59,13 +59,12 @@ impl Default for ProviderRetryPolicy {
     }
 }
 
-#[allow(async_fn_in_trait)]
 pub trait TriageRunner: Send + Sync {
-    async fn run(
+    fn run(
         &self,
         event: EventRecord,
         cancellation: CancellationToken,
-    ) -> Result<(), TriageError>;
+    ) -> impl Future<Output = Result<(), TriageError>> + Send;
 }
 
 #[derive(Clone)]

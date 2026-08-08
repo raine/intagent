@@ -1,10 +1,13 @@
 pub mod agent;
+pub mod cli;
 pub mod config;
 pub mod dashboard;
 pub mod database;
 pub mod logging;
+pub mod monitor;
 pub mod project_registry;
 pub mod protocol;
 pub mod run_detail;
 pub mod source_runner;
 pub mod sources;
+pub mod terminal;
