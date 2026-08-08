@@ -1998,7 +1998,7 @@
     display: block;
   }
 
-  .conclusion-panel > article {
+  .conclusion-panel > details {
     background: var(--surface);
     border: 1px solid var(--edge);
     border-radius: 6px;
@@ -2010,7 +2010,7 @@
     border-top: 3px solid var(--green) !important;
   }
 
-  .triage-conclusion header span {
+  .triage-conclusion summary span {
     color: var(--muted);
     font-size: 11px;
     font-weight: 600;
@@ -2030,10 +2030,31 @@
     line-height: 1.45;
   }
 
-  .triage-conclusion header {
+  .triage-conclusion > summary {
     align-items: start;
-    display: flex;
-    justify-content: space-between;
+    cursor: pointer;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 12px minmax(0, 1fr) max-content;
+    list-style: none;
+  }
+
+  .triage-conclusion > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .triage-conclusion > summary::before {
+    color: var(--muted);
+    content: "▸";
+    line-height: 1.5;
+  }
+
+  .triage-conclusion[open] > summary::before {
+    content: "▾";
+  }
+
+  .conclusion-content {
+    padding-left: 22px;
   }
 
   .decision {

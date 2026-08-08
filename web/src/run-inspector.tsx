@@ -604,8 +604,8 @@ function ConclusionPanel({ detail }: { detail: RunDetail }): JSX.Element {
         : "Conclusion unavailable"
   return (
     <section className="conclusion-panel" aria-labelledby="conclusion-title">
-      <article className="triage-conclusion">
-        <header>
+      <details className="triage-conclusion" open>
+        <summary>
           <div>
             <span>{sourceLabel}</span>
             <h2 id="conclusion-title">Triage conclusion</h2>
@@ -613,30 +613,35 @@ function ConclusionPanel({ detail }: { detail: RunDetail }): JSX.Element {
           <strong className={`decision decision-${conclusion.decision}`}>
             {stateLabel(conclusion.decision)}
           </strong>
-        </header>
-        <p className="conclusion-summary">{conclusion.summary}</p>
-        <dl className="conclusion-facts">
-          {conclusion.evidence.length ? (
-            <ConclusionList label="Key evidence" items={conclusion.evidence} />
-          ) : null}
-          {conclusion.actions.length ? (
-            <ConclusionList
-              label="Actions performed"
-              items={conclusion.actions}
-            />
-          ) : null}
-          <div>
-            <dt>Outcome</dt>
-            <dd>{conclusion.outcome}</dd>
-          </div>
-          {conclusion.followUp ? (
+        </summary>
+        <div className="conclusion-content">
+          <p className="conclusion-summary">{conclusion.summary}</p>
+          <dl className="conclusion-facts">
+            {conclusion.evidence.length ? (
+              <ConclusionList
+                label="Key evidence"
+                items={conclusion.evidence}
+              />
+            ) : null}
+            {conclusion.actions.length ? (
+              <ConclusionList
+                label="Actions performed"
+                items={conclusion.actions}
+              />
+            ) : null}
             <div>
-              <dt>Follow-up</dt>
-              <dd>{conclusion.followUp}</dd>
+              <dt>Outcome</dt>
+              <dd>{conclusion.outcome}</dd>
             </div>
-          ) : null}
-        </dl>
-      </article>
+            {conclusion.followUp ? (
+              <div>
+                <dt>Follow-up</dt>
+                <dd>{conclusion.followUp}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+      </details>
     </section>
   )
 }

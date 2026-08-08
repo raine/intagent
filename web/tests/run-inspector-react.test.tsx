@@ -56,6 +56,8 @@ describe("activity-first run inspector", () => {
     expect(html).toContain("policy attempt 2 of 3")
     expect(html).toContain(">run 1</button>")
     expect(html).toContain('aria-labelledby="conclusion-title"')
+    expect(html).toContain('<details class="triage-conclusion" open="">')
+    expect(html).toContain("<summary>")
     expect(html).not.toContain("Why intake dispatched the agent")
     expect(html).not.toContain("Dispatch reason")
     expect(html).toContain("Triage conclusion")
