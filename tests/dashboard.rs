@@ -65,6 +65,7 @@ async fn serves_only_the_read_only_dashboard_surface_with_security_headers() {
         database.readers(),
         DashboardRunLimits {
             max_turns: Some(50),
+            max_attempts: Some(3),
             wall_timeout_ms: Some(1_800_000),
         },
     );

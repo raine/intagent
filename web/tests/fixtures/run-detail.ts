@@ -33,8 +33,30 @@ export function runDetailFixture(options: FixtureOptions = {}): RunDetail {
     state: "succeeded" as const,
     terminationReason: null,
     failureCategory: null,
-    dispatchReason:
-      "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
+    dispatch: {
+      sequence: 2,
+      trigger: "backoff_retry" as const,
+      source: "recorded" as const,
+      attempt: 2,
+      maxAttempts: 3,
+      finalAttempt: false,
+      scheduledFor: "2026-08-05T09:59:30.000Z",
+      claimedAt: "2026-08-05T10:00:00.000Z",
+      priorAttempt: {
+        runId: 6,
+        sequence: 1,
+        state: "failed" as const,
+        failureCategory: "rate_limit" as const,
+        terminationReason: "model_error",
+        decision: "failed" as const,
+        endedAt: "2026-08-05T09:58:05.000Z",
+      },
+      latency: {
+        sourceLagMs: 30_000,
+        backoffWaitMs: 85_000,
+        claimDelayMs: 30_000,
+      },
+    },
     conclusion: {
       decision: "action_taken" as const,
       summary:
@@ -74,8 +96,6 @@ export function runDetailFixture(options: FixtureOptions = {}): RunDetail {
     usage,
     peakContextTokens: 45_000,
     peakContextPercent: 22.5,
-    sourceLagMs: 60_000,
-    queueWaitMs: 30_000,
   }
   const metrics = { ...metricDefaults, ...options.metrics }
   return {
@@ -98,20 +118,26 @@ export function runDetailFixture(options: FixtureOptions = {}): RunDetail {
     siblingAttempts: options.siblingAttempts ?? [
       {
         id: 6,
+        sequence: 1,
         attempt: 1,
         startedAt: "2026-08-05T09:58:00.000Z",
         endedAt: "2026-08-05T09:58:05.000Z",
         state: "failed",
         failureCategory: "rate_limit",
+        terminationReason: "model_error",
+        decision: "failed",
         telemetryCompleteness: "complete",
       },
       {
         id: run.id,
+        sequence: run.dispatch.sequence,
         attempt: run.attempt,
         startedAt: run.startedAt,
         endedAt: run.endedAt,
         state: run.state,
         failureCategory: run.failureCategory,
+        terminationReason: run.terminationReason,
+        decision: run.conclusion.decision,
         telemetryCompleteness: run.telemetry.completeness,
       },
     ],

@@ -21,7 +21,22 @@
       "schemaVersion": 1,
       "completeness": "complete"
     },
-    "dispatchReason": "Dispatched because fastmail reported a email event that entered the triage queue (attempt 1).",
+    "dispatch": {
+      "sequence": 1,
+      "trigger": "initial",
+      "source": "derived",
+      "attempt": 1,
+      "maxAttempts": null,
+      "finalAttempt": false,
+      "scheduledFor": null,
+      "claimedAt": "2026-08-07T10:00:00.000Z",
+      "priorAttempt": null,
+      "latency": {
+        "sourceLagMs": 30000,
+        "backoffWaitMs": null,
+        "claimDelayMs": 90000
+      }
+    },
     "conclusion": {
       "summary": "A model-authored conclusion is unavailable for this run.",
       "evidence": [],
@@ -48,11 +63,14 @@
   "siblingAttempts": [
     {
       "id": 1,
+      "sequence": 1,
       "attempt": 1,
       "startedAt": "2026-08-07T10:00:00.000Z",
       "endedAt": "2026-08-07T10:03:00.000Z",
       "state": "succeeded",
       "failureCategory": null,
+      "terminationReason": "completed",
+      "decision": null,
       "telemetryCompleteness": "complete"
     }
   ],
@@ -82,9 +100,7 @@
       "totalCost": 0.036000000000000004
     },
     "peakContextTokens": 80000,
-    "peakContextPercent": 40,
-    "sourceLagMs": 120000,
-    "queueWaitMs": 90000
+    "peakContextPercent": 40
   },
   "effects": [
     {

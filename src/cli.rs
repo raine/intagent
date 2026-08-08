@@ -368,6 +368,7 @@ fn announce_dashboard(listener: &tokio::net::TcpListener) -> Result<()> {
 fn dashboard_limits(config: &IntakeConfig) -> DashboardRunLimits {
     DashboardRunLimits {
         max_turns: Some(config.triage.max_turns as u32),
+        max_attempts: Some(config.triage.max_attempts as u32),
         wall_timeout_ms: Some(config.triage.timeout_minutes.saturating_mul(60_000)),
     }
 }

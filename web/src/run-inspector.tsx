@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { RunDetail, RunTimelineEntry } from "./run-detail-types.ts"
+import type {
+  DispatchTrigger,
+  RunDetail,
+  RunTimelineEntry,
+} from "./run-detail-types.ts"
 import {
   entryEnd,
   entryPosition,
@@ -104,6 +108,17 @@ function offsetTime(detail: RunDetail, value: string): string {
 function relativeAge(value: string, now: number): string {
   const age = Math.max(0, now - parseTime(value))
   return `${formatDuration(age)} ago`
+}
+
+const dispatchLabels: Record<DispatchTrigger, string> = {
+  initial: "First attempt",
+  revision: "New revision",
+  backoff_retry: "Retry after failure",
+  recovery_retry: "Retry after restart",
+  operator_retry: "Manual retry",
+  manual_injection: "Manual injection",
+  superseding_claim: "Superseding claim",
+  unknown: "Dispatch unknown",
 }
 
 function stateLabel(value: string): string {
@@ -524,6 +539,11 @@ export function RunInspector({
         <span className={`run-state run-state-${detail.run.state}`}>
           {stateLabel(detail.run.state)}
         </span>
+        <span
+          className={`dispatch-chip dispatch-${detail.run.dispatch.trigger}`}
+        >
+          {dispatchLabels[detail.run.dispatch.trigger]}
+        </span>
         <label className="attempt-select">
           <span>Attempt</span>
           <select
@@ -533,7 +553,7 @@ export function RunInspector({
           >
             {detail.siblingAttempts.map((attempt) => (
               <option value={attempt.id} key={attempt.id}>
-                {attempt.attempt} · {stateLabel(attempt.state)}
+                {attempt.sequence} · {stateLabel(attempt.state)}
               </option>
             ))}
           </select>
@@ -613,6 +633,7 @@ export function RunInspector({
           </div>
         </section>
 
+        <DispatchStrip detail={detail} onNavigateAttempt={onNavigateAttempt} />
         <ConclusionPanel detail={detail} />
 
         {notices.length ? (
@@ -659,6 +680,68 @@ export function RunInspector({
   )
 }
 
+function DispatchStrip({
+  detail,
+  onNavigateAttempt,
+}: {
+  detail: RunDetail
+  onNavigateAttempt: (runId: number) => void
+}): JSX.Element | null {
+  const dispatch = detail.run.dispatch
+  const notable =
+    dispatch.trigger !== "initial" ||
+    dispatch.finalAttempt ||
+    (dispatch.latency.sourceLagMs ?? 0) > 300_000 ||
+    (dispatch.latency.claimDelayMs ?? 0) > 60_000
+  if (!notable) return null
+
+  const prior = dispatch.priorAttempt
+  const timing = [
+    dispatch.latency.sourceLagMs !== null && dispatch.latency.sourceLagMs > 1000
+      ? `observed ${formatDuration(dispatch.latency.sourceLagMs)} after occurrence`
+      : null,
+    dispatch.latency.backoffWaitMs !== null
+      ? `${formatDuration(dispatch.latency.backoffWaitMs)} backoff`
+      : null,
+    dispatch.latency.claimDelayMs !== null &&
+    dispatch.latency.claimDelayMs > 1000
+      ? `claimed ${formatDuration(dispatch.latency.claimDelayMs)} after eligibility`
+      : null,
+  ].filter((value): value is string => value !== null)
+
+  return (
+    <section
+      className={`dispatch-strip dispatch-${dispatch.trigger}`}
+      aria-label="Dispatch context"
+    >
+      <strong>{dispatchLabels[dispatch.trigger]}</strong>
+      <span>
+        Run {dispatch.sequence}
+        {dispatch.maxAttempts === null
+          ? ""
+          : ` · policy attempt ${dispatch.attempt} of ${dispatch.maxAttempts}`}
+        {dispatch.finalAttempt ? " · final policy attempt" : ""}
+      </span>
+      {prior ? (
+        <span>
+          after{" "}
+          <button type="button" onClick={() => onNavigateAttempt(prior.runId)}>
+            run {prior.sequence}
+          </button>{" "}
+          {stateLabel(prior.state)}
+          {prior.failureCategory
+            ? ` · ${stateLabel(prior.failureCategory)}`
+            : ""}
+        </span>
+      ) : null}
+      {timing.length ? <span>{timing.join(" · ")}</span> : null}
+      {dispatch.source !== "recorded" ? (
+        <small>Trigger {dispatch.source} from available history</small>
+      ) : null}
+    </section>
+  )
+}
+
 function ConclusionPanel({ detail }: { detail: RunDetail }): JSX.Element {
   const conclusion = detail.run.conclusion
   const sourceLabel =
@@ -669,11 +752,6 @@ function ConclusionPanel({ detail }: { detail: RunDetail }): JSX.Element {
         : "Conclusion unavailable"
   return (
     <section className="conclusion-panel" aria-labelledby="conclusion-title">
-      <article className="dispatch-context">
-        <span>Why intake dispatched the agent</span>
-        <h2>Dispatch reason</h2>
-        <p>{detail.run.dispatchReason}</p>
-      </article>
       <article className="triage-conclusion">
         <header>
           <div>
@@ -812,20 +890,6 @@ function TimeBudget({
           duration remains known.
         </p>
       )}
-      <div className="secondary-timings">
-        {detail.metrics.sourceLagMs !== null ? (
-          <span>
-            Source lag{" "}
-            <strong>{formatDuration(detail.metrics.sourceLagMs)}</strong>
-          </span>
-        ) : null}
-        {detail.metrics.queueWaitMs !== null ? (
-          <span>
-            Queue wait{" "}
-            <strong>{formatDuration(detail.metrics.queueWaitMs)}</strong>
-          </span>
-        ) : null}
-      </div>
     </section>
   )
 }
@@ -1239,6 +1303,49 @@ function RunDetails({ detail }: { detail: RunDetail }): JSX.Element {
                 value={formatMoney(detail.metrics.usage.totalCost)}
               />
             ) : null}
+          </dl>
+        </section>
+        <section>
+          <h3>Dispatch</h3>
+          <dl>
+            <Detail
+              label="Trigger"
+              value={dispatchLabels[detail.run.dispatch.trigger]}
+            />
+            <Detail label="Run sequence" value={detail.run.dispatch.sequence} />
+            <Detail label="Trigger source" value={detail.run.dispatch.source} />
+            <Detail
+              label="Scheduled for"
+              value={
+                detail.run.dispatch.scheduledFor
+                  ? exactTime(detail.run.dispatch.scheduledFor)
+                  : null
+              }
+            />
+            <Detail
+              label="Source observation lag"
+              value={
+                detail.run.dispatch.latency.sourceLagMs === null
+                  ? null
+                  : formatDuration(detail.run.dispatch.latency.sourceLagMs)
+              }
+            />
+            <Detail
+              label="Backoff wait"
+              value={
+                detail.run.dispatch.latency.backoffWaitMs === null
+                  ? null
+                  : formatDuration(detail.run.dispatch.latency.backoffWaitMs)
+              }
+            />
+            <Detail
+              label="Claim delay"
+              value={
+                detail.run.dispatch.latency.claimDelayMs === null
+                  ? null
+                  : formatDuration(detail.run.dispatch.latency.claimDelayMs)
+              }
+            />
           </dl>
         </section>
         <section>

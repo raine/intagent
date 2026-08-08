@@ -12,11 +12,10 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::database::{
-    DatabaseError, DatabaseReaders, EventRecord, EventStatus, RunId, TriageConclusion,
+    DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId,
+    TriageConclusion,
 };
-use crate::run_detail::{
-    RunDetailOptions, derived_dispatch_reason, displayed_conclusion, run_detail, safe_event_url,
-};
+use crate::run_detail::{RunDetailOptions, displayed_conclusion, run_detail, safe_event_url};
 
 const DASHBOARD_SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 const DASHBOARD_STYLES: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
@@ -45,6 +44,7 @@ const SECURITY_HEADERS: [(&str, &str); 7] = [
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DashboardRunLimits {
     pub max_turns: Option<u32>,
+    pub max_attempts: Option<u32>,
     pub wall_timeout_ms: Option<u64>,
 }
 
@@ -139,7 +139,8 @@ pub struct DashboardRun {
     pub compaction_count: u32,
     pub telemetry_completeness: String,
     pub timeline_truncated: bool,
-    pub dispatch_reason: String,
+    pub dispatch_sequence: u32,
+    pub dispatch_trigger: DispatchTrigger,
     pub conclusion: TriageConclusion,
     pub investigation_handle: Option<String>,
     pub steps: Vec<DashboardStep>,
@@ -221,11 +222,19 @@ pub async fn dashboard_snapshot(
         } else {
             Vec::new()
         };
-        let dispatch_reason = summary
+        let dispatch_trigger = summary.run.dispatch_trigger.unwrap_or_else(|| {
+            if event.source == "manual-injection" {
+                DispatchTrigger::ManualInjection
+            } else if summary.run.attempt > 1 {
+                DispatchTrigger::BackoffRetry
+            } else {
+                DispatchTrigger::Initial
+            }
+        });
+        let dispatch_sequence = summary
             .run
-            .dispatch_reason
-            .clone()
-            .unwrap_or_else(|| derived_dispatch_reason(&event));
+            .dispatch_sequence
+            .unwrap_or(summary.run.attempt.max(1));
         let conclusion = displayed_conclusion(&summary.run);
         runs.push(DashboardRun {
             id: summary.run.id,
@@ -249,7 +258,8 @@ pub async fn dashboard_snapshot(
             compaction_count: summary.run.compaction_count,
             telemetry_completeness: summary.run.telemetry_completeness,
             timeline_truncated: summary.step_count > steps.len(),
-            dispatch_reason,
+            dispatch_sequence,
+            dispatch_trigger,
             conclusion,
             investigation_handle: event.investigation_handle,
             steps: steps
@@ -367,6 +377,7 @@ async fn run(
         offset,
         limit,
         max_turns: state.limits.max_turns,
+        max_attempts: state.limits.max_attempts,
         wall_timeout_ms: state.limits.wall_timeout_ms,
         now: Utc::now(),
     };

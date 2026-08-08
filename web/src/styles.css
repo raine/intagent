@@ -1616,7 +1616,7 @@
     gap: 10px 14px;
     grid-template-columns:
       max-content minmax(220px, 1fr)
-      max-content max-content max-content max-content;
+      max-content max-content max-content max-content max-content;
     min-height: 64px;
     padding: 8px 20px;
     position: sticky;
@@ -1799,10 +1799,61 @@
     margin-top: 3px;
   }
 
+  .dispatch-chip {
+    background: color-mix(in srgb, var(--blue) 8%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--blue) 35%, var(--edge));
+    border-radius: 999px;
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .dispatch-chip.dispatch-recovery_retry,
+  .dispatch-chip.dispatch-superseding_claim {
+    background: color-mix(in srgb, var(--yellow) 9%, var(--surface));
+    border-color: color-mix(in srgb, var(--yellow) 40%, var(--edge));
+  }
+
+  .dispatch-strip {
+    align-items: center;
+    background: color-mix(in srgb, var(--blue) 6%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--edge));
+    color: var(--ink-2);
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 12px;
+    gap: 5px 12px;
+    padding: 8px 12px;
+  }
+
+  .dispatch-strip.dispatch-recovery_retry,
+  .dispatch-strip.dispatch-superseding_claim {
+    background: color-mix(in srgb, var(--yellow) 8%, var(--surface));
+    border-color: color-mix(in srgb, var(--yellow) 35%, var(--edge));
+  }
+
+  .dispatch-strip strong {
+    color: var(--ink);
+  }
+
+  .dispatch-strip button {
+    background: transparent;
+    border: 0;
+    color: var(--blue);
+    padding: 0;
+    text-decoration: underline;
+  }
+
+  .dispatch-strip small {
+    color: var(--muted);
+    margin-left: auto;
+  }
+
   .conclusion-panel {
-    display: grid;
-    gap: 1px;
-    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2fr);
+    display: block;
   }
 
   .conclusion-panel > article {
@@ -1812,15 +1863,10 @@
     padding: 15px 17px;
   }
 
-  .dispatch-context {
-    border-top: 3px solid var(--blue) !important;
-  }
-
   .triage-conclusion {
     border-top: 3px solid var(--green) !important;
   }
 
-  .dispatch-context > span,
   .triage-conclusion header span {
     color: var(--muted);
     font-size: 11px;
@@ -1828,14 +1874,12 @@
     text-transform: uppercase;
   }
 
-  .dispatch-context h2,
   .triage-conclusion h2 {
     color: var(--ink);
     font-size: 15px;
     margin: 3px 0 8px;
   }
 
-  .dispatch-context p,
   .conclusion-summary,
   .conclusion-facts dd {
     color: var(--ink-2);
@@ -2096,24 +2140,6 @@
   .budget-legend strong {
     color: var(--ink-2);
     font-size: 12px;
-  }
-
-  .secondary-timings {
-    border-top: 1px solid var(--edge-soft);
-    display: flex;
-    gap: 22px;
-    margin-top: 11px;
-    padding-top: 8px;
-  }
-
-  .secondary-timings span {
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .secondary-timings strong {
-    color: var(--ink-2);
-    margin-left: 5px;
   }
 
   .honest-fallback,
@@ -2774,7 +2800,6 @@
   .metric-grid small,
   .budget-legend span,
   .budget-legend strong,
-  .secondary-timings span,
   .gap-summary span,
   .turn-gap,
   .unassigned-activity header span,
@@ -2883,12 +2908,12 @@
     .inspector-identity {
       gap: 4px 8px;
       grid-template-columns: max-content minmax(0, 1fr) max-content;
-      min-height: 78px;
+      min-height: 94px;
       padding: 7px 12px;
     }
 
     .inspector-identity .back-button {
-      grid-row: 1 / 3;
+      grid-row: 1 / 4;
     }
 
     .identity-title {
@@ -2901,6 +2926,13 @@
 
     .run-state {
       grid-column: 2;
+      justify-self: start;
+      padding-block: 2px;
+    }
+
+    .dispatch-chip {
+      grid-column: 2;
+      grid-row: 3;
       justify-self: start;
       padding-block: 2px;
     }
@@ -2952,7 +2984,6 @@
     }
 
     .conclusion-panel {
-      grid-template-columns: 1fr;
       order: 2;
     }
 
@@ -2996,11 +3027,6 @@
 
     .budget-legend {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .secondary-timings {
-      display: grid;
-      gap: 3px;
     }
 
     .timeline-title-row {

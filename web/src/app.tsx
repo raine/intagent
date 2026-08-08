@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { RunRoute as RunDetailRoute } from "./run-inspector.tsx"
-import type { TriageConclusion } from "./run-detail-types.ts"
+import type { DispatchTrigger, TriageConclusion } from "./run-detail-types.ts"
 
 type EventStatus =
   | "pending"
@@ -11,6 +11,17 @@ type EventStatus =
   | "ignored"
 type RunStatus = "active" | "succeeded" | "failed" | "interrupted"
 type StepKind = "tool" | "thinking" | "compaction"
+
+const dispatchLabels: Record<DispatchTrigger, string> = {
+  initial: "First attempt",
+  revision: "New revision",
+  backoff_retry: "Retry after failure",
+  recovery_retry: "Retry after restart",
+  operator_retry: "Manual retry",
+  manual_injection: "Manual injection",
+  superseding_claim: "Superseding claim",
+  unknown: "Dispatch unknown",
+}
 
 interface DashboardEvent {
   id: number
@@ -48,7 +59,8 @@ interface DashboardRun {
   compactionCount: number
   telemetryCompleteness: "complete" | "partial" | "legacy"
   timelineTruncated: boolean
-  dispatchReason: string
+  dispatchSequence: number
+  dispatchTrigger: DispatchTrigger
   conclusion: TriageConclusion
   investigationHandle: string | null
   steps: Array<{
@@ -391,7 +403,7 @@ export function ActiveRunCard({
           model <b>{run.modelId ?? "-"}</b>
         </span>
         <span>
-          attempt <b>{run.attempt}</b>
+          run <b>{run.dispatchSequence}</b>
         </span>
         <span>
           turns <b>{run.turnCount}</b>
@@ -406,10 +418,12 @@ export function ActiveRunCard({
           inspect run →
         </button>
       </div>
-      <p className="active-run-dispatch">
-        <b>Dispatch</b>
-        <span>{run.dispatchReason}</span>
-      </p>
+      {run.dispatchTrigger !== "initial" ? (
+        <p className="active-run-dispatch">
+          <b>{dispatchLabels[run.dispatchTrigger]}</b>
+          <span>Run {run.dispatchSequence}</span>
+        </p>
+      ) : null}
       <div
         className={`active-run-activity${expanded ? " is-expanded" : ""}`}
         aria-label={
