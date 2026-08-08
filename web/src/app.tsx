@@ -194,7 +194,7 @@ export function ThemeToggle(): JSX.Element {
 
   const select = (next: ThemePreference): void => {
     setTheme(next)
-    localStorage.setItem("im-theme", next)
+    localStorage.setItem("intagent-theme", next)
   }
 
   return (
@@ -554,7 +554,7 @@ function Loading(): JSX.Element {
         <i />
         <i />
       </div>
-      <p>Connecting to the intake daemon...</p>
+      <p>Connecting to Intagent...</p>
     </section>
   )
 }
@@ -590,8 +590,8 @@ export function App(): JSX.Element {
         Skip to dashboard
       </a>
       <header className="topbar">
-        <a className="brand" href="#/" aria-label="Intake Monitor dashboard">
-          intake-monitor
+        <a className="brand" href="#/" aria-label="Intagent dashboard">
+          Intagent
         </a>
         <span className="topbar-separator" aria-hidden="true">
           ·

@@ -15,18 +15,18 @@ use crate::agent::rig_runner::{ChatGptTriageRunner, TriageRunnerCore};
 use crate::agent::skills::validate_skills;
 use crate::application_log::application_log_path;
 use crate::config::{
-    IntakeConfig, canonical_roots, config_directory, default_config_path, expand_path,
+    IntagentConfig, canonical_roots, config_directory, default_config_path, expand_path,
     initialize_private_config, load_config, project_registry_path, state_directory,
 };
 use crate::dashboard::{
     DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT, DashboardRunLimits, dashboard_bind,
     dashboard_router,
 };
-use crate::database::{IntakeDatabase, QueueOwnerLock};
+use crate::database::{IntagentDatabase, QueueOwnerLock};
 pub use crate::errors::public_cli_error;
 use crate::errors::public_error;
 use crate::logging::DurableLogStore;
-use crate::monitor::IntakeMonitor;
+use crate::monitor::IntagentMonitor;
 use crate::project_registry::ensure_project_registry;
 use crate::protocol::IntakeItem;
 
@@ -217,7 +217,7 @@ pub static USAGE: LazyLock<String> = LazyLock::new(|| {
         }
     }
     format!(
-        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n{commands}\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+        "Usage: intagent [--config PATH] COMMAND\n\nCommands:\n{commands}\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAGENT_LOG to off, error, warn, info, debug, or trace.\n"
     )
 });
 
@@ -256,7 +256,7 @@ fn command_help(command: &str) -> Option<String> {
         Arguments::None | Arguments::One => String::new(),
     };
     Some(format!(
-        "Usage: intake{config} {synopsis}\n\n{}\n{options}",
+        "Usage: intagent{config} {synopsis}\n\n{}\n{options}",
         spec.description
     ))
 }
@@ -333,7 +333,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         .transpose()?;
     validate_other_command_options(spec.as_ref(), &command_name, &args)?;
     tracing::info!(
-        target: "intake::cli",
+        target: "intagent::cli",
         command = spec.map_or("unknown", |spec| spec.name),
         "command started"
     );
@@ -384,7 +384,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
             _ => None,
         })
         .transpose()?;
-    let database = IntakeDatabase::open(&database_path).await?;
+    let database = IntagentDatabase::open(&database_path).await?;
 
     let operation = async {
         if spec.is_some_and(|spec| {
@@ -450,7 +450,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         Err(error) => {
             if let Err(shutdown_error) = shutdown {
                 tracing::error!(
-                    target: "intake::database",
+                    target: "intagent::database",
                     error = %shutdown_error,
                     "database shutdown failed"
                 );
@@ -461,9 +461,9 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
 }
 
 fn build_monitor(
-    config: IntakeConfig,
-    database: IntakeDatabase,
-) -> Result<IntakeMonitor<ChatGptTriageRunner>> {
+    config: IntagentConfig,
+    database: IntagentDatabase,
+) -> Result<IntagentMonitor<ChatGptTriageRunner>> {
     let roots = canonical_roots(&config.project_roots)?;
     let policy = Arc::new(CommandPolicy::new(&config, roots)?);
     let filter = policy.clone();
@@ -481,10 +481,10 @@ fn build_monitor(
         registry,
     );
     let runner = ChatGptTriageRunner::new(core, auth_paths()?);
-    Ok(IntakeMonitor::new(config, database, runner))
+    Ok(IntagentMonitor::new(config, database, runner))
 }
 
-async fn run_check(config: IntakeConfig, database: IntakeDatabase) -> Result<bool> {
+async fn run_check(config: IntagentConfig, database: IntagentDatabase) -> Result<bool> {
     let monitor = build_monitor(config, database)?;
     let result = monitor.check().await?;
     println!(
@@ -506,8 +506,8 @@ async fn run_check(config: IntakeConfig, database: IntakeDatabase) -> Result<boo
 }
 
 async fn run_watch(
-    config: IntakeConfig,
-    database: IntakeDatabase,
+    config: IntagentConfig,
+    database: IntagentDatabase,
     dashboard_options: Option<DashboardOptions>,
 ) -> Result<()> {
     let monitor = build_monitor(config.clone(), database.clone())?;
@@ -538,8 +538,8 @@ async fn run_watch(
 }
 
 async fn dashboard(
-    database: &IntakeDatabase,
-    config: &IntakeConfig,
+    database: &IntagentDatabase,
+    config: &IntagentConfig,
     options: DashboardOptions,
 ) -> Result<()> {
     let listener = bind_dashboard(&options).await?;
@@ -551,7 +551,7 @@ async fn dashboard(
     .with_graceful_shutdown(shutdown_signal())
     .await
     .context("dashboard server failed")?;
-    tracing::info!(target: "intake::dashboard", "dashboard stopped");
+    tracing::info!(target: "intagent::dashboard", "dashboard stopped");
     Ok(())
 }
 
@@ -578,16 +578,16 @@ async fn bind_dashboard(options: &DashboardOptions) -> Result<tokio::net::TcpLis
 fn announce_dashboard(listener: &tokio::net::TcpListener) -> Result<()> {
     let address = listener.local_addr()?;
     tracing::info!(
-        target: "intake::dashboard",
+        target: "intagent::dashboard",
         host = %address.ip(),
         port = address.port(),
         "dashboard started"
     );
-    println!("Intake dashboard: http://{address}/");
+    println!("Intagent dashboard: http://{address}/");
     Ok(())
 }
 
-fn dashboard_limits(config: &IntakeConfig) -> DashboardRunLimits {
+fn dashboard_limits(config: &IntagentConfig) -> DashboardRunLimits {
     DashboardRunLimits {
         max_turns: Some(config.triage.max_turns as u32),
         max_attempts: Some(config.triage.max_attempts as u32),
@@ -595,7 +595,7 @@ fn dashboard_limits(config: &IntakeConfig) -> DashboardRunLimits {
     }
 }
 
-async fn inject(database: &IntakeDatabase, path: Option<&String>) -> Result<()> {
+async fn inject(database: &IntagentDatabase, path: Option<&String>) -> Result<()> {
     let path = path.ok_or_else(|| anyhow!("inject requires an IntakeItem JSON file"))?;
     let expanded = expand_path(path)?;
     let bytes = tokio::fs::read(&expanded).await?;
@@ -617,7 +617,7 @@ async fn inject(database: &IntakeDatabase, path: Option<&String>) -> Result<()> 
     Ok(())
 }
 
-async fn show(database: &IntakeDatabase, value: Option<&String>) -> Result<()> {
+async fn show(database: &IntagentDatabase, value: Option<&String>) -> Result<()> {
     let id = parse_event_id(value)?;
     let event = database
         .readers()
@@ -628,7 +628,7 @@ async fn show(database: &IntakeDatabase, value: Option<&String>) -> Result<()> {
     Ok(())
 }
 
-async fn retry(database: &IntakeDatabase, value: Option<&String>) -> Result<()> {
+async fn retry(database: &IntagentDatabase, value: Option<&String>) -> Result<()> {
     let id = parse_event_id(value)?;
     if !database.retry(id, Utc::now()).await? {
         bail!("Event {id} has no retained content to retry");
@@ -637,7 +637,7 @@ async fn retry(database: &IntakeDatabase, value: Option<&String>) -> Result<()> 
     Ok(())
 }
 
-async fn ignore(database: &IntakeDatabase, value: Option<&String>) -> Result<()> {
+async fn ignore(database: &IntagentDatabase, value: Option<&String>) -> Result<()> {
     let id = parse_event_id(value)?;
     if !database.ignore(id, Utc::now()).await? {
         bail!("Unknown event {id}");
@@ -646,7 +646,7 @@ async fn ignore(database: &IntakeDatabase, value: Option<&String>) -> Result<()>
     Ok(())
 }
 
-async fn print_status(database: &IntakeDatabase) -> Result<()> {
+async fn print_status(database: &IntagentDatabase) -> Result<()> {
     println!("Queue:");
     let statuses = database.readers().status().await?;
     if statuses.is_empty() {
@@ -688,7 +688,7 @@ async fn print_status(database: &IntakeDatabase) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_configuration(config: &IntakeConfig) -> Result<Vec<String>> {
+pub fn validate_configuration(config: &IntagentConfig) -> Result<Vec<String>> {
     let mut diagnostics = Vec::new();
     let mut names = HashSet::new();
     for source in &config.sources {
@@ -847,7 +847,7 @@ pub fn parse_dashboard_options(args: &[String]) -> Result<DashboardOptions> {
 
 #[cfg(unix)]
 fn spawn_monitor_signals<R>(
-    monitor: IntakeMonitor<R>,
+    monitor: IntagentMonitor<R>,
     dashboard_shutdown: Option<CancellationToken>,
 ) -> Result<tokio::task::JoinHandle<()>>
 where
@@ -863,7 +863,7 @@ where
             _ = terminate.recv() => {}
         }
         tracing::info!(
-            target: "intake::terminal::error",
+            target: "intagent::terminal::error",
             "Stopping schedules and waiting for active triage."
         );
         monitor.stop();
@@ -874,14 +874,14 @@ where
             _ = interrupt.recv() => {}
             _ = terminate.recv() => {}
         }
-        tracing::warn!(target: "intake::terminal::error", "Forced shutdown requested.");
+        tracing::warn!(target: "intagent::terminal::error", "Forced shutdown requested.");
         std::process::exit(130);
     }))
 }
 
 #[cfg(not(unix))]
 fn spawn_monitor_signals<R>(
-    monitor: IntakeMonitor<R>,
+    monitor: IntagentMonitor<R>,
     dashboard_shutdown: Option<CancellationToken>,
 ) -> Result<tokio::task::JoinHandle<()>>
 where
@@ -890,7 +890,7 @@ where
     Ok(tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
         tracing::info!(
-            target: "intake::terminal::error",
+            target: "intagent::terminal::error",
             "Stopping schedules and waiting for active triage."
         );
         monitor.stop();
@@ -898,7 +898,7 @@ where
             shutdown.cancel();
         }
         let _ = tokio::signal::ctrl_c().await;
-        tracing::warn!(target: "intake::terminal::error", "Forced shutdown requested.");
+        tracing::warn!(target: "intagent::terminal::error", "Forced shutdown requested.");
         std::process::exit(130);
     }))
 }
@@ -923,5 +923,5 @@ async fn shutdown_signal() {
 pub fn write_error(error: &anyhow::Error) {
     let public = public_cli_error(&error.to_string());
     let mut stderr = std::io::stderr().lock();
-    let _ = writeln!(stderr, "intake: {public}");
+    let _ = writeln!(stderr, "intagent: {public}");
 }

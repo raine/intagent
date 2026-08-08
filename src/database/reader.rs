@@ -27,7 +27,7 @@ impl DatabaseReaders {
             let (ready_tx, ready_rx) = oneshot::channel();
             let actor_target = target.clone();
             thread::Builder::new()
-                .name(format!("intake-database-reader-{index}"))
+                .name(format!("intagent-database-reader-{index}"))
                 .spawn(move || read_actor(actor_target, receiver, ready_tx))?;
             ready_rx.await.map_err(|_| DatabaseError::ActorStopped)??;
             senders.push(sender);

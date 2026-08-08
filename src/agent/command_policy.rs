@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use tree_sitter::{Node, Parser};
 
 use crate::agent::process::{ProcessFailure, ProcessOptions, run_process};
-use crate::config::{CommandRule, IntakeConfig, is_within};
+use crate::config::{CommandRule, IntagentConfig, is_within};
 
 pub const MAX_COMMAND_STDIN_BYTES: usize = 256 * 1024;
 const MAX_COMMAND_UTF16_UNITS: usize = 32_768;
@@ -41,7 +41,7 @@ pub struct CommandPolicy {
 }
 
 impl CommandPolicy {
-    pub fn new(config: &IntakeConfig, canonical_working_roots: Vec<PathBuf>) -> Result<Self> {
+    pub fn new(config: &IntagentConfig, canonical_working_roots: Vec<PathBuf>) -> Result<Self> {
         let path = config
             .commands
             .path

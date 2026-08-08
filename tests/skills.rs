@@ -2,11 +2,11 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
-use intake::agent::skills::{format_skill_catalog, validate_skills};
-use intake::config::load_config;
+use intagent::agent::skills::{format_skill_catalog, validate_skills};
+use intagent::config::load_config;
 use tempfile::TempDir;
 
-fn fixture_config() -> intake::config::IntakeConfig {
+fn fixture_config() -> intagent::config::IntagentConfig {
     load_config(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config/valid.yaml"))
         .unwrap()
 }
@@ -20,7 +20,7 @@ fn write_skill(path: &Path, frontmatter: &str) {
     .unwrap();
 }
 
-fn configure(root: &TempDir, directories: Vec<PathBuf>) -> intake::config::IntakeConfig {
+fn configure(root: &TempDir, directories: Vec<PathBuf>) -> intagent::config::IntagentConfig {
     let mut config = fixture_config();
     config.skills.directories = directories
         .into_iter()

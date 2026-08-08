@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use intake::agent::read_policy::{
+use intagent::agent::read_policy::{
     MAX_READ_FILE_BYTES, MAX_READ_LINES, MAX_READ_PATH_BYTES, ReadInput, ReadPolicy,
 };
 use tempfile::TempDir;

@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use intake::agent::auth::{AuthPaths, authorize, chatgpt_client};
-use intake::agent::context::CompactionConfig;
-use intake::agent::model::ThinkingLevel;
-use intake::agent::rig_runner::{ExplicitDriver, ProviderRetryPolicy};
-use intake::agent::telemetry::{CancellationTelemetry, PrototypeTelemetry};
-use intake::agent::tools::RecordingExecutableTools;
+use intagent::agent::auth::{AuthPaths, authorize, chatgpt_client};
+use intagent::agent::context::CompactionConfig;
+use intagent::agent::model::ThinkingLevel;
+use intagent::agent::rig_runner::{ExplicitDriver, ProviderRetryPolicy};
+use intagent::agent::telemetry::{CancellationTelemetry, PrototypeTelemetry};
+use intagent::agent::tools::RecordingExecutableTools;
 use rig_core::client::CompletionClient;
 use rig_core::message::Message;
 use tokio_util::sync::CancellationToken;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/intake-package.XXXXXX")"
+temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/intagent-package.XXXXXX")"
 cleanup() {
   rm -rf "$temporary_dir"
 }
@@ -9,7 +9,7 @@ trap cleanup EXIT
 
 prefix="$temporary_dir/prefix"
 bin_directory="$prefix/bin"
-skill_templates_directory="$prefix/share/doc/intake/examples/skills"
+skill_templates_directory="$prefix/share/doc/intagent/examples/skills"
 config_directory="$temporary_dir/config"
 state_directory="$temporary_dir/state"
 web_directory="$temporary_dir/web"
@@ -17,10 +17,10 @@ mkdir -p "$web_directory"
 tar -C web --exclude='./node_modules' --exclude='./generated' -cf - . | \
   tar -C "$web_directory" -xf -
 
-INTAKE_INSTALL_PREFIX="$prefix" INTAKE_WEB_DIR="$web_directory" \
+INTAGENT_INSTALL_PREFIX="$prefix" INTAGENT_WEB_DIR="$web_directory" \
   scripts/install >/dev/null
 
-expected_executables=(intake intake-fastmail-source intake-github-source)
+expected_executables=(intagent intagent-fastmail-source intagent-github-source)
 for executable in "${expected_executables[@]}"; do
   executable_path="$bin_directory/$executable"
   if [[ ! -x "$executable_path" ]]; then
@@ -73,6 +73,6 @@ fi
 diff -r examples/skills "$skill_templates_directory" >/dev/null
 
 XDG_CONFIG_HOME="$config_directory" XDG_STATE_HOME="$state_directory" \
-  "$bin_directory/intake" init >/dev/null
+  "$bin_directory/intagent" init >/dev/null
 XDG_CONFIG_HOME="$config_directory" XDG_STATE_HOME="$state_directory" \
-  "$bin_directory/intake" validate-config >/dev/null
+  "$bin_directory/intagent" validate-config >/dev/null

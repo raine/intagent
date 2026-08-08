@@ -2,8 +2,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 
-use intake::database::{EventRecord, EventStatus, RunMetadata, RunOutcome};
-use intake::logging::{
+use intagent::database::{EventRecord, EventStatus, RunMetadata, RunOutcome};
+use intagent::logging::{
     DurableLogStore, LogWriteOutcome, MAX_LOG_RECORD_BYTES, MAX_LOG_STRING_BYTES,
 };
 use serde_json::{Value, json};
@@ -206,7 +206,7 @@ async fn reports_logging_failures_without_rejecting_callers() {
         LogWriteOutcome::Failed
     );
     let warning = warning.lock().expect("warning lock");
-    assert!(warning.contains("warning: intake logging failed"));
+    assert!(warning.contains("warning: intagent logging failed"));
     assert!(warning.contains("monitor.jsonl"));
     assert_eq!(warning.matches("warning:").count(), 1);
 }

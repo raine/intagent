@@ -7,22 +7,22 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::Utc;
-use intake::agent::auth::{AuthPaths, authorize, chatgpt_client, write_cache_atomically};
-use intake::agent::command_policy::CommandPolicy;
-use intake::agent::model::{ThinkingLevel, completion_request};
-use intake::agent::rig_runner::{
+use intagent::agent::auth::{AuthPaths, authorize, chatgpt_client, write_cache_atomically};
+use intagent::agent::command_policy::CommandPolicy;
+use intagent::agent::model::{ThinkingLevel, completion_request};
+use intagent::agent::rig_runner::{
     ProviderRetryPolicy, RigTriageRunner, TriageError, TriageRunner, TriageRunnerCore,
 };
-use intake::agent::telemetry::CancellationTelemetry;
-use intake::agent::tools::{CountingTools, supervise_process};
-use intake::config::{
-    CommandRule, CommandsConfig, IntakeConfig, SkillsConfig, SourceConfig, StateConfig,
+use intagent::agent::telemetry::CancellationTelemetry;
+use intagent::agent::tools::{CountingTools, supervise_process};
+use intagent::config::{
+    CommandRule, CommandsConfig, IntagentConfig, SkillsConfig, SourceConfig, StateConfig,
     TriageConfig,
 };
-use intake::database::{DispatchTrigger, EventRecord, IntakeDatabase, RunId};
-use intake::logging::DurableLogStore;
-use intake::protocol::{IntakeItem, IntakeItemKind};
-use intake::run_detail::{RunDetailOptions, run_detail};
+use intagent::database::{DispatchTrigger, EventRecord, IntagentDatabase, RunId};
+use intagent::logging::DurableLogStore;
+use intagent::protocol::{IntakeItem, IntakeItemKind};
+use intagent::run_detail::{RunDetailOptions, run_detail};
 use rig_agent::agent::hook::InvalidToolCallAction;
 use rig_agent::agent::run::{AgentRun, AgentRunStep, ModelTurn, ModelTurnOutcome};
 use rig_agent::prelude::PromptError;
@@ -123,7 +123,7 @@ async fn noninteractive_auth_fails_quickly_with_operator_action() {
         .expect_err("missing credentials should fail");
 
     assert!(
-        result.to_string().contains("Run `intake login`"),
+        result.to_string().contains("Run `intagent login`"),
         "{result}"
     );
 }
@@ -181,8 +181,8 @@ async fn request_capture_preserves_chatgpt_contract_for_every_reasoning_level() 
                 account_id: Some("fixture-account".to_string()),
             })
             .http_client(http.clone())
-            .originator("intake")
-            .user_agent("intake/0.1.0")
+            .originator("intagent")
+            .user_agent("intagent/0.1.0")
             .default_instructions("")
             .build()
             .expect("build recording client");
@@ -197,8 +197,8 @@ async fn request_capture_preserves_chatgpt_contract_for_every_reasoning_level() 
         let requests = http.requests();
         assert_eq!(requests.len(), 1);
         let captured = &requests[0];
-        assert_eq!(captured.headers["originator"], "intake");
-        assert_eq!(captured.headers["user-agent"], "intake/0.1.0");
+        assert_eq!(captured.headers["originator"], "intagent");
+        assert_eq!(captured.headers["user-agent"], "intagent/0.1.0");
         let body: Value = serde_json::from_slice(&captured.body).expect("request JSON");
         assert_eq!(body["model"], MODEL_ID);
         assert_eq!(body["instructions"], SYSTEM_INSTRUCTIONS);
@@ -377,8 +377,8 @@ async fn model_timeout_disconnects_http_and_keeps_serializable_state() {
         })
         .base_url(format!("http://{address}"))
         .default_instructions("")
-        .originator("intake")
-        .user_agent("intake/0.1.0")
+        .originator("intagent")
+        .user_agent("intagent/0.1.0")
         .build()
         .expect("build local client");
     let model = client.completion_model(MODEL_ID);
@@ -890,7 +890,10 @@ async fn production_max_turns_timeout_and_cancellation_close_every_attempt() {
         .run(max_turn_fixture.event.clone(), CancellationToken::new())
         .await
         .expect_err("max turns should fail");
-    assert_eq!(error.category(), intake::database::ErrorCategory::TurnLimit);
+    assert_eq!(
+        error.category(),
+        intagent::database::ErrorCategory::TurnLimit
+    );
     assert_closed_failure(&max_turn_fixture, "turn_limit").await;
 
     let timeout_fixture = ProductionFixture::new("timeout", "email").await;
@@ -1053,7 +1056,7 @@ async fn production_records_bounded_reasoning_summaries_without_encrypted_conten
         .expect("reasoning fixture");
 
     fixture.database.flush().await.expect("flush database");
-    let connection = rusqlite::Connection::open(fixture.root.path().join("intake.sqlite"))
+    let connection = rusqlite::Connection::open(fixture.root.path().join("intagent.sqlite"))
         .expect("open fixture database");
     let summary: String = connection
         .query_row(
@@ -1091,32 +1094,32 @@ fn production_error_categories_are_safe_and_specific() {
     let cases = [
         (
             "authentication required",
-            intake::database::ErrorCategory::Authentication,
+            intagent::database::ErrorCategory::Authentication,
         ),
-        ("HTTP 429", intake::database::ErrorCategory::RateLimit),
+        ("HTTP 429", intagent::database::ErrorCategory::RateLimit),
         (
             "request timed out",
-            intake::database::ErrorCategory::Timeout,
+            intagent::database::ErrorCategory::Timeout,
         ),
         (
             "connection reset",
-            intake::database::ErrorCategory::Connection,
+            intagent::database::ErrorCategory::Connection,
         ),
         (
             "HTTP 404 not found",
-            intake::database::ErrorCategory::NotFound,
+            intagent::database::ErrorCategory::NotFound,
         ),
         (
             "model unavailable",
-            intake::database::ErrorCategory::ModelUnavailable,
+            intagent::database::ErrorCategory::ModelUnavailable,
         ),
         (
             "context_length_exceeded",
-            intake::database::ErrorCategory::ContextLimit,
+            intagent::database::ErrorCategory::ContextLimit,
         ),
         (
             "unclassified provider failure",
-            intake::database::ErrorCategory::Unknown,
+            intagent::database::ErrorCategory::Unknown,
         ),
     ];
     for (message, expected) in cases {
@@ -1146,8 +1149,8 @@ impl CompletionModel for PendingModel {
 
 struct ProductionFixture {
     root: TempDir,
-    config: IntakeConfig,
-    database: IntakeDatabase,
+    config: IntagentConfig,
+    database: IntagentDatabase,
     event: EventRecord,
     registry: PathBuf,
     output: SharedOutput,
@@ -1159,9 +1162,9 @@ impl ProductionFixture {
         let skills = root.path().join("skills");
         fs::create_dir_all(&skills).expect("skills directory");
         let registry = root.path().join("projects.yaml");
-        let database_path = root.path().join("intake.sqlite");
+        let database_path = root.path().join("intagent.sqlite");
         let logs = root.path().join("logs");
-        let config = IntakeConfig {
+        let config = IntagentConfig {
             version: 1,
             project_roots: vec![root.path().to_string_lossy().into_owned()],
             state: StateConfig {
@@ -1192,7 +1195,7 @@ impl ProductionFixture {
                 ],
             },
         };
-        let database = IntakeDatabase::open(&database_path)
+        let database = IntagentDatabase::open(&database_path)
             .await
             .expect("fixture database");
         database
@@ -1270,7 +1273,7 @@ impl ProductionFixture {
         RigTriageRunner::new(core, model)
     }
 
-    async fn run_record(&self) -> intake::database::TriageRunRecord {
+    async fn run_record(&self) -> intagent::database::TriageRunRecord {
         self.database
             .readers()
             .triage_run(RunId(1))
@@ -1280,7 +1283,7 @@ impl ProductionFixture {
     }
 
     fn command_count(&self) -> usize {
-        let connection = rusqlite::Connection::open(self.root.path().join("intake.sqlite"))
+        let connection = rusqlite::Connection::open(self.root.path().join("intagent.sqlite"))
             .expect("open fixture database");
         connection
             .query_row("SELECT COUNT(*) FROM command_events", [], |row| row.get(0))
@@ -1288,7 +1291,7 @@ impl ProductionFixture {
     }
 
     fn prompt_rows(&self) -> Vec<(String, String)> {
-        let connection = rusqlite::Connection::open(self.root.path().join("intake.sqlite"))
+        let connection = rusqlite::Connection::open(self.root.path().join("intagent.sqlite"))
             .expect("open fixture database");
         let mut statement = connection
             .prepare("SELECT role, content FROM triage_run_prompts ORDER BY id")

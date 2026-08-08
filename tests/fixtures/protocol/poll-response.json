@@ -2,7 +2,7 @@
   "protocolVersion": 1,
   "checkpoint": {
     "repositories": {
-      "example/intake": {
+      "example/intagent": {
         "updatedAt": "2026-08-07T09:59:59.999Z",
         "id": 43
       }
@@ -10,15 +10,15 @@
   },
   "items": [
     {
-      "entityId": "github:example/intake#42",
+      "entityId": "github:example/intagent#42",
       "revisionId": "issue-42-updated-2026-08-07T09:59:59.999Z",
       "kind": "github-issue",
       "title": "Investigate delayed notifications",
       "body": "A deterministic compatibility fixture.",
-      "url": "https://github.example/example/intake/issues/42",
+      "url": "https://github.example/example/intagent/issues/42",
       "occurredAt": "2026-08-07T09:59:59.999Z",
       "metadata": {
-        "repository": "example/intake",
+        "repository": "example/intagent",
         "labels": [
           "bug",
           "triage"

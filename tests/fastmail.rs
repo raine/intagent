@@ -2,8 +2,8 @@ mod support;
 
 use std::process::Stdio;
 
-use intake::protocol::{PollRequest, PollResponse};
-use intake::sources::{fastmail::poll_fastmail, http_client};
+use intagent::protocol::{PollRequest, PollResponse};
+use intagent::sources::{fastmail::poll_fastmail, http_client};
 use serde_json::{Map, Value, json};
 use support::FixtureServer;
 use tokio::io::AsyncWriteExt;
@@ -464,7 +464,7 @@ async fn source_binary_writes_one_bounded_response_without_stdout_diagnostics() 
     ]).await;
     let mut request = request(&server.base_url, Value::Null);
     request.item_limit = 1;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_intake-fastmail-source"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_intagent-fastmail-source"))
         .env_clear()
         .env("FASTMAIL_API_TOKEN", "binary-token")
         .stdin(Stdio::piped())

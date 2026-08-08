@@ -6,7 +6,7 @@ import { compile } from "json-schema-to-typescript"
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const manifestPath =
-  process.env.INTAKE_CARGO_MANIFEST_PATH ??
+  process.env.INTAGENT_CARGO_MANIFEST_PATH ??
   resolve(scriptDirectory, "..", "..", "Cargo.toml")
 const schemaSource = execFileSync(
   "cargo",

@@ -22,12 +22,12 @@ struct WriteRequest {
 }
 
 #[derive(Clone)]
-pub struct IntakeDatabase {
+pub struct IntagentDatabase {
     sender: mpsc::Sender<WriteRequest>,
     readers: DatabaseReaders,
 }
 
-impl IntakeDatabase {
+impl IntagentDatabase {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let target = OpenTarget::new(path.as_ref());
         if let Some(directory) = &target.directory {
@@ -37,7 +37,7 @@ impl IntakeDatabase {
         let (ready_tx, ready_rx) = oneshot::channel();
         let actor_target = target.clone();
         thread::Builder::new()
-            .name("intake-database".into())
+            .name("intagent-database".into())
             .spawn(move || write_actor(actor_target, receiver, ready_tx))?;
         ready_rx.await.map_err(|_| DatabaseError::ActorStopped)??;
         let readers = DatabaseReaders::open(target).await?;

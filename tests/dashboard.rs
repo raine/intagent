@@ -1,12 +1,12 @@
 use axum::body::{Body, to_bytes};
 use chrono::{TimeZone, Utc};
 use http::{Method, Request, StatusCode};
-use intake::dashboard::{
+use intagent::dashboard::{
     DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT, DashboardBindError, DashboardRunLimits,
     NON_LOOPBACK_WARNING, dashboard_bind, dashboard_router, dashboard_snapshot,
 };
-use intake::database::{IntakeDatabase, RunId};
-use intake::run_detail::{RunDetailOptions, run_detail};
+use intagent::database::{IntagentDatabase, RunId};
+use intagent::run_detail::{RunDetailOptions, run_detail};
 use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -92,7 +92,7 @@ async fn reads_legacy_events_with_null_source_values() {
         .unwrap();
     drop(connection);
 
-    let database = IntakeDatabase::open(&path).await.unwrap();
+    let database = IntagentDatabase::open(&path).await.unwrap();
     let snapshot = dashboard_snapshot(&database.readers(), Utc::now())
         .await
         .unwrap();
@@ -188,7 +188,7 @@ async fn serves_inlined_assets_and_observable_content_types() {
     assert!(html.contains("ACTIVE RUNS"));
     assert!(html.contains("RECENT EVENTS"));
     assert!(html.contains("SOURCES"));
-    assert!(html.contains("localStorage.getItem(\"im-theme\")"));
+    assert!(html.contains("localStorage.getItem(\"intagent-theme\")"));
     assert!(html.contains("stored === \"system\""));
     assert!(html.contains("dataset.themePreference"));
     assert!(html.contains("@media (width<=700px)"));
@@ -214,7 +214,7 @@ async fn serves_inlined_assets_and_observable_content_types() {
 
 #[test]
 fn maps_errors_to_public_categories() {
-    use intake::dashboard::public_error;
+    use intagent::dashboard::public_error;
 
     for (raw, expected) in [
         ("credential rejected", "Authentication failed"),
@@ -291,7 +291,7 @@ fn assert_security_headers(response: &http::Response<Body>) {
     );
 }
 
-async fn fixture_database() -> (TempDir, IntakeDatabase) {
+async fn fixture_database() -> (TempDir, IntagentDatabase) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("dashboard.sqlite");
     let connection = Connection::open(&path).unwrap();
@@ -299,6 +299,6 @@ async fn fixture_database() -> (TempDir, IntakeDatabase) {
         .execute_batch(include_str!("fixtures/database/schema-v7.sql"))
         .unwrap();
     drop(connection);
-    let database = IntakeDatabase::open(&path).await.unwrap();
+    let database = IntagentDatabase::open(&path).await.unwrap();
     (directory, database)
 }

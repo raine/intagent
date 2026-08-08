@@ -200,7 +200,7 @@ where
         Ok(()) => true,
         Err(error) => {
             tracing::error!(
-                target: "intake::source",
+                target: "intagent::source",
                 failure_category = protocol_error_category(&error),
                 "source protocol failed"
             );

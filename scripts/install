@@ -5,12 +5,12 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install [--prefix PATH]
 
-Build and install intake executables and example skill templates.
-The default prefix is ~/.local. INTAKE_INSTALL_PREFIX provides another default.
+Build and install Intagent executables and example skill templates.
+The default prefix is ~/.local. INTAGENT_INSTALL_PREFIX provides another default.
 EOF
 }
 
-prefix="${INTAKE_INSTALL_PREFIX:-$HOME/.local}"
+prefix="${INTAGENT_INSTALL_PREFIX:-$HOME/.local}"
 while (($# > 0)); do
   case "$1" in
     --prefix)
@@ -42,17 +42,17 @@ if [[ "$prefix" != /* ]]; then
 fi
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-web_directory="${INTAKE_WEB_DIR:-$repository_root/web}"
+web_directory="${INTAGENT_WEB_DIR:-$repository_root/web}"
 if [[ "$web_directory" != /* ]]; then
   web_directory="$repository_root/$web_directory"
 fi
 bin_directory="$prefix/bin"
-skill_templates_directory="$prefix/share/doc/intake/examples/skills"
+skill_templates_directory="$prefix/share/doc/intagent/examples/skills"
 target_directory="${CARGO_TARGET_DIR:-$repository_root/target}"
 if [[ "$target_directory" != /* ]]; then
   target_directory="$repository_root/$target_directory"
 fi
-temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/intake-install.XXXXXX")"
+temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/intagent-install.XXXXXX")"
 cleanup() {
   rm -rf "$temporary_directory"
 }
@@ -68,7 +68,7 @@ for asset in app.js app.css; do
     cp -p "$web_directory/generated/$asset" "$asset_backup_directory/$asset"
   fi
 done
-INTAKE_CARGO_MANIFEST_PATH="$repository_root/Cargo.toml" \
+INTAGENT_CARGO_MANIFEST_PATH="$repository_root/Cargo.toml" \
   npm run build --prefix "$web_directory"
 for asset in app.js app.css; do
   if [[ -f "$asset_backup_directory/$asset" ]] && \
@@ -79,11 +79,11 @@ done
 
 printf 'Compiling release executables with %s...\n' "$(rustc --version)"
 CARGO_TARGET_DIR="$target_directory" \
-  INTAKE_DASHBOARD_DIR="$web_directory/generated" \
+  INTAGENT_DASHBOARD_DIR="$web_directory/generated" \
   cargo build --release --locked --bins
 
 install -d -m 755 "$bin_directory" "$(dirname "$skill_templates_directory")"
-for executable in intake intake-fastmail-source intake-github-source; do
+for executable in intagent intagent-fastmail-source intagent-github-source; do
   install -m 755 "$target_directory/release/$executable" \
     "$bin_directory/$executable"
 done
@@ -94,11 +94,11 @@ cp -R examples/skills/. "$skill_templates_directory/"
 find "$skill_templates_directory" -type d -exec chmod 755 {} +
 find "$skill_templates_directory" -type f -exec chmod 644 {} +
 
-XDG_STATE_HOME="$temporary_directory/state" "$bin_directory/intake" --help >/dev/null
-printf 'Installed intake to %s\n' "$bin_directory"
+XDG_STATE_HOME="$temporary_directory/state" "$bin_directory/intagent" --help >/dev/null
+printf 'Installed Intagent to %s\n' "$bin_directory"
 printf 'Installed example skill templates to %s\n' "$skill_templates_directory"
 if [[ ":$PATH:" != *":$bin_directory:"* ]]; then
-  printf 'Add %s to PATH to run intake by name.\n' "$bin_directory"
+  printf 'Add %s to PATH to run intagent by name.\n' "$bin_directory"
 fi
 printf 'Configure sources with:\n'
-printf '  command: %s\n' "$bin_directory/intake-fastmail-source"
+printf '  command: %s\n' "$bin_directory/intagent-fastmail-source"

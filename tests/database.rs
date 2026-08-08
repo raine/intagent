@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
-use intake::database::{
+use intagent::database::{
     CompactionFinish, DATABASE_QUEUE_CAPACITY, DatabaseError, DispatchTrigger, ErrorCategory,
-    EventStatus, IntakeDatabase, MIGRATIONS, ReportedUsage, RetryStart, RunFinish, RunOutcome,
+    EventStatus, IntagentDatabase, MIGRATIONS, ReportedUsage, RetryStart, RunFinish, RunOutcome,
     SpanOutcome, TurnFinish, reported_usage, timestamp,
 };
-use intake::protocol::{IntakeItem, IntakeItemKind};
+use intagent::protocol::{IntakeItem, IntakeItemKind};
 use rig_core::completion::Usage;
 use rusqlite::Connection;
 use serde_json::{Map, Value, json};
@@ -44,7 +44,7 @@ fn item(revision_id: &str) -> IntakeItem {
 
 #[tokio::test]
 async fn commits_source_checkpoint_and_serializes_entity_queue() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
     assert_eq!(
         database
             .source_succeeded(
@@ -122,7 +122,7 @@ async fn commits_source_checkpoint_and_serializes_entity_queue() {
 
 #[tokio::test]
 async fn retry_retains_payload_and_success_scrubs_it() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
     database
         .source_succeeded(
             "mail".into(),
@@ -193,7 +193,7 @@ async fn retry_retains_payload_and_success_scrubs_it() {
 
 #[tokio::test]
 async fn records_dispatch_cause_at_queue_transitions() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
     database
         .source_succeeded(
             "mail".into(),
@@ -341,7 +341,7 @@ async fn records_dispatch_cause_at_queue_transitions() {
 
 #[tokio::test]
 async fn records_recovery_dispatch_after_process_interruption() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
     database
         .source_succeeded(
             "mail".into(),
@@ -404,8 +404,8 @@ async fn records_recovery_dispatch_after_process_interruption() {
 #[tokio::test]
 async fn typed_telemetry_version_two_closes_before_complete() {
     let temporary = TempDir::new().expect("temporary directory");
-    let path = temporary.path().join("intake.sqlite");
-    let database = IntakeDatabase::open(&path).await.expect("database");
+    let path = temporary.path().join("intagent.sqlite");
+    let database = IntagentDatabase::open(&path).await.expect("database");
     database
         .source_succeeded(
             "mail".into(),
@@ -583,7 +583,7 @@ async fn typed_telemetry_version_two_closes_before_complete() {
 
 #[tokio::test]
 async fn open_typed_span_makes_run_partial_and_interrupted() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
     database
         .source_succeeded(
             "mail".into(),
@@ -636,7 +636,7 @@ async fn batch_run_summaries_include_associated_events() {
     raw.execute_batch(SCHEMA_FIXTURES[7]).expect("load fixture");
     drop(raw);
 
-    let database = IntakeDatabase::open(&path).await.expect("database");
+    let database = IntagentDatabase::open(&path).await.expect("database");
     let summaries = database
         .readers()
         .list_triage_run_summaries(2)
@@ -669,7 +669,9 @@ async fn every_phase_zero_schema_fixture_migrates_with_integrity() {
         raw.execute_batch(fixture).expect("load fixture");
         drop(raw);
 
-        let database = IntakeDatabase::open(&path).await.expect("migrate fixture");
+        let database = IntagentDatabase::open(&path)
+            .await
+            .expect("migrate fixture");
         assert_eq!(
             database
                 .readers()
@@ -689,7 +691,7 @@ async fn every_phase_zero_schema_fixture_migrates_with_integrity() {
             assert_eq!(events[0].revision_id, "issue-update-2");
             let run = database
                 .readers()
-                .triage_run(intake::database::RunId(1))
+                .triage_run(intagent::database::RunId(1))
                 .await
                 .expect("version 7 run")
                 .expect("fixture run");
@@ -750,7 +752,7 @@ async fn migration_schema_matches_current_version() {
     let temporary = TempDir::new().expect("temporary directory");
     let rust_path = temporary.path().join("rust.sqlite");
     let fixture_path = temporary.path().join("fixture.sqlite");
-    let rust = IntakeDatabase::open(&rust_path)
+    let rust = IntagentDatabase::open(&rust_path)
         .await
         .expect("Rust database");
     rust.shutdown().await.expect("shutdown");
@@ -782,7 +784,7 @@ async fn rejects_migration_gaps_and_future_versions() {
             .expect("migration row");
         }
         drop(raw);
-        let error = match IntakeDatabase::open(&path).await {
+        let error = match IntagentDatabase::open(&path).await {
             Ok(_) => panic!("invalid schema should fail"),
             Err(error) => error,
         };
@@ -797,7 +799,7 @@ async fn rejects_migration_gaps_and_future_versions() {
 
 #[tokio::test]
 async fn shutdown_closes_writer_and_keeps_readers_available() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
     let writer = database.clone();
     let readers = database.readers();
 
@@ -812,7 +814,7 @@ async fn shutdown_closes_writer_and_keeps_readers_available() {
 
 #[tokio::test]
 async fn request_errors_do_not_stop_the_writer() {
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
 
     assert!(matches!(
         database
@@ -827,7 +829,7 @@ async fn request_errors_do_not_stop_the_writer() {
 async fn orders_stored_timestamps_chronologically_and_preserves_wire_text() {
     let temporary = TempDir::new().expect("temporary directory");
     let path = temporary.path().join("timestamps.sqlite");
-    let database = IntakeDatabase::open(&path).await.expect("database");
+    let database = IntagentDatabase::open(&path).await.expect("database");
     let items = ["whole", "offset", "hundred-ms", "ten-ms"]
         .into_iter()
         .map(|revision| {
@@ -906,7 +908,7 @@ async fn orders_stored_timestamps_chronologically_and_preserves_wire_text() {
 async fn rejects_invalid_stored_timestamps_at_the_read_boundary() {
     let temporary = TempDir::new().expect("temporary directory");
     let path = temporary.path().join("invalid-timestamp.sqlite");
-    let database = IntakeDatabase::open(&path).await.expect("database");
+    let database = IntagentDatabase::open(&path).await.expect("database");
     database
         .source_succeeded(
             "mail".into(),

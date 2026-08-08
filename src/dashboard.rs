@@ -302,7 +302,7 @@ async fn snapshot(State(state): State<DashboardState>) -> Response {
         Ok(snapshot) => json_response(StatusCode::OK, &snapshot),
         Err(_) => {
             tracing::error!(
-                target: "intake::dashboard",
+                target: "intagent::dashboard",
                 endpoint = "/api/snapshot",
                 "dashboard request failed"
             );
@@ -337,7 +337,7 @@ async fn run(
         Ok(None) => not_found(),
         Err(_) => {
             tracing::error!(
-                target: "intake::dashboard",
+                target: "intagent::dashboard",
                 endpoint = "/api/runs/{id}",
                 run_id = id,
                 "dashboard request failed"
@@ -401,10 +401,10 @@ fn dashboard_page() -> String {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Intake Monitor</title>
+  <title>Intagent</title>
   <script>
     try {{
-      const stored = localStorage.getItem("im-theme")
+      const stored = localStorage.getItem("intagent-theme")
       const preference = stored === "light" || stored === "dark" || stored === "system"
         ? stored : "system"
       document.documentElement.dataset.themePreference = preference

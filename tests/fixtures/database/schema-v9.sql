@@ -22,7 +22,7 @@ CREATE TABLE entities (
     operational_metadata TEXT NOT NULL DEFAULT '{}',
     UNIQUE(source, external_id)
   );
-INSERT INTO entities VALUES(1,'fastmail','github:example/intake#42','github-issue','Investigate delayed notifications','APP-7KQ9','inspect-notifications','2026-08-07T09:59:59.999Z','retryable','{"url":"https://github.example/example/intake/issues/42?token=removed#activity","kind":"github-issue"}');
+INSERT INTO entities VALUES(1,'fastmail','github:example/intagent#42','github-issue','Investigate delayed notifications','APP-7KQ9','inspect-notifications','2026-08-07T09:59:59.999Z','retryable','{"url":"https://github.example/example/intagent/issues/42?token=removed#activity","kind":"github-issue"}');
 INSERT INTO entities VALUES(3,'fastmail','mail:thread-7','email','Follow up on the release',NULL,NULL,'2026-08-07T09:58:00.000Z','succeeded','{"url":null,"kind":"email"}');
 CREATE TABLE events (
     id INTEGER PRIMARY KEY,

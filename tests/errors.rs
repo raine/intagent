@@ -1,5 +1,5 @@
-use intake::database::ErrorCategory as DatabaseErrorCategory;
-use intake::errors::{ErrorCategory, classify_message, public_cli_error, public_error};
+use intagent::database::ErrorCategory as DatabaseErrorCategory;
+use intagent::errors::{ErrorCategory, classify_message, public_cli_error, public_error};
 
 #[test]
 fn error_categories_have_stable_storage_names() {

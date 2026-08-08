@@ -15,7 +15,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 pub const APPLICATION_LOG_FILE: &str = "application.log";
-pub const APPLICATION_LOG_PATH_ENV: &str = "INTAKE_LOG_PATH";
+pub const APPLICATION_LOG_PATH_ENV: &str = "INTAGENT_LOG_PATH";
 pub const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::INFO;
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ pub fn initialize_tracing(path: Option<&Path>) -> Result<TracingInit, TracingIni
         .with_timer(LocalTime)
         .with_writer(RedactingMakeWriter::new(std::io::stdout))
         .with_filter(tracing_subscriber::filter::filter_fn(move |metadata| {
-            metadata.target() == "intake::terminal" && *metadata.level() <= level
+            metadata.target() == "intagent::terminal" && *metadata.level() <= level
         }));
     let terminal_diagnostics = tracing_subscriber::fmt::layer()
         .compact()
@@ -53,7 +53,7 @@ pub fn initialize_tracing(path: Option<&Path>) -> Result<TracingInit, TracingIni
         .with_timer(LocalTime)
         .with_writer(RedactingMakeWriter::new(std::io::stderr))
         .with_filter(tracing_subscriber::filter::filter_fn(move |metadata| {
-            metadata.target() == "intake::terminal::error" && *metadata.level() <= level
+            metadata.target() == "intagent::terminal::error" && *metadata.level() <= level
         }));
 
     let mut warning = level_warning;
@@ -73,8 +73,8 @@ pub fn initialize_tracing(path: Option<&Path>) -> Result<TracingInit, TracingIni
         }
     });
     let file_filter = Targets::new()
-        .with_target("intake::terminal", LevelFilter::OFF)
-        .with_target("intake", level)
+        .with_target("intagent::terminal", LevelFilter::OFF)
+        .with_target("intagent", level)
         .with_default(LevelFilter::OFF);
     let file = appender.map(|appender| {
         tracing_subscriber::fmt::layer()
@@ -144,7 +144,7 @@ fn private_appender(path: &Path) -> Result<File, io::Error> {
 }
 
 fn configured_level() -> (LevelFilter, Option<String>) {
-    let Some(value) = env::var_os("INTAKE_LOG") else {
+    let Some(value) = env::var_os("INTAGENT_LOG") else {
         return (DEFAULT_LOG_LEVEL, None);
     };
     let value = value.to_string_lossy();
@@ -159,7 +159,7 @@ fn configured_level() -> (LevelFilter, Option<String>) {
             return (
                 DEFAULT_LOG_LEVEL,
                 Some(
-                    "ignoring invalid INTAKE_LOG value; expected off, error, warn, info, debug, or trace"
+                    "ignoring invalid INTAGENT_LOG value; expected off, error, warn, info, debug, or trace"
                         .into(),
                 ),
             );

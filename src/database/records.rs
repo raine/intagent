@@ -38,7 +38,7 @@ pub enum DatabaseError {
     Io(#[from] std::io::Error),
     #[error("SQLite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("another intake watch or check owns the queue for {database}")]
+    #[error("another Intagent watch or check owns the queue for {database}")]
     QueueOwnerBusy { database: PathBuf },
 }
 

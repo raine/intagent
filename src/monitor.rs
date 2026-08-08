@@ -8,8 +8,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::rig_runner::{TriageError, TriageRunner};
-use crate::config::{IntakeConfig, SourceConfig};
-use crate::database::{ErrorCategory, EventRecord, IntakeDatabase};
+use crate::config::{IntagentConfig, SourceConfig};
+use crate::database::{ErrorCategory, EventRecord, IntagentDatabase};
 use crate::errors::{classify_message, public_error};
 use crate::source_runner::{SourceRunnerError, poll_source};
 
@@ -23,20 +23,20 @@ pub struct CheckResult {
     pub errors: Vec<String>,
 }
 
-pub struct IntakeMonitor<R> {
+pub struct IntagentMonitor<R> {
     inner: Arc<MonitorInner<R>>,
 }
 
 struct MonitorInner<R> {
-    config: IntakeConfig,
-    database: IntakeDatabase,
+    config: IntagentConfig,
+    database: IntagentDatabase,
     runner: R,
     stopping: AtomicBool,
     schedule_cancellation: CancellationToken,
     next_recovery_at: AtomicI64,
 }
 
-impl<R> Clone for IntakeMonitor<R> {
+impl<R> Clone for IntagentMonitor<R> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -44,11 +44,11 @@ impl<R> Clone for IntakeMonitor<R> {
     }
 }
 
-impl<R> IntakeMonitor<R>
+impl<R> IntagentMonitor<R>
 where
     R: TriageRunner + Send + Sync + 'static,
 {
-    pub fn new(config: IntakeConfig, database: IntakeDatabase, runner: R) -> Self {
+    pub fn new(config: IntagentConfig, database: IntagentDatabase, runner: R) -> Self {
         Self {
             inner: Arc::new(MonitorInner {
                 config,
@@ -64,12 +64,12 @@ where
     pub fn stop(&self) {
         self.inner.stopping.store(true, Ordering::Release);
         self.inner.schedule_cancellation.cancel();
-        tracing::info!(target: "intake::monitor", "stop requested");
+        tracing::info!(target: "intagent::monitor", "stop requested");
     }
 
     pub async fn check(&self) -> Result<CheckResult> {
         tracing::info!(
-            target: "intake::monitor",
+            target: "intagent::monitor",
             mode = "check",
             source_count = self.inner.config.sources.len(),
             "monitor started"
@@ -77,9 +77,9 @@ where
 
         let result = self.check_inner().await;
         if result.is_err() {
-            tracing::error!(target: "intake::monitor", mode = "check", "monitor failed");
+            tracing::error!(target: "intagent::monitor", mode = "check", "monitor failed");
         }
-        tracing::info!(target: "intake::monitor", mode = "check", "monitor stopped");
+        tracing::info!(target: "intagent::monitor", mode = "check", "monitor stopped");
         result
     }
 
@@ -99,7 +99,7 @@ where
             }
         }
         tracing::debug!(
-            target: "intake::monitor",
+            target: "intagent::monitor",
             observed,
             "source polls completed"
         );
@@ -142,7 +142,7 @@ where
             .collect::<Vec<_>>()
             .join(", ");
         tracing::info!(
-            target: "intake::terminal",
+            target: "intagent::terminal",
             "Watching {}. Press Ctrl-C to stop.",
             if schedules.is_empty() {
                 "no configured sources"
@@ -151,7 +151,7 @@ where
             }
         );
         tracing::info!(
-            target: "intake::monitor",
+            target: "intagent::monitor",
             mode = "watch",
             source_count = self.inner.config.sources.len(),
             "monitor started"
@@ -159,9 +159,9 @@ where
 
         let result = self.watch_inner().await;
         if result.is_err() {
-            tracing::error!(target: "intake::monitor", mode = "watch", "monitor failed");
+            tracing::error!(target: "intagent::monitor", mode = "watch", "monitor failed");
         }
-        tracing::info!(target: "intake::monitor", mode = "watch", "monitor stopped");
+        tracing::info!(target: "intagent::monitor", mode = "watch", "monitor stopped");
         result
     }
 
@@ -196,7 +196,7 @@ where
     async fn poll(&self, source: &SourceConfig) -> Result<usize> {
         let started = std::time::Instant::now();
         tracing::debug!(
-            target: "intake::monitor",
+            target: "intagent::monitor",
             source = source.name,
             "source poll started"
         );
@@ -205,7 +205,7 @@ where
         match result {
             Ok(observed) => {
                 tracing::info!(
-                    target: "intake::monitor",
+                    target: "intagent::monitor",
                     source = source.name,
                     queued = observed,
                     duration_ms = duration_millis(started.elapsed()),
@@ -215,7 +215,7 @@ where
             }
             Err(error) => {
                 tracing::error!(
-                    target: "intake::monitor",
+                    target: "intagent::monitor",
                     source = source.name,
                     duration_ms = duration_millis(started.elapsed()),
                     failure_category = source_failure_category(&error),
@@ -241,7 +241,7 @@ where
             }
             match self.poll(&source).await {
                 Ok(observed) if observed > 0 => tracing::info!(
-                    target: "intake::terminal",
+                    target: "intagent::terminal",
                     "{}: queued {} event{}",
                     source.name,
                     observed,
@@ -252,7 +252,7 @@ where
                     let message = public_error(Some(&error.to_string()))
                         .unwrap_or_else(|| "Operation failed".into());
                     tracing::error!(
-                        target: "intake::terminal::error",
+                        target: "intagent::terminal::error",
                         "{}: {}",
                         source.name,
                         message
@@ -273,12 +273,12 @@ where
             };
             match self.triage(event.clone()).await? {
                 Some(_) => tracing::error!(
-                    target: "intake::terminal::error",
+                    target: "intagent::terminal::error",
                     "event {}: triage failed",
                     event.id
                 ),
                 None => tracing::info!(
-                    target: "intake::terminal",
+                    target: "intagent::terminal",
                     "event {}: handled {}",
                     event.id,
                     event.title
@@ -318,7 +318,7 @@ where
     async fn triage(&self, event: EventRecord) -> Result<Option<String>> {
         let started = std::time::Instant::now();
         tracing::info!(
-            target: "intake::monitor",
+            target: "intagent::monitor",
             event_id = event.id,
             attempt = event.attempt_count,
             source = event.source,
@@ -333,7 +333,7 @@ where
             Ok(()) => {
                 self.inner.database.succeed(event.id, Utc::now()).await?;
                 tracing::info!(
-                    target: "intake::monitor",
+                    target: "intagent::monitor",
                     event_id = event.id,
                     attempt = event.attempt_count,
                     duration_ms = duration_millis(started.elapsed()),
@@ -355,7 +355,7 @@ where
                     .await?;
                 let failed = self.inner.database.readers().event(event.id).await?;
                 tracing::error!(
-                    target: "intake::monitor",
+                    target: "intagent::monitor",
                     event_id = event.id,
                     attempt = event.attempt_count,
                     duration_ms = duration_millis(started.elapsed()),

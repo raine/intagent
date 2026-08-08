@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use super::command_policy::CommandPolicy;
 use super::driver::ToolExecutor;
 use super::read_policy::{ReadInput, ReadPolicy};
-use crate::database::IntakeDatabase;
+use crate::database::IntagentDatabase;
 use crate::project_registry::{replace_project_registry, validate_project_registry_write};
 
 pub use super::process::supervise_process;
@@ -168,7 +168,7 @@ impl RecordingExecutableTools {
 pub struct ProductionTools {
     command: Arc<CommandPolicy>,
     read: Arc<ReadPolicy>,
-    database: IntakeDatabase,
+    database: IntagentDatabase,
     event_id: i64,
     default_cwd: Arc<PathBuf>,
     registry_path: Arc<PathBuf>,
@@ -180,7 +180,7 @@ impl ProductionTools {
     pub fn new(
         command: Arc<CommandPolicy>,
         read: ReadPolicy,
-        database: IntakeDatabase,
+        database: IntagentDatabase,
         event_id: i64,
         default_cwd: PathBuf,
         registry_path: PathBuf,

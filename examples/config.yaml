@@ -2,18 +2,18 @@ version: 1
 project_roots:
   - ~/code
 state:
-  database: ~/.local/state/intake/intake.sqlite
+  database: ~/.local/state/intagent/intagent.sqlite
   # Per-attempt JSONL files and application.log live here.
-  logs: ~/.local/state/intake/logs
+  logs: ~/.local/state/intagent/logs
 skills:
   directories:
-    - ~/.config/intake/skills
+    - ~/.config/intagent/skills
   approved_roots:
-    - ~/.config/intake/skills
+    - ~/.config/intagent/skills
     - ~/.claude/skills
 sources:
   - name: fastmail
-    command: intake-fastmail-source
+    command: intagent-fastmail-source
     interval_seconds: 60
     timeout_seconds: 60
     item_limit: 100
@@ -33,7 +33,7 @@ sources:
         - /issues/
         - /pull/
   - name: github
-    command: intake-github-source
+    command: intagent-github-source
     interval_seconds: 60
     timeout_seconds: 60
     item_limit: 100
