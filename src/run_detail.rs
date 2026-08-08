@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Serialize, Serializer};
 
 use crate::database::{
-    DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId,
+    DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId, Timestamp,
     TriageCompactionRecord, TriageConclusion, TriageDecision, TriageEffectRecord,
     TriageRetryRecord, TriageRunPromptRecord, TriageRunRecord, TriageStepRecord, TriageTurnRecord,
 };
@@ -38,7 +38,7 @@ impl Default for RunDetailOptions {
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RunDetail {
-    pub generated_at: String,
+    pub generated_at: Timestamp,
     pub run: RunProjection,
     pub event: EventProjection,
     pub sibling_attempts: Vec<SiblingAttempt>,
@@ -55,9 +55,9 @@ pub struct RunProjection {
     pub id: i64,
     pub event_id: i64,
     pub attempt: u32,
-    pub started_at: String,
-    pub ended_at: Option<String>,
-    pub last_activity_at: String,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
+    pub last_activity_at: Timestamp,
     pub state: String,
     pub termination_reason: Option<String>,
     pub failure_category: Option<String>,
@@ -76,8 +76,8 @@ pub struct DispatchProjection {
     pub attempt: u32,
     pub max_attempts: Option<u32>,
     pub final_attempt: bool,
-    pub scheduled_for: Option<String>,
-    pub claimed_at: String,
+    pub scheduled_for: Option<Timestamp>,
+    pub claimed_at: Timestamp,
     pub prior_attempt: Option<DispatchPriorAttempt>,
     pub latency: DispatchLatency,
 }
@@ -99,7 +99,7 @@ pub struct DispatchPriorAttempt {
     pub failure_category: Option<String>,
     pub termination_reason: Option<String>,
     pub decision: Option<TriageDecision>,
-    pub ended_at: Option<String>,
+    pub ended_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -136,8 +136,8 @@ pub struct EventProjection {
     pub kind: String,
     pub title: String,
     pub url: Option<String>,
-    pub occurred_at: String,
-    pub observed_at: String,
+    pub occurred_at: Timestamp,
+    pub observed_at: Timestamp,
     pub status: EventStatus,
     pub aven_ref: Option<String>,
     pub investigation_handle: Option<String>,
@@ -149,8 +149,8 @@ pub struct SiblingAttempt {
     pub id: i64,
     pub sequence: u32,
     pub attempt: u32,
-    pub started_at: String,
-    pub ended_at: Option<String>,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
     pub state: String,
     pub failure_category: Option<String>,
     pub termination_reason: Option<String>,
@@ -205,9 +205,9 @@ pub enum TimelineEntry {
         id: i64,
         ordinal: i64,
         #[serde(rename = "startedAt")]
-        started_at: String,
+        started_at: Timestamp,
         #[serde(rename = "endedAt")]
-        ended_at: Option<String>,
+        ended_at: Option<Timestamp>,
         state: String,
         #[serde(rename = "stopReason")]
         stop_reason: Option<String>,
@@ -225,9 +225,9 @@ pub enum TimelineEntry {
         label: String,
         summary: Option<String>,
         #[serde(rename = "startedAt")]
-        started_at: String,
+        started_at: Timestamp,
         #[serde(rename = "endedAt")]
-        ended_at: Option<String>,
+        ended_at: Option<Timestamp>,
         state: String,
     },
     Retry {
@@ -240,11 +240,11 @@ pub enum TimelineEntry {
         #[serde(rename = "delayMs")]
         delay_ms: i64,
         #[serde(rename = "startedAt")]
-        started_at: String,
+        started_at: Timestamp,
         #[serde(rename = "waitEndedAt")]
-        wait_ended_at: String,
+        wait_ended_at: Timestamp,
         #[serde(rename = "endedAt")]
-        ended_at: Option<String>,
+        ended_at: Option<Timestamp>,
         state: String,
         #[serde(rename = "errorCategory")]
         error_category: Option<String>,
@@ -255,9 +255,9 @@ pub enum TimelineEntry {
         turn_ordinal: Option<i64>,
         reason: Option<String>,
         #[serde(rename = "startedAt")]
-        started_at: String,
+        started_at: Timestamp,
         #[serde(rename = "endedAt")]
-        ended_at: Option<String>,
+        ended_at: Option<Timestamp>,
         state: String,
         aborted: Option<bool>,
         #[serde(rename = "willRetry")]
@@ -296,7 +296,7 @@ pub struct EffectProjection {
     #[serde(rename = "type")]
     pub effect_type: String,
     pub value: String,
-    pub recorded_at: String,
+    pub recorded_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -304,7 +304,7 @@ pub struct EffectProjection {
 pub struct PromptProjection {
     pub role: String,
     pub content: String,
-    pub recorded_at: String,
+    pub recorded_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -358,7 +358,7 @@ pub async fn run_detail(
     let has_more = offset.saturating_add(entries.len()) < total;
 
     Ok(Some(RunDetail {
-        generated_at: crate::database::timestamp(options.now),
+        generated_at: Timestamp::from(options.now),
         run: RunProjection {
             id: run.id,
             event_id: run.event_id,
@@ -432,16 +432,16 @@ pub fn run_metrics(
     compactions: &[TriageCompactionRecord],
     now: DateTime<Utc>,
 ) -> RunMetrics {
-    let start = millis(&run.started_at).unwrap_or(0);
-    let active_end = crate::database::timestamp(now);
-    let end_source = run.ended_at.as_deref().unwrap_or_else(|| {
+    let start = millis(&run.started_at);
+    let active_end = Timestamp::from(now);
+    let end_source = run.ended_at.as_ref().unwrap_or_else(|| {
         if run.outcome.is_some() {
             &run.last_activity_at
         } else {
             &active_end
         }
     });
-    let end = millis(end_source).unwrap_or(start);
+    let end = millis(end_source);
     let wall = (end - start).max(0);
     let complete_enough = run.telemetry_completeness != "legacy";
     let context_values = turns.iter().filter_map(|turn| turn.context_tokens);
@@ -570,19 +570,18 @@ fn partition_durations(
         start,
         turns
             .first()
-            .and_then(|turn| millis(&turn.started_at))
+            .map(|turn| millis(&turn.started_at))
             .unwrap_or(end),
         start,
         end,
     );
     if run.ended_at.is_some()
-        && let Some(last_turn_end) = turns.last().and_then(|turn| turn.ended_at.as_deref())
-        && let Some(last_turn_end) = millis(last_turn_end)
+        && let Some(last_turn_end) = turns.last().and_then(|turn| turn.ended_at.as_ref())
     {
         add_interval(
             &mut intervals,
             DurationCategory::Finalization,
-            last_turn_end,
+            millis(last_turn_end),
             end,
             start,
             end,
@@ -594,53 +593,49 @@ fn partition_durations(
         } else {
             DurationCategory::Thinking
         };
-        if let Some(step_start) = millis(&step.started_at) {
-            let step_end = step
-                .ended_at
-                .as_deref()
-                .or(run.ended_at.as_deref())
-                .and_then(millis)
-                .unwrap_or(end);
-            add_interval(&mut intervals, category, step_start, step_end, start, end);
-        }
+        let step_start = millis(&step.started_at);
+        let step_end = step
+            .ended_at
+            .as_ref()
+            .or(run.ended_at.as_ref())
+            .map(millis)
+            .unwrap_or(end);
+        add_interval(&mut intervals, category, step_start, step_end, start, end);
     }
     for retry in retries {
-        if let (Some(retry_start), Some(wait_end)) =
-            (millis(&retry.started_at), millis(&retry.wait_ended_at))
-        {
-            let retry_end = retry
-                .ended_at
-                .as_deref()
-                .or(run.ended_at.as_deref())
-                .and_then(millis)
-                .unwrap_or(end);
-            add_interval(
-                &mut intervals,
-                DurationCategory::RetryWait,
-                retry_start,
-                wait_end.min(retry_end),
-                start,
-                end,
-            );
-        }
+        let retry_start = millis(&retry.started_at);
+        let wait_end = millis(&retry.wait_ended_at);
+        let retry_end = retry
+            .ended_at
+            .as_ref()
+            .or(run.ended_at.as_ref())
+            .map(millis)
+            .unwrap_or(end);
+        add_interval(
+            &mut intervals,
+            DurationCategory::RetryWait,
+            retry_start,
+            wait_end.min(retry_end),
+            start,
+            end,
+        );
     }
     for compaction in compactions {
-        if let Some(compaction_start) = millis(&compaction.started_at) {
-            let compaction_end = compaction
-                .ended_at
-                .as_deref()
-                .or(run.ended_at.as_deref())
-                .and_then(millis)
-                .unwrap_or(end);
-            add_interval(
-                &mut intervals,
-                DurationCategory::Compaction,
-                compaction_start,
-                compaction_end,
-                start,
-                end,
-            );
-        }
+        let compaction_start = millis(&compaction.started_at);
+        let compaction_end = compaction
+            .ended_at
+            .as_ref()
+            .or(run.ended_at.as_ref())
+            .map(millis)
+            .unwrap_or(end);
+        add_interval(
+            &mut intervals,
+            DurationCategory::Compaction,
+            compaction_start,
+            compaction_end,
+            start,
+            end,
+        );
     }
 
     let mut totals = HashMap::from([
@@ -840,7 +835,7 @@ fn dispatch_projection(
         });
     let scheduled_for = run.dispatch_scheduled_for.clone();
     let claim_floor = scheduled_for
-        .as_deref()
+        .as_ref()
         .filter(|scheduled| millis(scheduled) > millis(&event.observed_at))
         .unwrap_or(&event.observed_at);
     DispatchProjection {
@@ -865,11 +860,11 @@ fn dispatch_projection(
             }
         }),
         latency: DispatchLatency {
-            source_lag_ms: elapsed(&event.occurred_at, &event.observed_at),
+            source_lag_ms: Some(elapsed(&event.occurred_at, &event.observed_at)),
             backoff_wait_ms: prior
-                .and_then(|prior| prior.ended_at.as_deref())
-                .and_then(|ended| scheduled_for.as_deref().and_then(|at| elapsed(ended, at))),
-            claim_delay_ms: elapsed(claim_floor, &run.started_at),
+                .and_then(|prior| prior.ended_at.as_ref())
+                .and_then(|ended| scheduled_for.as_ref().map(|at| elapsed(ended, at))),
+            claim_delay_ms: Some(elapsed(claim_floor, &run.started_at)),
         },
     }
 }
@@ -952,14 +947,12 @@ fn nullable_f64_sum(values: impl Iterator<Item = Option<f64>>) -> Option<f64> {
     (!present.is_empty()).then(|| present.into_iter().sum())
 }
 
-fn elapsed(from: &str, to: &str) -> Option<i64> {
-    Some((millis(to)? - millis(from)?).max(0))
+fn elapsed(from: &Timestamp, to: &Timestamp) -> i64 {
+    (millis(to) - millis(from)).max(0)
 }
 
-fn millis(value: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|value| value.timestamp_millis())
+fn millis(value: &Timestamp) -> i64 {
+    value.datetime().timestamp_millis()
 }
 
 fn serialize_js_number_option<S>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
@@ -973,7 +966,7 @@ where
     }
 }
 
-fn entry_started_at(entry: &TimelineEntry) -> &str {
+fn entry_started_at(entry: &TimelineEntry) -> &Timestamp {
     match entry {
         TimelineEntry::Turn { started_at, .. }
         | TimelineEntry::Span { started_at, .. }

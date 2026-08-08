@@ -1,9 +1,15 @@
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::fmt;
+use std::ops::Deref;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use rig_core::completion::Usage;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 use crate::errors::ErrorCategory;
@@ -74,6 +80,136 @@ impl EventStatus {
     }
 }
 
+#[derive(Clone)]
+pub struct Timestamp {
+    value: DateTime<Utc>,
+    rfc3339: String,
+}
+
+impl Timestamp {
+    pub fn parse(value: impl Into<String>) -> Result<Self, chrono::ParseError> {
+        let rfc3339 = value.into();
+        let value = DateTime::parse_from_rfc3339(&rfc3339)?.with_timezone(&Utc);
+        Ok(Self { value, rfc3339 })
+    }
+
+    pub fn from_datetime(value: DateTime<Utc>) -> Self {
+        Self {
+            rfc3339: timestamp(value),
+            value,
+        }
+    }
+
+    pub const fn datetime(&self) -> DateTime<Utc> {
+        self.value
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.rfc3339
+    }
+
+    pub fn into_string(self) -> String {
+        self.rfc3339
+    }
+}
+
+impl fmt::Debug for Timestamp {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("Timestamp")
+            .field(&self.rfc3339)
+            .finish()
+    }
+}
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.rfc3339)
+    }
+}
+
+impl Deref for Timestamp {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl FromStr for Timestamp {
+    type Err = chrono::ParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
+    }
+}
+
+impl From<DateTime<Utc>> for Timestamp {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self::from_datetime(value)
+    }
+}
+
+impl PartialEq for Timestamp {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for Timestamp {}
+
+impl PartialOrd for Timestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Timestamp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl Serialize for Timestamp {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.rfc3339)
+    }
+}
+
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl JsonSchema for Timestamp {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("Timestamp")
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        <String>::json_schema(generator)
+    }
+}
+
+impl FromSql for Timestamp {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let value = value.as_str()?;
+        Self::parse(value).map_err(|error| FromSqlError::Other(Box::new(error)))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventRecord {
@@ -85,11 +221,11 @@ pub struct EventRecord {
     pub title: String,
     pub payload: Option<String>,
     pub operational_metadata: String,
-    pub occurred_at: String,
-    pub observed_at: String,
+    pub occurred_at: Timestamp,
+    pub observed_at: Timestamp,
     pub status: EventStatus,
     pub attempt_count: u32,
-    pub next_attempt_at: Option<String>,
+    pub next_attempt_at: Option<Timestamp>,
     pub last_error: Option<String>,
     pub aven_ref: Option<String>,
     pub investigation_handle: Option<String>,
@@ -99,9 +235,9 @@ pub struct EventRecord {
 #[serde(rename_all = "camelCase")]
 pub struct SourceStatus {
     pub source: String,
-    pub last_success_at: Option<String>,
+    pub last_success_at: Option<Timestamp>,
     pub last_error: Option<String>,
-    pub updated_at: String,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -289,9 +425,9 @@ pub struct TriageRunRecord {
     pub id: i64,
     pub event_id: i64,
     pub attempt: u32,
-    pub started_at: String,
-    pub ended_at: Option<String>,
-    pub last_activity_at: String,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
+    pub last_activity_at: Timestamp,
     pub outcome: Option<String>,
     pub termination_reason: Option<String>,
     pub failure_category: Option<String>,
@@ -305,7 +441,7 @@ pub struct TriageRunRecord {
     pub dispatch_sequence: Option<u32>,
     pub dispatch_trigger: Option<DispatchTrigger>,
     pub dispatch_prior_run_id: Option<i64>,
-    pub dispatch_scheduled_for: Option<String>,
+    pub dispatch_scheduled_for: Option<Timestamp>,
     pub conclusion: Option<TriageConclusion>,
     pub turn_count: u32,
     pub retry_count: u32,
@@ -321,8 +457,8 @@ pub struct TriageStepRecord {
     pub kind: String,
     pub label: String,
     pub summary: Option<String>,
-    pub started_at: String,
-    pub ended_at: Option<String>,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
     pub outcome: Option<String>,
 }
 
@@ -337,8 +473,8 @@ pub struct TriageRunSummary {
 pub struct TriageTurnRecord {
     pub id: i64,
     pub ordinal: i64,
-    pub started_at: String,
-    pub ended_at: Option<String>,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
     pub stop_reason: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
@@ -358,9 +494,9 @@ pub struct TriageRetryRecord {
     pub attempt: i64,
     pub max_attempts: i64,
     pub delay_ms: i64,
-    pub started_at: String,
-    pub wait_ended_at: String,
-    pub ended_at: Option<String>,
+    pub started_at: Timestamp,
+    pub wait_ended_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
     pub outcome: Option<String>,
     pub error_category: Option<String>,
 }
@@ -370,8 +506,8 @@ pub struct TriageCompactionRecord {
     pub id: i64,
     pub turn_id: Option<i64>,
     pub reason: Option<String>,
-    pub started_at: String,
-    pub ended_at: Option<String>,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
     pub outcome: Option<String>,
     pub aborted: Option<bool>,
     pub will_retry: Option<bool>,
@@ -390,14 +526,14 @@ pub struct TriageCompactionRecord {
 pub struct TriageRunPromptRecord {
     pub role: String,
     pub content: String,
-    pub recorded_at: String,
+    pub recorded_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TriageEffectRecord {
     pub effect_type: String,
     pub value: String,
-    pub recorded_at: String,
+    pub recorded_at: Timestamp,
 }
 
 pub fn timestamp(value: DateTime<Utc>) -> String {

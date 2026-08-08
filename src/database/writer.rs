@@ -507,15 +507,15 @@ fn claim_next(
         .query_row(
             "SELECT ev.id FROM events ev
              WHERE ev.status IN ('pending', 'retryable')
-               AND (ev.next_attempt_at IS NULL OR ev.next_attempt_at <= ?1)
+               AND (ev.next_attempt_at IS NULL OR julianday(ev.next_attempt_at) <= julianday(?1))
                AND NOT EXISTS (
                  SELECT 1 FROM events prior
                  WHERE prior.entity_id = ev.entity_id
                    AND prior.status IN ('pending', 'retryable', 'processing')
-                   AND (prior.observed_at < ev.observed_at OR
-                     (prior.observed_at = ev.observed_at AND prior.id < ev.id))
+                   AND (julianday(prior.observed_at) < julianday(ev.observed_at) OR
+                     (julianday(prior.observed_at) = julianday(ev.observed_at) AND prior.id < ev.id))
                )
-             ORDER BY ev.observed_at, ev.id LIMIT 1",
+             ORDER BY julianday(ev.observed_at), ev.id LIMIT 1",
             [now],
             |row| row.get::<_, i64>(0),
         )
@@ -574,7 +574,7 @@ fn recover_interrupted(
             "SELECT run.id FROM triage_runs run
              JOIN events event ON event.id = run.event_id
              WHERE run.ended_at IS NULL AND event.status = 'processing'
-               AND event.updated_at <= ?1",
+               AND julianday(event.updated_at) <= julianday(?1)",
         )?;
         statement
             .query_map([stale_before], |row| row.get::<_, i64>(0))?
@@ -589,7 +589,7 @@ fn recover_interrupted(
              SELECT id FROM triage_runs WHERE event_id = events.id ORDER BY id DESC LIMIT 1
            ),
            updated_at = ?1
-         WHERE status = 'processing' AND updated_at <= ?2",
+         WHERE status = 'processing' AND julianday(updated_at) <= julianday(?2)",
         params![now, stale_before],
     )?;
     transaction.commit()?;

@@ -13,7 +13,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::database::{
-    DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId,
+    DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId, Timestamp,
     TriageConclusion,
 };
 pub use crate::errors::public_error;
@@ -60,13 +60,13 @@ struct DashboardState {
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSnapshot {
-    pub generated_at: String,
+    pub generated_at: Timestamp,
     pub counts: DashboardCounts,
     pub total: usize,
     pub open: usize,
     pub attention: usize,
     pub handled: usize,
-    pub oldest_open_at: Option<String>,
+    pub oldest_open_at: Option<Timestamp>,
     pub sources: Vec<DashboardSource>,
     pub runs: Vec<DashboardRun>,
     pub events: Vec<DashboardEvent>,
@@ -97,9 +97,9 @@ impl DashboardCounts {
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSource {
     pub source: String,
-    pub last_success_at: Option<String>,
+    pub last_success_at: Option<Timestamp>,
     pub last_error: Option<String>,
-    pub updated_at: String,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -111,11 +111,11 @@ pub struct DashboardEvent {
     pub kind: String,
     pub title: String,
     pub url: Option<String>,
-    pub occurred_at: String,
-    pub observed_at: String,
+    pub occurred_at: Timestamp,
+    pub observed_at: Timestamp,
     pub status: EventStatus,
     pub attempt_count: u32,
-    pub next_attempt_at: Option<String>,
+    pub next_attempt_at: Option<Timestamp>,
     pub last_error: Option<String>,
     pub aven_ref: Option<String>,
     pub investigation_handle: Option<String>,
@@ -130,9 +130,9 @@ pub struct DashboardRun {
     pub source: String,
     pub event_kind: String,
     pub attempt: u32,
-    pub started_at: String,
-    pub ended_at: Option<String>,
-    pub last_activity_at: String,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
+    pub last_activity_at: Timestamp,
     pub state: String,
     pub model_id: Option<String>,
     pub model_provider: Option<String>,
@@ -157,8 +157,8 @@ pub struct DashboardStep {
     pub kind: String,
     pub label: String,
     pub summary: Option<String>,
-    pub started_at: String,
-    pub ended_at: Option<String>,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
     pub state: String,
 }
 
@@ -260,7 +260,7 @@ pub async fn dashboard_snapshot(
     let attention = counts.retryable + counts.failed;
     let handled = counts.succeeded + counts.ignored;
     Ok(DashboardSnapshot {
-        generated_at: crate::database::timestamp(now),
+        generated_at: Timestamp::from(now),
         counts,
         total,
         open,

@@ -823,6 +823,119 @@ async fn request_errors_do_not_stop_the_writer() {
     database.flush().await.expect("writer remains available");
 }
 
+#[tokio::test]
+async fn orders_stored_timestamps_chronologically_and_preserves_wire_text() {
+    let temporary = TempDir::new().expect("temporary directory");
+    let path = temporary.path().join("timestamps.sqlite");
+    let database = IntakeDatabase::open(&path).await.expect("database");
+    let items = ["whole", "offset", "hundred-ms", "ten-ms"]
+        .into_iter()
+        .map(|revision| {
+            let mut value = item(revision);
+            value.entity_id = format!("mail:{revision}");
+            value
+        })
+        .collect();
+    database
+        .source_succeeded(
+            "mail".into(),
+            Value::Null,
+            items,
+            at("2026-08-03T12:00:00.000Z"),
+        )
+        .await
+        .expect("source commit");
+
+    let raw = Connection::open(&path).expect("raw database");
+    for (revision, observed_at) in [
+        ("whole", "2026-08-03T10:00:00Z"),
+        ("offset", "2026-08-03T11:00:00+02:00"),
+        ("hundred-ms", "2026-08-03T10:00:00.1Z"),
+        ("ten-ms", "2026-08-03T10:00:00.010Z"),
+    ] {
+        raw.execute(
+            "UPDATE events SET occurred_at = ?1, observed_at = ?1 WHERE revision_id = ?2",
+            [observed_at, revision],
+        )
+        .expect("replace timestamp");
+    }
+    drop(raw);
+
+    let events = database
+        .readers()
+        .list_events(10)
+        .await
+        .expect("ordered events");
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.revision_id.as_str())
+            .collect::<Vec<_>>(),
+        ["hundred-ms", "ten-ms", "whole", "offset"]
+    );
+    let offset = events
+        .iter()
+        .find(|event| event.revision_id == "offset")
+        .expect("offset event");
+    assert_eq!(
+        serde_json::to_value(offset).expect("event JSON")["observedAt"],
+        "2026-08-03T11:00:00+02:00"
+    );
+    assert_eq!(
+        database
+            .readers()
+            .oldest_open_event_at()
+            .await
+            .expect("oldest open")
+            .expect("open event")
+            .as_str(),
+        "2026-08-03T11:00:00+02:00"
+    );
+    assert_eq!(
+        database
+            .claim_next(at("2026-08-03T12:00:00Z"))
+            .await
+            .expect("claim")
+            .expect("event")
+            .revision_id,
+        "offset"
+    );
+}
+
+#[tokio::test]
+async fn rejects_invalid_stored_timestamps_at_the_read_boundary() {
+    let temporary = TempDir::new().expect("temporary directory");
+    let path = temporary.path().join("invalid-timestamp.sqlite");
+    let database = IntakeDatabase::open(&path).await.expect("database");
+    database
+        .source_succeeded(
+            "mail".into(),
+            Value::Null,
+            vec![item("invalid")],
+            at("2026-08-03T10:01:00Z"),
+        )
+        .await
+        .expect("source commit");
+    let event_id = database.readers().list_events(1).await.expect("event list")[0].id;
+    let raw = Connection::open(&path).expect("raw database");
+    raw.execute(
+        "UPDATE events SET observed_at = 'not-a-timestamp' WHERE id = ?1",
+        [event_id],
+    )
+    .expect("replace timestamp");
+    drop(raw);
+
+    let error = database
+        .readers()
+        .event(event_id)
+        .await
+        .expect_err("invalid timestamp");
+    assert!(matches!(
+        error,
+        DatabaseError::Sqlite(rusqlite::Error::FromSqlConversionFailure(_, _, _))
+    ));
+}
+
 #[test]
 fn formats_millisecond_utc_timestamps_and_reports_real_usage_only() {
     assert_eq!(

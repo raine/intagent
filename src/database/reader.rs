@@ -52,7 +52,7 @@ impl DatabaseReaders {
             .await
     }
 
-    pub async fn oldest_open_event_at(&self) -> Result<Option<String>, DatabaseError> {
+    pub async fn oldest_open_event_at(&self) -> Result<Option<Timestamp>, DatabaseError> {
         self.request(oldest_open_event_at).await
     }
 
@@ -216,7 +216,8 @@ pub(super) fn event(
 }
 
 fn list_events(connection: &Connection, limit: usize) -> Result<Vec<EventRecord>, DatabaseError> {
-    let sql = format!("{EVENT_SELECT} ORDER BY ev.observed_at DESC, ev.id DESC LIMIT ?1");
+    let sql =
+        format!("{EVENT_SELECT} ORDER BY julianday(ev.observed_at) DESC, ev.id DESC LIMIT ?1");
     let mut statement = connection.prepare(&sql)?;
     let mut rows = statement.query([saturating_i64(limit)])?;
     let mut records = Vec::new();
@@ -270,12 +271,16 @@ fn event_from_row_at(
     }))
 }
 
-fn oldest_open_event_at(connection: &Connection) -> Result<Option<String>, DatabaseError> {
-    Ok(connection.query_row(
-        "SELECT MIN(observed_at) FROM events WHERE status IN ('pending', 'processing', 'retryable')",
-        [],
-        |row| row.get(0),
-    )?)
+fn oldest_open_event_at(connection: &Connection) -> Result<Option<Timestamp>, DatabaseError> {
+    Ok(connection
+        .query_row(
+            "SELECT observed_at FROM events
+             WHERE status IN ('pending', 'processing', 'retryable')
+             ORDER BY julianday(observed_at), id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 fn status(connection: &Connection) -> Result<HashMap<String, usize>, DatabaseError> {
@@ -377,7 +382,7 @@ fn triage_run_steps(
            step.summary, step.started_at, step.ended_at, step.outcome
          FROM triage_run_steps step
          LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
-         WHERE step.run_id = ?1 ORDER BY step.started_at, step.id",
+         WHERE step.run_id = ?1 ORDER BY julianday(step.started_at), step.id",
     )?;
     Ok(statement
         .query_map([id.0], |row| {
@@ -416,7 +421,7 @@ fn list_triage_run_summaries(
          FROM triage_runs run
          JOIN events ev ON ev.id = run.event_id
          JOIN entities en ON en.id = ev.entity_id
-         ORDER BY run.started_at DESC, run.id DESC LIMIT ?1",
+         ORDER BY julianday(run.started_at) DESC, run.id DESC LIMIT ?1",
     )?;
     let rows = statement.query_map([saturating_i64(limit)], |row| {
         Ok((
@@ -452,8 +457,8 @@ fn recent_triage_run_steps(
            FROM triage_run_steps step
            LEFT JOIN triage_run_turns turn ON turn.id = step.turn_id
            WHERE step.run_id = ?1
-           ORDER BY step.started_at DESC, step.id DESC LIMIT ?2
-         ) recent ORDER BY recent.started_at, recent.id",
+           ORDER BY julianday(step.started_at) DESC, step.id DESC LIMIT ?2
+         ) recent ORDER BY julianday(recent.started_at), recent.id",
     )?;
     Ok(statement
         .query_map(params![id.0, saturating_i64(limit)], triage_step_from_row)?
@@ -517,7 +522,7 @@ fn triage_run_retries(
     let mut statement = connection.prepare(
         "SELECT id, turn_id, attempt, max_attempts, delay_ms, started_at,
            wait_ended_at, ended_at, outcome, error_category
-         FROM triage_run_retries WHERE run_id = ?1 ORDER BY started_at, id",
+         FROM triage_run_retries WHERE run_id = ?1 ORDER BY julianday(started_at), id",
     )?;
     Ok(statement
         .query_map([id.0], |row| {
@@ -546,7 +551,7 @@ fn triage_run_compactions(
            will_retry, tokens_before, estimated_tokens_after, input_tokens,
            output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
            total_tokens, total_cost
-         FROM triage_run_compactions WHERE run_id = ?1 ORDER BY started_at, id",
+         FROM triage_run_compactions WHERE run_id = ?1 ORDER BY julianday(started_at), id",
     )?;
     Ok(statement
         .query_map([id.0], |row| {
@@ -598,7 +603,7 @@ fn triage_run_effects(
 ) -> Result<Vec<TriageEffectRecord>, DatabaseError> {
     let mut statement = connection.prepare(
         "SELECT type, value, recorded_at FROM triage_run_effects
-         WHERE run_id = ?1 ORDER BY recorded_at, id",
+         WHERE run_id = ?1 ORDER BY julianday(recorded_at), id",
     )?;
     Ok(statement
         .query_map([id.0], |row| {
