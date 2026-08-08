@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "npm run generate:api && vite build",
     "dev": "vite",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
+    "generate:api": "node scripts/generate-api-types.mjs",
     "lint": "oxlint --type-aware .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -23,6 +24,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^6.0.2",
     "jsdom": "27.4.0",
+    "json-schema-to-typescript": "^15.0.3",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",

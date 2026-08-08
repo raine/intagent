@@ -1,4 +1,7 @@
-import type { RunDetail, RunTimelineEntry } from "../../src/run-detail-types.ts"
+import type {
+  RunDetail,
+  TimelineEntry as RunTimelineEntry,
+} from "../../src/api-types.ts"
 
 type FixtureOptions = {
   run?: Partial<RunDetail["run"]>

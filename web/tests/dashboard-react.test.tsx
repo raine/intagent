@@ -1,6 +1,17 @@
 import { describe, expect, test } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
+import type { EventStatus } from "../src/api-types.ts"
 import { ActiveRunCard, EventRow, SourceList } from "../src/app.tsx"
+import { matchesEventFilter, type EventFilter } from "../src/event-filters.ts"
+
+const eventStatuses: EventStatus[] = [
+  "pending",
+  "processing",
+  "retryable",
+  "succeeded",
+  "failed",
+  "ignored",
+]
 
 const run: Parameters<typeof ActiveRunCard>[0]["run"] = {
   id: 7,
@@ -69,6 +80,23 @@ const event: Parameters<typeof EventRow>[0]["event"] = {
 }
 
 describe("React dashboard components", () => {
+  test.each<{
+    filter: EventFilter
+    matching: EventStatus[]
+  }>([
+    { filter: "all", matching: eventStatuses },
+    {
+      filter: "open",
+      matching: ["pending", "processing", "retryable"],
+    },
+    { filter: "attention", matching: ["retryable", "failed"] },
+    { filter: "handled", matching: ["succeeded", "ignored"] },
+  ])("matches $filter event statuses", ({ filter, matching }) => {
+    expect(
+      eventStatuses.filter((status) => matchesEventFilter(status, filter)),
+    ).toEqual(matching)
+  })
+
   test("renders source cards with their design-system structure", () => {
     const html = renderToStaticMarkup(
       <SourceList

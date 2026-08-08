@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type {
-  DispatchTrigger,
   RunDetail,
-  RunTimelineEntry,
-} from "./run-detail-types.ts"
+  TimelineEntry as RunTimelineEntry,
+} from "./api-types.ts"
+import {
+  formatMoney,
+  formatNumber,
+  plainSummary,
+  stateLabel,
+} from "./display-format.ts"
+import { dispatchLabels } from "./dispatch.ts"
+import {
+  exactTime,
+  formatLongDuration as formatDuration,
+  offsetTime,
+  parseTime,
+  relativeAge,
+} from "./time-format.ts"
 import {
   entryEnd,
   entryPosition,
@@ -53,73 +66,12 @@ function safeExternalUrl(value: string | null): string | null {
   }
 }
 
-function parseTime(value: string): number {
-  return Date.parse(value)
-}
-
 function timelineDuration(
   detail: RunDetail,
   entry: RunTimelineEntry,
   now: number,
 ): number {
   return Math.max(0, entryEnd(detail, entry, now) - parseTime(entry.startedAt))
-}
-
-function formatDuration(value: number): string {
-  if (value < 1000) return `${Math.round(value)}ms`
-  const seconds = Math.round(value / 100) / 10
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m`
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact" }).format(value)
-}
-
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 4,
-  }).format(value)
-}
-
-function exactTime(value: string): string {
-  return new Date(value).toLocaleString([], {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  })
-}
-
-function offsetTime(detail: RunDetail, value: string): string {
-  return `+${formatDuration(Math.max(0, parseTime(value) - parseTime(detail.run.startedAt)))}`
-}
-
-function relativeAge(value: string, now: number): string {
-  const age = Math.max(0, now - parseTime(value))
-  return `${formatDuration(age)} ago`
-}
-
-const dispatchLabels: Record<DispatchTrigger, string> = {
-  initial: "First attempt",
-  revision: "New revision",
-  backoff_retry: "Retry after failure",
-  recovery_retry: "Retry after restart",
-  operator_retry: "Manual retry",
-  manual_injection: "Manual injection",
-  superseding_claim: "Superseding claim",
-  unknown: "Dispatch unknown",
-}
-
-function stateLabel(value: string): string {
-  return value.replaceAll("_", " ")
-}
-
-function plainSummary(value: string): string {
-  return value.replace(/\*\*(.+?)\*\*/gs, "$1").replace(/__(.+?)__/gs, "$1")
 }
 
 function useInspectorClock(active: boolean): number {
@@ -969,7 +921,7 @@ function PhaseRow({
           ) : null}
         </div>
       </div>
-      <time>{offsetTime(detail, entry.startedAt)}</time>
+      <time>{offsetTime(entry.startedAt, detail.run.startedAt)}</time>
       <span className="phase-value">{formatDuration(elapsed)}</span>
       <WallTrack
         position={position}
@@ -1021,7 +973,7 @@ function RetryRow({
           </small>
         </div>
       </div>
-      <time>{offsetTime(detail, entry.startedAt)}</time>
+      <time>{offsetTime(entry.startedAt, detail.run.startedAt)}</time>
       <span className="phase-value">{formatDuration(entry.delayMs)} delay</span>
       <WallTrack
         position={position}
