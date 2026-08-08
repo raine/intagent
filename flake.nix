@@ -23,10 +23,16 @@
         inherit system;
         overlays = [ inputs.bun2nix.overlays.default ];
       });
+      packageSetFor = eachSystem (system:
+        pkgsFor.${system}.callPackage ./default.nix { }
+      );
     in
     {
       packages = eachSystem (system: {
-        default = pkgsFor.${system}.callPackage ./default.nix { };
+        default = packageSetFor.${system}.bun;
+        bun = packageSetFor.${system}.bun;
+        browser = packageSetFor.${system}.browser;
+        rust = packageSetFor.${system}.rust;
         rust-compat = pkgsFor.${system}.callPackage ./rust-compat.nix { };
       });
 
@@ -35,10 +41,16 @@
           type = "app";
           program = "${inputs.self.packages.${system}.default}/bin/intake";
         };
+        rust = {
+          type = "app";
+          program = "${inputs.self.packages.${system}.rust}/bin/intake";
+        };
       });
 
       checks = eachSystem (system: {
-        package = inputs.self.packages.${system}.default;
+        bun-package = inputs.self.packages.${system}.bun;
+        browser-package = inputs.self.packages.${system}.browser;
+        rust-package = inputs.self.packages.${system}.rust;
         rust-compat = inputs.self.packages.${system}.rust-compat;
       });
 
@@ -50,11 +62,13 @@
             cargo
             clippy
             just
+            nodejs
             rust-analyzer
             rustc
             rustfmt
             shellcheck
           ];
+          RUST_SRC_PATH = "${pkgsFor.${system}.rustPlatform.rustLibSrc}";
         };
       });
     };
