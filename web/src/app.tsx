@@ -150,7 +150,8 @@ function Status({
     ? runStates[status as RunStatus]
     : eventStates[status as EventStatus]
   return (
-    <span className={`status status-${status}`} aria-label={definition.label}>
+    <span className={`status status-${status}`}>
+      <span className="visually-hidden">{definition.label}</span>
       <span className="status-glyph" aria-hidden="true">
         {definition.glyph}
       </span>
@@ -632,7 +633,11 @@ export function App(): JSX.Element {
           <Loading />
         ) : (
           <div id="dashboard-root">
-            <section className="stat-strip" aria-label="Queue status">
+            <section
+              className="stat-strip"
+              aria-label="Queue status"
+              tabIndex={0}
+            >
               <article>
                 <span>OPEN</span>
                 <strong>{snapshot.open}</strong>
