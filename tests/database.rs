@@ -1,8 +1,8 @@
 use chrono::{TimeZone, Utc};
 use intake::database::{
-    CompactionFinish, DATABASE_QUEUE_CAPACITY, DispatchTrigger, ErrorCategory, EventStatus,
-    IntakeDatabase, MIGRATIONS, ReportedUsage, RetryStart, RunFinish, RunOutcome, SpanOutcome,
-    TurnFinish, reported_usage, timestamp,
+    CompactionFinish, DATABASE_QUEUE_CAPACITY, DatabaseError, DispatchTrigger, ErrorCategory,
+    EventStatus, IntakeDatabase, MIGRATIONS, ReportedUsage, RetryStart, RunFinish, RunOutcome,
+    SpanOutcome, TurnFinish, reported_usage, timestamp,
 };
 use intake::protocol::{IntakeItem, IntakeItemKind};
 use rig_core::completion::Usage;
@@ -761,6 +761,34 @@ async fn rejects_migration_gaps_and_future_versions() {
             .expect("schema count");
         assert_eq!(count, 1);
     }
+}
+
+#[tokio::test]
+async fn shutdown_closes_writer_and_keeps_readers_available() {
+    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let writer = database.clone();
+    let readers = database.readers();
+
+    database.shutdown().await.expect("shutdown");
+
+    assert!(matches!(
+        writer.flush().await,
+        Err(DatabaseError::ActorClosed)
+    ));
+    assert!(readers.status().await.expect("reader request").is_empty());
+}
+
+#[tokio::test]
+async fn request_errors_do_not_stop_the_writer() {
+    let database = IntakeDatabase::open(":memory:").await.expect("database");
+
+    assert!(matches!(
+        database
+            .fail(404, "missing".into(), 1, 1, at("2026-08-03T10:01:00.000Z"),)
+            .await,
+        Err(DatabaseError::UnknownEvent(404))
+    ));
+    database.flush().await.expect("writer remains available");
 }
 
 #[test]
