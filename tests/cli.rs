@@ -5,7 +5,9 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use intake::cli::{DashboardOptions, USAGE, parse_dashboard_options, parse_global_options};
+use intake::cli::{
+    DashboardOptions, USAGE, parse_dashboard_options, parse_global_options, public_cli_error,
+};
 use intake::database::{IntakeDatabase, QueueOwnerLock};
 use tempfile::TempDir;
 
@@ -13,7 +15,7 @@ use tempfile::TempDir;
 fn snapshots_usage_and_direct_argument_errors() {
     assert_eq!(
         USAGE,
-        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n"
+        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs use state.logs/application and retain eight daily files.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
     );
     let error = parse_global_options(vec!["status".into(), "--config".into()]).unwrap_err();
     assert_eq!(error.to_string(), "--config requires a path");
@@ -24,6 +26,14 @@ fn snapshots_usage_and_direct_argument_errors() {
     );
     let error = parse_dashboard_options(&["--bogus".into()]).unwrap_err();
     assert_eq!(error.to_string(), "Unknown dashboard option: --bogus");
+    assert_eq!(
+        public_cli_error("OAuth token=visible-secret was rejected"),
+        "Authentication failed"
+    );
+    assert_eq!(
+        public_cli_error("configuration file is unavailable"),
+        "configuration file is unavailable"
+    );
 }
 
 #[test]
@@ -102,6 +112,20 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
     assert!(
         String::from_utf8_lossy(&second.stdout).starts_with("Private configuration exists at ")
     );
+    let configured_logs = root.path().join("configured-logs");
+    let configured = fs::read_to_string(&config)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("logs:") {
+                format!("  logs: {}", configured_logs.display())
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&config, format!("{configured}\n")).unwrap();
 
     let database_path = state.join("intake/intake.sqlite");
     let owner = QueueOwnerLock::acquire(&database_path).unwrap();
@@ -175,6 +199,30 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
     );
 
     assert!(state.join("intake/intake.sqlite").exists());
+    let application_logs = configured_logs.join("application");
+    assert_eq!(
+        fs::metadata(&application_logs)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+    let application_log = fs::read_dir(&application_logs)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("intake."))
+        })
+        .expect("application log");
+    assert_eq!(
+        fs::metadata(&application_log).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let application_log = fs::read_to_string(application_log).unwrap();
+    assert!(application_log.contains("intake::lifecycle"));
+    assert!(!application_log.contains("rusqlite"));
 }
 
 #[test]
@@ -232,6 +280,83 @@ fn watch_handles_graceful_and_forced_signals() {
         wait_for_exit(&mut forced, Duration::from_secs(3)),
         Some(130)
     );
+}
+
+#[test]
+fn help_survives_unavailable_application_logging() {
+    let root = tempfile::tempdir().unwrap();
+    let blocked = root.path().join("state/intake/logs/application");
+    fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+    fs::write(&blocked, "not a directory").unwrap();
+
+    let output = intake(&root, ["--help".to_string()]);
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Usage: intake"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Warning: application logging is unavailable"));
+    assert!(!stderr.contains("not a directory"));
+}
+
+#[test]
+fn log_filter_suppresses_lower_priority_and_dependency_events() {
+    let root = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_intake"))
+        .arg("--help")
+        .env("HOME", root.path())
+        .env("XDG_STATE_HOME", root.path().join("state"))
+        .env("INTAKE_LOG", "error")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let directory = root.path().join("state/intake/logs/application");
+    let log = fs::read_dir(directory)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert!(fs::read_to_string(log).unwrap().is_empty());
+}
+
+#[test]
+fn source_help_uses_default_application_log_directory() {
+    for (executable, prefix) in [
+        (
+            env!("CARGO_BIN_EXE_intake-fastmail-source"),
+            "intake-fastmail-source.",
+        ),
+        (
+            env!("CARGO_BIN_EXE_intake-github-source"),
+            "intake-github-source.",
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let output = Command::new(executable)
+            .arg("--help")
+            .env("HOME", root.path())
+            .env("XDG_STATE_HOME", root.path().join("state"))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let directory = root.path().join("state/intake/logs/application");
+        let log = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(prefix))
+            })
+            .expect("source application log");
+        assert_eq!(
+            fs::metadata(directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(log).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
 }
 
 #[tokio::test]
@@ -302,6 +427,16 @@ fn wait_for_watch_start(child: &mut Child) {
         .read_line(&mut line)
         .expect("read watch startup");
     assert!(line.contains("Watching"), "unexpected watch output: {line}");
+    assert!(!line.contains("\x1b["));
+    assert!(line.as_bytes().get(..8).is_some_and(|time| {
+        time.iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 2 | 5) {
+                *byte == b':'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
+    }));
 }
 
 fn wait_for_path(path: &std::path::Path, timeout: Duration) {

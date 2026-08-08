@@ -1,4 +1,4 @@
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 
 use chrono::Local;
 
@@ -13,16 +13,4 @@ pub fn terminal_line(
     } else {
         writeln!(output, "{time}  {value}")
     }
-}
-
-pub fn stdout_line(value: &str) {
-    let mut output = std::io::stdout().lock();
-    let is_terminal = std::io::stdout().is_terminal();
-    let _ = terminal_line(&mut output, is_terminal, value);
-}
-
-pub fn stderr_line(value: &str) {
-    let mut output = std::io::stderr().lock();
-    let is_terminal = std::io::stderr().is_terminal();
-    let _ = terminal_line(&mut output, is_terminal, value);
 }

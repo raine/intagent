@@ -11,6 +11,7 @@ prefix="$temporary_dir/prefix"
 bin_directory="$prefix/bin"
 skills_directory="$prefix/share/intake/skills"
 config_directory="$temporary_dir/config"
+state_directory="$temporary_dir/state"
 web_directory="$temporary_dir/web"
 mkdir -p "$web_directory"
 tar -C web --exclude='./node_modules' --exclude='./generated' -cf - . | \
@@ -35,7 +36,7 @@ for executable in "${expected_executables[@]}"; do
     exit 1
   fi
 
-  "$executable_path" --help >/dev/null
+  XDG_STATE_HOME="$state_directory" "$executable_path" --help >/dev/null
 
   if command -v otool >/dev/null 2>&1; then
     dependencies="$(otool -L "$executable_path")"
@@ -70,6 +71,7 @@ if find "$skills_directory" -type l -print -quit | grep -q .; then
 fi
 diff -r skills "$skills_directory" >/dev/null
 
-XDG_CONFIG_HOME="$config_directory" "$bin_directory/intake" init >/dev/null
-XDG_CONFIG_HOME="$config_directory" \
+XDG_CONFIG_HOME="$config_directory" XDG_STATE_HOME="$state_directory" \
+  "$bin_directory/intake" init >/dev/null
+XDG_CONFIG_HOME="$config_directory" XDG_STATE_HOME="$state_directory" \
   "$bin_directory/intake" validate-config >/dev/null

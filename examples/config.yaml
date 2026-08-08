@@ -2,7 +2,10 @@ version: 1
 project_roots:
   - ~/code
 state:
-  database: ~/.config/intake/state/intake.sqlite
+  database: ~/.local/state/intake/intake.sqlite
+  # Per-attempt JSONL files live here. Rotating application logs use the
+  # application subdirectory.
+  logs: ~/.local/state/intake/logs
 skills:
   directories:
     - ./skills

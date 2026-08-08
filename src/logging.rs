@@ -53,7 +53,17 @@ impl DurableLogStore {
         directory: impl Into<PathBuf>,
         redact: impl Fn(&str) -> String + Send + Sync + 'static,
     ) -> Self {
-        Self::with_warning_sink(directory, redact, |message| eprint!("{message}"))
+        Self::with_warning_sink(directory, redact, |_| {
+            tracing::warn!(
+                target: "intake::logging",
+                log_kind = "attempt",
+                "structured log write failed"
+            );
+            tracing::warn!(
+                target: "intake::terminal::error",
+                "Warning: structured attempt logging is unavailable."
+            );
+        })
     }
 
     pub fn with_warning_sink(
@@ -125,24 +135,23 @@ impl DurableLogStore {
             .await
             .is_err()
         {
-            self.warn(&path, "logging actor is unavailable").await;
+            self.warn(&path, "logging actor is unavailable");
             return LogWriteOutcome::Failed;
         }
         match response.await {
             Ok(Ok(())) => LogWriteOutcome::Written,
             Ok(Err(error)) => {
-                self.warn(&path, &error.to_string()).await;
+                self.warn(&path, &error.to_string());
                 LogWriteOutcome::Failed
             }
             Err(_) => {
-                self.warn(&path, "logging actor stopped before replying")
-                    .await;
+                self.warn(&path, "logging actor stopped before replying");
                 LogWriteOutcome::Failed
             }
         }
     }
 
-    async fn warn(&self, path: &Path, error: &str) {
+    fn warn(&self, path: &Path, error: &str) {
         let first = match self.warned.lock() {
             Ok(mut warned) => warned.insert(path.to_path_buf()),
             Err(poisoned) => poisoned.into_inner().insert(path.to_path_buf()),
@@ -155,16 +164,6 @@ impl DurableLogStore {
             "warning: intake logging failed for {}: {message}\n",
             path.display()
         ));
-        if !path.ends_with("monitor.jsonl") {
-            let _ = Box::pin(self.monitor(
-                "logging_error",
-                json!({
-                    "target": "triage",
-                    "failureCategory": safe_error_category(&message),
-                }),
-            ))
-            .await;
-        }
     }
 }
 
@@ -523,21 +522,6 @@ fn error_category_name(category: ErrorCategory) -> &'static str {
         ErrorCategory::Interrupted => "interrupted",
         ErrorCategory::ToolFailure => "tool_failure",
         ErrorCategory::Unknown => "unknown",
-    }
-}
-
-fn safe_error_category(error: &str) -> &'static str {
-    let value = error.to_ascii_lowercase();
-    if value.contains("auth") || value.contains("credential") {
-        "authentication"
-    } else if value.contains("rate limit") || value.contains("429") {
-        "rate_limit"
-    } else if value.contains("timeout") || value.contains("timed out") {
-        "timeout"
-    } else if value.contains("connection") || value.contains("socket") {
-        "connection"
-    } else {
-        "unknown"
     }
 }
 

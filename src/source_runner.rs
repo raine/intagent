@@ -11,7 +11,10 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 
-use crate::config::{IntakeConfig, SourceConfig};
+use crate::application_log::{
+    APPLICATION_LOG_DIRECTORY_ENV, application_log_directory, redact_log_text,
+};
+use crate::config::{IntakeConfig, SourceConfig, expand_path};
 use crate::database::{DatabaseError, IntakeDatabase};
 use crate::protocol::{
     MAX_STANDARD_INPUT_BYTES, PROTOCOL_VERSION, PollRequest, parse_poll_response,
@@ -126,6 +129,12 @@ async fn run_source_process(
         .id()
         .ok_or_else(|| SourceRunnerError::Spawn("source process has no process ID".into()))?
         as i32;
+    tracing::debug!(
+        target: "intake::source_runner",
+        source = source.name,
+        pid,
+        "source process started"
+    );
     let mut guard = ProcessGroupGuard::new(pid);
 
     let stdin = child
@@ -316,6 +325,14 @@ fn source_environment(source: &SourceConfig, config: &IntakeConfig) -> HashMap<S
         ("LC_ALL".into(), "C.UTF-8".into()),
         ("NO_COLOR".into(), "1".into()),
     ]);
+    if let Ok(logs) = expand_path(&config.state.logs) {
+        environment.insert(
+            APPLICATION_LOG_DIRECTORY_ENV.into(),
+            application_log_directory(logs)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
     environment
 }
 
@@ -331,62 +348,7 @@ fn redact_source_error(message: &str, secret_values: &[String]) -> String {
     for value in values {
         redacted = redacted.replace(&value, "[REDACTED]");
     }
-    redact_named_credentials(&redacted)
-}
-
-fn redact_named_credentials(value: &str) -> String {
-    let mut output = value.to_string();
-    for keyword in ["bearer", "token", "password", "secret"] {
-        let mut offset = 0;
-        loop {
-            let lowercase = output[offset..].to_ascii_lowercase();
-            let Some(relative) = lowercase.find(keyword) else {
-                break;
-            };
-            let start = offset + relative;
-            let key_end = start + keyword.len();
-            if start > 0 && output.as_bytes()[start - 1].is_ascii_alphanumeric() {
-                offset = key_end;
-                continue;
-            }
-            let mut cursor = key_end;
-            while output
-                .as_bytes()
-                .get(cursor)
-                .is_some_and(u8::is_ascii_whitespace)
-            {
-                cursor += 1;
-            }
-            let separated = output
-                .as_bytes()
-                .get(cursor)
-                .is_some_and(|byte| *byte == b':' || *byte == b'=');
-            if separated {
-                cursor += 1;
-                while output
-                    .as_bytes()
-                    .get(cursor)
-                    .is_some_and(u8::is_ascii_whitespace)
-                {
-                    cursor += 1;
-                }
-            } else if keyword != "bearer" || cursor == key_end {
-                offset = key_end;
-                continue;
-            }
-            let value_end = output.as_bytes()[cursor..]
-                .iter()
-                .position(u8::is_ascii_whitespace)
-                .map_or(output.len(), |length| cursor + length);
-            if value_end == cursor {
-                offset = cursor;
-                continue;
-            }
-            output.replace_range(cursor..value_end, "[REDACTED]");
-            offset = cursor + "[REDACTED]".len();
-        }
-    }
-    output
+    redact_log_text(&redacted)
 }
 
 fn diagnostic_text(bytes: &[u8]) -> String {

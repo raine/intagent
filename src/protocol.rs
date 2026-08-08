@@ -199,6 +199,11 @@ where
     match result {
         Ok(()) => true,
         Err(error) => {
+            tracing::error!(
+                target: "intake::source",
+                failure_category = protocol_error_category(&error),
+                "source protocol failed"
+            );
             let _ = diagnostics.write_all(format!("{error}\n").as_bytes()).await;
             let _ = diagnostics.flush().await;
             false
@@ -218,6 +223,16 @@ where
         handler,
     )
     .await
+}
+
+fn protocol_error_category(error: &ProtocolError) -> &'static str {
+    match error {
+        ProtocolError::InputTooLarge => "input_limit",
+        ProtocolError::InvalidJson(_) | ProtocolError::InvalidRequest(_) => "invalid_request",
+        ProtocolError::InvalidResponse(_) => "invalid_response",
+        ProtocolError::Source(_) | ProtocolError::SourceUnavailable(_) => "source",
+        ProtocolError::Io(_) => "io",
+    }
 }
 
 fn utf16_len(value: &str) -> usize {

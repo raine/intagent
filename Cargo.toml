@@ -48,6 +48,9 @@ tokio = { version = "1", features = [
 ] }
 tokio-util = "0.7"
 tower = { version = "0.5", features = ["util"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = "0.3"
 
 [dev-dependencies]
 http = "1"
