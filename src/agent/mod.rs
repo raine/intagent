@@ -1,8 +1,12 @@
 pub mod auth;
 pub mod command_policy;
+pub mod conclusions;
 pub mod context;
+pub mod driver;
+pub mod errors;
 pub mod model;
 pub mod process;
+pub mod prompts;
 pub mod read_policy;
 pub mod rig_runner;
 pub mod skills;

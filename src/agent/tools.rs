@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,6 +14,7 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use super::command_policy::CommandPolicy;
+use super::driver::ToolExecutor;
 use super::read_policy::{ReadInput, ReadPolicy};
 use crate::database::IntakeDatabase;
 use crate::project_registry::{replace_project_registry, validate_project_registry_write};
@@ -442,4 +445,92 @@ impl CountingTools {
         };
         tools.get(name).map_or(0, CountingTool::executions)
     }
+}
+
+impl ToolExecutor for RecordingExecutableTools {
+    fn authorize<'a>(
+        &'a self,
+        call: &'a ToolCall,
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<(), String>> + Send + 'a>> {
+        Box::pin(async move { authorize_compatibility_tool(call) })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        cancellation: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = ToolCallResult> + Send + 'a>> {
+        Box::pin(async move {
+            self.call(&call.function.name, &call.function.arguments, cancellation)
+                .await
+        })
+    }
+}
+
+impl ToolExecutor for ProductionTools {
+    fn authorize<'a>(
+        &'a self,
+        call: &'a ToolCall,
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.authorize(call)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        cancellation: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = ToolCallResult> + Send + 'a>> {
+        Box::pin(async move { self.execute(call, cancellation).await })
+    }
+
+    fn recording_failed(&self) -> bool {
+        self.recording_failed()
+    }
+}
+
+impl ToolExecutor for CountingTools {
+    fn authorize<'a>(
+        &'a self,
+        call: &'a ToolCall,
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<(), String>> + Send + 'a>> {
+        Box::pin(async move { authorize_compatibility_tool(call) })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        _cancellation: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = ToolCallResult> + Send + 'a>> {
+        Box::pin(async move {
+            let value = call
+                .function
+                .arguments
+                .get("value")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            self.call(&call.function.name, value)
+        })
+    }
+}
+
+fn authorize_compatibility_tool(call: &ToolCall) -> std::result::Result<(), String> {
+    if !matches!(call.function.name.as_str(), "bash" | "read" | "write") {
+        return Err("tool is outside the intake capability set".to_string());
+    }
+    let Some(arguments) = call.function.arguments.as_object() else {
+        return Err("tool arguments must be an object".to_string());
+    };
+    if arguments.len() != 1
+        || arguments
+            .get("value")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+    {
+        return Err("tool arguments failed compatibility policy".to_string());
+    }
+    Ok(())
 }
