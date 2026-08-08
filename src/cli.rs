@@ -12,7 +12,7 @@ use crate::agent::auth::{AuthPaths, authorize};
 use crate::agent::command_policy::CommandPolicy;
 use crate::agent::rig_runner::{ChatGptTriageRunner, TriageRunnerCore};
 use crate::agent::skills::validate_skills;
-use crate::application_log::{application_log_directory, redact_log_text};
+use crate::application_log::{application_log_path, redact_log_text};
 use crate::config::{
     IntakeConfig, canonical_roots, config_directory, default_config_path, expand_path,
     initialize_private_config, load_config, project_registry_path, state_directory,
@@ -24,12 +24,12 @@ use crate::monitor::IntakeMonitor;
 use crate::project_registry::ensure_project_registry;
 use crate::protocol::IntakeItem;
 
-pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs use state.logs/application and retain eight daily files.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n";
+pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n";
 
-pub fn tracing_log_directory(argv: &[String]) -> Option<PathBuf> {
+pub fn tracing_log_path(argv: &[String]) -> Option<PathBuf> {
     let default = state_directory()
         .ok()
-        .map(|state| application_log_directory(state.join("logs")));
+        .map(|state| application_log_path(state.join("logs")));
     let parsed = match parse_global_options(argv.to_vec()) {
         Ok(parsed) => parsed,
         Err(_) => return default,
@@ -49,7 +49,7 @@ pub fn tracing_log_directory(argv: &[String]) -> Option<PathBuf> {
     let configured = config_path
         .and_then(|path| load_config(path).ok())
         .and_then(|config| expand_path(config.state.logs).ok())
-        .map(application_log_directory);
+        .map(application_log_path);
     configured.or(default)
 }
 

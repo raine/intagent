@@ -11,9 +11,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 
-use crate::application_log::{
-    APPLICATION_LOG_DIRECTORY_ENV, application_log_directory, redact_log_text,
-};
+use crate::application_log::{APPLICATION_LOG_PATH_ENV, application_log_path, redact_log_text};
 use crate::config::{IntakeConfig, SourceConfig, expand_path};
 use crate::database::{DatabaseError, IntakeDatabase};
 use crate::protocol::{
@@ -327,10 +325,8 @@ fn source_environment(source: &SourceConfig, config: &IntakeConfig) -> HashMap<S
     ]);
     if let Ok(logs) = expand_path(&config.state.logs) {
         environment.insert(
-            APPLICATION_LOG_DIRECTORY_ENV.into(),
-            application_log_directory(logs)
-                .to_string_lossy()
-                .into_owned(),
+            APPLICATION_LOG_PATH_ENV.into(),
+            application_log_path(logs).to_string_lossy().into_owned(),
         );
     }
     environment

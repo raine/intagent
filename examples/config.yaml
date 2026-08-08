@@ -3,8 +3,7 @@ project_roots:
   - ~/code
 state:
   database: ~/.local/state/intake/intake.sqlite
-  # Per-attempt JSONL files live here. Rotating application logs use the
-  # application subdirectory.
+  # Per-attempt JSONL files and application.log live here.
   logs: ~/.local/state/intake/logs
 skills:
   directories:

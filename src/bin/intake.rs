@@ -1,15 +1,14 @@
 #[tokio::main]
 async fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    let log_directory = intake::cli::tracing_log_directory(&args);
-    let tracing =
-        match intake::application_log::initialize_tracing("intake", log_directory.as_deref()) {
-            Ok(tracing) => tracing,
-            Err(error) => {
-                eprintln!("intake: {error}");
-                std::process::exit(1);
-            }
-        };
+    let log_path = intake::cli::tracing_log_path(&args);
+    let tracing = match intake::application_log::initialize_tracing(log_path.as_deref()) {
+        Ok(tracing) => tracing,
+        Err(error) => {
+            eprintln!("intake: {error}");
+            std::process::exit(1);
+        }
+    };
     if let Some(warning) = tracing.warning {
         tracing::warn!(target: "intake::terminal::error", "Warning: {warning}");
     }
