@@ -31,6 +31,34 @@ async fn matches_phase_zero_snapshot_fixture() {
 }
 
 #[tokio::test]
+async fn reads_legacy_events_with_null_source_values() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("dashboard.sqlite");
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute_batch(include_str!("fixtures/database/schema-v7.sql"))
+        .unwrap();
+    let expected_source: String = connection
+        .query_row(
+            "SELECT en.source FROM events ev JOIN entities en ON en.id = ev.entity_id WHERE ev.id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    connection
+        .execute("UPDATE events SET source = NULL WHERE id = 1", [])
+        .unwrap();
+    drop(connection);
+
+    let database = IntakeDatabase::open(&path).await.unwrap();
+    let snapshot = dashboard_snapshot(&database.readers(), Utc::now())
+        .await
+        .unwrap();
+    let event = snapshot.events.iter().find(|event| event.id == 1).unwrap();
+    assert_eq!(event.source, expected_source);
+}
+
+#[tokio::test]
 async fn serves_only_the_read_only_dashboard_surface_with_security_headers() {
     let (_directory, database) = fixture_database().await;
     let router = dashboard_router(

@@ -2320,7 +2320,7 @@ fn source_checkpoint(connection: &Connection, source: &str) -> Result<Value, Dat
 }
 
 const EVENT_SELECT: &str =
-    "SELECT ev.id, ev.source, en.external_id, ev.revision_id, en.kind, en.title,
+    "SELECT ev.id, COALESCE(ev.source, en.source), en.external_id, ev.revision_id, en.kind, en.title,
        ev.payload, en.operational_metadata, ev.occurred_at, ev.observed_at, ev.status,
        ev.attempt_count, ev.next_attempt_at, ev.last_error, en.aven_ref,
        en.investigation_handle

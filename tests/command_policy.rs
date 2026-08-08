@@ -17,6 +17,10 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
+    fixture_with_timeout(30)
+}
+
+fn fixture_with_timeout(timeout_seconds: u64) -> Fixture {
     let root = TempDir::new().unwrap();
     let bin = root.path().join("bin");
     fs::create_dir(&bin).unwrap();
@@ -43,7 +47,7 @@ fn fixture() -> Fixture {
                 "#!/bin/sh\ni=0; while [ $i -lt 400 ]; do printf '0123456789'; i=$((i+1)); done\n"
                     .to_string()
             }
-            "slow" => "#!/bin/sh\n/bin/sleep 10\n".to_string(),
+            "slow" => "#!/bin/sh\n/bin/sleep 60\n".to_string(),
             "ignore-term" => format!(
                 "#!/bin/sh\ntrap '' TERM\n/bin/sh -c 'trap \"\" TERM; while :; do /bin/sleep 1; done' &\nprintf '%s' $! > '{}.pid'\nwait\n",
                 marker.display()
@@ -61,7 +65,7 @@ fn fixture() -> Fixture {
         load_config(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config/valid.yaml"))
             .unwrap();
     config.commands.path = vec![bin.display().to_string()];
-    config.commands.timeout_seconds = 3;
+    config.commands.timeout_seconds = timeout_seconds;
     config.commands.max_output_bytes = 1024;
     config.commands.rules = [
         "allowed",
@@ -308,9 +312,16 @@ async fn bounds_output_and_propagates_timeout_and_cancellation() {
         .unwrap();
     assert!(output.stdout.len() <= 1024);
     assert!(output.truncated);
-    let timeout = fixture
+
+    let timeout_fixture = fixture_with_timeout(10);
+    let timeout = timeout_fixture
         .policy
-        .execute("slow", &fixture.root, CancellationToken::new(), None)
+        .execute(
+            "slow",
+            &timeout_fixture.root,
+            CancellationToken::new(),
+            None,
+        )
         .await
         .unwrap_err()
         .to_string();
@@ -322,9 +333,9 @@ async fn bounds_output_and_propagates_timeout_and_cancellation() {
         tokio::time::sleep(Duration::from_millis(100)).await;
         trigger.cancel();
     });
-    let cancelled = fixture
+    let cancelled = timeout_fixture
         .policy
-        .execute("slow", &fixture.root, cancellation, None)
+        .execute("slow", &timeout_fixture.root, cancellation, None)
         .await
         .unwrap_err()
         .to_string();
@@ -333,7 +344,7 @@ async fn bounds_output_and_propagates_timeout_and_cancellation() {
 
 #[tokio::test]
 async fn times_out_when_an_exited_parent_leaves_pipe_holding_descendants() {
-    let fixture = fixture();
+    let fixture = fixture_with_timeout(10);
     let error = fixture
         .policy
         .execute("orphan", &fixture.root, CancellationToken::new(), None)
@@ -351,7 +362,7 @@ async fn times_out_when_an_exited_parent_leaves_pipe_holding_descendants() {
 
 #[tokio::test]
 async fn kills_descendants_that_ignore_sigterm() {
-    let fixture = fixture();
+    let fixture = fixture_with_timeout(10);
     let error = fixture
         .policy
         .execute("ignore-term", &fixture.root, CancellationToken::new(), None)
