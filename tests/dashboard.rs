@@ -174,6 +174,10 @@ fn maps_errors_to_public_categories() {
 
     for (raw, expected) in [
         ("credential rejected", "Authentication failed"),
+        (
+            "source exited 1: source polling failed: Fastmail email response is invalid",
+            "Fastmail email response is invalid",
+        ),
         ("too many requests", "Rate limited"),
         ("request timed out", "Request timed out"),
         ("connection reset by peer", "Connection reset"),

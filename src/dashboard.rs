@@ -304,6 +304,8 @@ pub fn public_error(error: Option<&str>) -> Option<String> {
         .any(|needle| value.contains(needle))
     {
         "Authentication failed"
+    } else if value.contains("fastmail email response is invalid") {
+        "Fastmail email response is invalid"
     } else if value.contains("rate limit") || value.contains("too many requests") {
         "Rate limited"
     } else if value.contains("timeout") || value.contains("timed out") {
