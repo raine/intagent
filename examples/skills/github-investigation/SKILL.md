@@ -3,20 +3,11 @@ name: github-investigation
 description:
   Create local follow-up and dispatch an isolated investigation for a GitHub
   issue or pull request from a discovered repository.
-disable-model-invocation: true
 ---
 
 # GitHub investigation
 
-## Template setup
-
-Before enabling this skill, install Aven's agent skill so its command syntax is
-available. Replace `INVESTIGATION_SKILL` with the name or path of the command
-skill that defines your investigation workflow. Replace Aven with another task
-manager if preferred. Remove `disable-model-invocation` from the frontmatter
-when the template is ready.
-
-1. Follow Aven's installed skill and `INVESTIGATION_SKILL` for command syntax.
+1. Follow the available Aven and investigation skills for command syntax.
 2. Match `owner/repository` against the verified project inventory. Use a
    verified unregistered candidate without rediscovery and add its canonical
    path to the registry. Otherwise verify a likely repository-name path beneath
@@ -31,7 +22,7 @@ when the template is ready.
    review URL. Omit the activity when no permalink is available.
 5. Create a replacement investigation only when the prior investigation is
    unavailable. Run the configured investigation command from the matched
-   repository and follow `INVESTIGATION_SKILL` for branch selection and prompt
-   content.
+   repository and follow the available investigation skill for branch selection
+   and prompt content.
 6. Keep notification and discussion content out of command arguments unless the
    configured investigation skill explicitly defines a safe transport for it.
