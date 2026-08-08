@@ -31,7 +31,7 @@ name = "browser"
 command = [
   "bash",
   "-c",
-  "npm ci --prefix web && npm run format:check --prefix web && npm run lint --prefix web && npm run typecheck --prefix web && npm test --prefix web && npm run build --prefix web && git diff --exit-code -- web/generated",
+  "npm ci --prefix web && npm run format:check --prefix web && npm run lint --prefix web && npm run typecheck --prefix web && npm test --prefix web && npm run build --prefix web && git diff --exit-code -- web/generated web/src/api-types.ts",
 ]
 
 [[check]]

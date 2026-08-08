@@ -8,6 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router, middleware};
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -54,7 +55,7 @@ struct DashboardState {
     limits: DashboardRunLimits,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSnapshot {
     pub generated_at: String,
@@ -69,7 +70,7 @@ pub struct DashboardSnapshot {
     pub events: Vec<DashboardEvent>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 pub struct DashboardCounts {
     pub pending: usize,
     pub processing: usize,
@@ -90,7 +91,7 @@ impl DashboardCounts {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSource {
     pub source: String,
@@ -99,7 +100,7 @@ pub struct DashboardSource {
     pub updated_at: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardEvent {
     pub id: i64,
@@ -118,7 +119,7 @@ pub struct DashboardEvent {
     pub investigation_handle: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardRun {
     pub id: i64,
@@ -146,7 +147,7 @@ pub struct DashboardRun {
     pub steps: Vec<DashboardStep>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardStep {
     pub id: i64,

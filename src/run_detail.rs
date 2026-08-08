@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Serialize, Serializer};
 use url::Url;
 
@@ -33,7 +34,7 @@ impl Default for RunDetailOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RunDetail {
     pub generated_at: String,
@@ -47,7 +48,7 @@ pub struct RunDetail {
     pub timeline: Timeline,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RunProjection {
     pub id: i64,
@@ -65,7 +66,7 @@ pub struct RunProjection {
     pub telemetry: TelemetryProjection,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchProjection {
     pub sequence: u32,
@@ -80,7 +81,7 @@ pub struct DispatchProjection {
     pub latency: DispatchLatency,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DispatchSource {
     Recorded,
@@ -88,7 +89,7 @@ pub enum DispatchSource {
     Unavailable,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchPriorAttempt {
     pub run_id: i64,
@@ -100,7 +101,7 @@ pub struct DispatchPriorAttempt {
     pub ended_at: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchLatency {
     pub source_lag_ms: Option<i64>,
@@ -108,7 +109,7 @@ pub struct DispatchLatency {
     pub claim_delay_ms: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelProjection {
     pub id: Option<String>,
@@ -118,14 +119,14 @@ pub struct ModelProjection {
     pub max_tokens: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryProjection {
     pub schema_version: Option<i64>,
     pub completeness: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventProjection {
     pub id: i64,
@@ -141,7 +142,7 @@ pub struct EventProjection {
     pub investigation_handle: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SiblingAttempt {
     pub id: i64,
@@ -156,7 +157,7 @@ pub struct SiblingAttempt {
     pub telemetry_completeness: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RunMetrics {
     pub duration_ms: DurationMetrics,
@@ -171,7 +172,7 @@ pub struct RunMetrics {
     pub peak_context_percent: Option<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DurationMetrics {
     pub wall: i64,
@@ -184,7 +185,7 @@ pub struct DurationMetrics {
     pub finalization: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageMetrics {
     pub input_tokens: Option<i64>,
@@ -196,7 +197,7 @@ pub struct UsageMetrics {
     pub total_cost: Option<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum TimelineEntry {
     Turn {
@@ -271,13 +272,13 @@ pub enum TimelineEntry {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 pub struct Timeline {
     pub entries: Vec<TimelineEntry>,
     pub page: TimelinePage,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelinePage {
     pub offset: usize,
@@ -288,7 +289,7 @@ pub struct TimelinePage {
     pub next_offset: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectProjection {
     #[serde(rename = "type")]
@@ -297,7 +298,7 @@ pub struct EffectProjection {
     pub recorded_at: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptProjection {
     pub role: String,
@@ -305,7 +306,7 @@ pub struct PromptProjection {
     pub recorded_at: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RunLimits {
     pub max_turns: Option<u32>,

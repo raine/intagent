@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use rig_core::completion::Usage;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -33,7 +34,7 @@ pub enum DatabaseError {
     QueueOwnerBusy { database: PathBuf },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventStatus {
     Pending,
@@ -243,7 +244,7 @@ pub struct CompactionFinish {
     pub usage: Option<ReportedUsage>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TriageDecision {
     ActionTaken,
@@ -256,7 +257,7 @@ pub enum TriageDecision {
     TurnLimit,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConclusionSource {
     Model,
@@ -264,7 +265,7 @@ pub enum ConclusionSource {
     Unavailable,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DispatchTrigger {
     Initial,
@@ -295,7 +296,7 @@ impl DispatchTrigger {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TriageConclusion {
     pub decision: TriageDecision,

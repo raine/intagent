@@ -1,99 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type {
+  DashboardEvent,
+  DashboardRun,
+  DashboardSnapshot,
+  EventStatus,
+} from "./api-types.ts"
+import { dispatchLabels } from "./dispatch.ts"
+import {
+  eventFilters,
+  matchesEventFilter,
+  type EventFilter,
+} from "./event-filters.ts"
 import { RunRoute as RunDetailRoute } from "./run-inspector.tsx"
-import type { DispatchTrigger, TriageConclusion } from "./run-detail-types.ts"
+import {
+  clockTime,
+  compactDuration,
+  elapsed,
+  formatDuration,
+  parseTime,
+  relativeTime,
+} from "./time-format.ts"
 
-type EventStatus =
-  | "pending"
-  | "processing"
-  | "retryable"
-  | "succeeded"
-  | "failed"
-  | "ignored"
 type RunStatus = "active" | "succeeded" | "failed" | "interrupted"
-type StepKind = "tool" | "thinking" | "compaction"
 
-const dispatchLabels: Record<DispatchTrigger, string> = {
-  initial: "First attempt",
-  revision: "New revision",
-  backoff_retry: "Retry after failure",
-  recovery_retry: "Retry after restart",
-  operator_retry: "Manual retry",
-  manual_injection: "Manual injection",
-  superseding_claim: "Superseding claim",
-  unknown: "Dispatch unknown",
-}
-
-interface DashboardEvent {
-  id: number
-  source: string
-  entityId: string
-  kind: string
-  title: string
-  url: string | null
-  occurredAt: string
-  observedAt: string
-  status: EventStatus
-  attemptCount: number
-  nextAttemptAt: string | null
-  lastError: string | null
-  avenRef: string | null
-  investigationHandle: string | null
-}
-
-interface DashboardRun {
-  id: number
-  eventId: number
-  eventTitle: string
-  source: string
-  eventKind: string
-  attempt: number
-  startedAt: string
-  endedAt: string | null
-  lastActivityAt: string
-  state: RunStatus
-  modelId: string | null
-  modelProvider: string | null
-  thinkingLevel: string | null
-  turnCount: number
-  retryCount: number
-  compactionCount: number
-  telemetryCompleteness: "complete" | "partial" | "legacy"
-  timelineTruncated: boolean
-  dispatchSequence: number
-  dispatchTrigger: DispatchTrigger
-  conclusion: TriageConclusion
-  investigationHandle: string | null
-  steps: Array<{
-    id: number
-    turnOrdinal: number | null
-    kind: StepKind
-    label: string
-    summary: string | null
-    startedAt: string
-    endedAt: string | null
-    state: RunStatus
-  }>
-}
-
-interface DashboardSnapshot {
-  generatedAt: string
-  counts: Record<EventStatus, number>
-  total: number
-  open: number
-  attention: number
-  handled: number
-  oldestOpenAt: string | null
-  sources: Array<{
-    source: string
-    lastSuccessAt: string | null
-    lastError: string | null
-    updatedAt: string
-  }>
-  runs: DashboardRun[]
-  events: DashboardEvent[]
-}
-
-type Filter = "all" | "open" | "attention" | "handled"
 type Route = { kind: "run"; id: number } | null
 
 const eventStates: Record<
@@ -122,45 +51,6 @@ function positiveSafeInteger(value: string | null): number | null {
   if (value === null || !/^[1-9]\d*$/.test(value)) return null
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) ? parsed : null
-}
-
-function parseTime(value: string | null): number {
-  return value ? Date.parse(value) : Date.now()
-}
-
-function elapsed(start: string, end: string | null = null): number {
-  return Math.max(0, parseTime(end) - parseTime(start))
-}
-
-function formatDuration(value: number): string {
-  if (value < 1000) return `${Math.round(value)}ms`
-  const seconds = Math.round(value / 100) / 10
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  return `${minutes}m ${Math.round(seconds % 60)}s`
-}
-
-function compactDuration(value: number): string {
-  const duration = Math.max(0, value)
-  if (duration < 1000) return `${Math.round(duration)}ms`
-  if (duration < 60_000) return `${Math.round(duration / 100) / 10}s`
-  return `${Math.floor(duration / 60_000)}m${Math.round((duration % 60_000) / 1000)}s`
-}
-
-function relativeTime(value: string, now: number): string {
-  const difference = parseTime(value) - now
-  const absolute = Math.abs(difference)
-  const suffix = difference > 0 ? "from now" : "ago"
-  if (absolute < 10_000) return "now"
-  if (absolute < 60_000) return `${Math.round(absolute / 1000)}s ${suffix}`
-  if (absolute < 3_600_000) return `${Math.round(absolute / 60_000)}m ${suffix}`
-  if (absolute < 86_400_000)
-    return `${Math.round(absolute / 3_600_000)}h ${suffix}`
-  return `${Math.round(absolute / 86_400_000)}d ${suffix}`
-}
-
-function clockTime(value: string): string {
-  return new Date(value).toLocaleTimeString([], { hour12: false })
 }
 
 function useClock(): number {
@@ -313,7 +203,7 @@ function ActivityList({
       {steps.map((step) => {
         const duration = elapsed(step.startedAt, step.endedAt)
         const kind = step.kind || "tool"
-        const definition = runStates[step.state]
+        const definition = runStates[step.state as RunStatus]
         const label =
           kind === "thinking"
             ? "∴ thinking"
@@ -637,38 +527,25 @@ function Loading(): JSX.Element {
 export function App(): JSX.Element {
   const now = useClock()
   const { snapshot, connection, lastSuccess } = useSnapshot()
-  const [filter, setFilter] = useState<Filter>("all")
+  const [filter, setFilter] = useState<EventFilter>("all")
   const [route, navigate] = useRoute()
-  const filtered = useMemo(() => {
-    if (!snapshot || filter === "all") return snapshot?.events ?? []
-    if (filter === "open")
-      return snapshot.events.filter((event) =>
-        ["pending", "processing", "retryable"].includes(event.status),
-      )
-    if (filter === "attention")
-      return snapshot.events.filter((event) =>
-        ["retryable", "failed"].includes(event.status),
-      )
-    return snapshot.events.filter((event) =>
-      ["succeeded", "ignored"].includes(event.status),
-    )
-  }, [filter, snapshot])
+  const filtered = useMemo(
+    () =>
+      snapshot?.events.filter((event) =>
+        matchesEventFilter(event.status, filter),
+      ) ?? [],
+    [filter, snapshot],
+  )
   const counts = useMemo(
-    () => ({
-      all: snapshot?.events.length ?? 0,
-      open:
-        snapshot?.events.filter((event) =>
-          ["pending", "processing", "retryable"].includes(event.status),
-        ).length ?? 0,
-      attention:
-        snapshot?.events.filter((event) =>
-          ["retryable", "failed"].includes(event.status),
-        ).length ?? 0,
-      handled:
-        snapshot?.events.filter((event) =>
-          ["succeeded", "ignored"].includes(event.status),
-        ).length ?? 0,
-    }),
+    () =>
+      Object.fromEntries(
+        eventFilters.map((value) => [
+          value,
+          snapshot?.events.filter((event) =>
+            matchesEventFilter(event.status, value),
+          ).length ?? 0,
+        ]),
+      ) as Record<EventFilter, number>,
     [snapshot],
   )
 
@@ -790,9 +667,7 @@ export function App(): JSX.Element {
                       role="group"
                       aria-label="Filter recent events"
                     >
-                      {(
-                        ["all", "open", "attention", "handled"] as Filter[]
-                      ).map((value) => (
+                      {eventFilters.map((value) => (
                         <button
                           type="button"
                           key={value}
