@@ -15,7 +15,7 @@ process and database:
 intake watch --dashboard
 ```
 
-The dashboard listens on `127.0.0.1:7331` by default. Its bind options follow
+The dashboard listens on `127.0.0.1:4545` by default. Its bind options follow
 the flag:
 
 ```sh
@@ -46,5 +46,5 @@ The explicit dashboard command serves the same read-only interface without
 running the monitor or owning the triage queue:
 
 ```sh
-intake dashboard --host 127.0.0.1 --port 7331
+intake dashboard --host 127.0.0.1 --port 4545
 ```

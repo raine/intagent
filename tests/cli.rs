@@ -10,14 +10,17 @@ use intake::cli::{
     DashboardOptions, USAGE, WatchOptions, parse_dashboard_options, parse_global_options,
     parse_watch_options, public_cli_error,
 };
+use intake::dashboard::{DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT};
 use intake::database::{IntakeDatabase, QueueOwnerLock};
 use tempfile::TempDir;
 
 #[test]
 fn snapshots_usage_and_direct_argument_errors() {
     assert_eq!(
-        USAGE,
-        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: 127.0.0.1)\n  --port PORT           bind port (default: 7331)\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+        USAGE.as_str(),
+        format!(
+            "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+        )
     );
     let error = parse_global_options(vec!["status".into(), "--config".into()]).unwrap_err();
     assert_eq!(error.to_string(), "--config requires a path");
@@ -28,6 +31,8 @@ fn snapshots_usage_and_direct_argument_errors() {
     );
     let error = parse_dashboard_options(&["--bogus".into()]).unwrap_err();
     assert_eq!(error.to_string(), "Unknown dashboard option: --bogus");
+    let error = parse_watch_options(&["--bogus".into()]).unwrap_err();
+    assert_eq!(error.to_string(), "Unknown watch option: --bogus");
     assert_eq!(
         public_cli_error("OAuth token=visible-secret was rejected"),
         "Authentication failed"
@@ -84,6 +89,112 @@ fn accepts_global_config_before_or_after_the_command() {
             port: Some(8080),
             allow_non_loopback: true,
         }
+    );
+}
+
+#[test]
+fn every_subcommand_help_is_focused_and_does_not_load_config_or_create_state() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("invalid.yaml");
+    fs::write(&config, "this is not: [valid YAML").unwrap();
+    let commands = [
+        ("watch", "Monitor sources and triage continuously."),
+        (
+            "check",
+            "Poll every source once and drain ready triage events.",
+        ),
+        ("status", "Show source and queue state."),
+        ("dashboard", "Serve the local monitoring dashboard."),
+        ("inject", "Queue one IntakeItem JSON fixture."),
+        ("show", "Show one intake event."),
+        ("retry", "Queue a retained event for another attempt."),
+        ("ignore", "Mark an event handled without action."),
+        ("login", "Authenticate the ChatGPT subscription provider."),
+        (
+            "init",
+            "Create private configuration directories and config.",
+        ),
+        (
+            "validate-config",
+            "Validate YAML, command boundaries, and skill links.",
+        ),
+    ];
+
+    for (index, (name, description)) in commands.into_iter().enumerate() {
+        let config = config.display().to_string();
+        let args = if index % 2 == 0 {
+            vec!["--config".into(), config, name.into(), "--help".into()]
+        } else {
+            vec![name.into(), "--help".into(), "--config".into(), config]
+        };
+        let output = intake(&root, args);
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.starts_with("Usage: intake "), "{name}: {stdout}");
+        assert!(stdout.contains(name), "{name}: {stdout}");
+        assert!(stdout.contains(description), "{name}: {stdout}");
+        assert!(!stdout.contains("\nCommands:\n"), "{name}: {stdout}");
+        assert!(output.stderr.is_empty(), "{name}");
+        assert!(!root.path().join("state").exists(), "{name} created state");
+    }
+}
+
+#[test]
+fn watch_help_has_no_runtime_side_effects() {
+    let root = tempfile::tempdir().unwrap();
+    let config = initialize_test_config(&root);
+    let marker = root.path().join("source-polled");
+    let source = root.path().join("source");
+    fs::write(
+        &source,
+        format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&source).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&source, permissions).unwrap();
+    let contents = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        contents.replace(
+            "sources: []",
+            &format!(
+                "sources:\n- name: marker\n  command: {}\n  interval_seconds: 10\n  timeout_seconds: 10\n  item_limit: 1",
+                source.display()
+            ),
+        ),
+    )
+    .unwrap();
+    fs::remove_dir_all(root.path().join("state")).unwrap();
+
+    let output = intake(
+        &root,
+        [
+            "watch".to_string(),
+            "--help".to_string(),
+            "--config".to_string(),
+            config.display().to_string(),
+        ],
+    );
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Usage: intake "));
+    assert!(!marker.exists());
+    assert!(!root.path().join("state").exists());
+}
+
+#[test]
+fn unknown_subcommand_options_still_fail() {
+    let root = tempfile::tempdir().unwrap();
+    let output = intake(&root, ["watch".to_string(), "--bogus".to_string()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "intake: Unknown watch option: --bogus\n"
     );
 }
 
