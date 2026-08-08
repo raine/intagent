@@ -68,7 +68,8 @@ for asset in app.js app.css; do
     cp -p "$web_directory/generated/$asset" "$asset_backup_directory/$asset"
   fi
 done
-npm run build --prefix "$web_directory"
+INTAKE_CARGO_MANIFEST_PATH="$repository_root/Cargo.toml" \
+  npm run build --prefix "$web_directory"
 for asset in app.js app.css; do
   if [[ -f "$asset_backup_directory/$asset" ]] && \
     cmp -s "$asset_backup_directory/$asset" "$web_directory/generated/$asset"; then

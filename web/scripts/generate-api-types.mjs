@@ -1,14 +1,20 @@
 import { execFileSync } from "node:child_process"
 import { writeFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { compile } from "json-schema-to-typescript"
 
+const scriptDirectory = dirname(fileURLToPath(import.meta.url))
+const manifestPath =
+  process.env.INTAKE_CARGO_MANIFEST_PATH ??
+  resolve(scriptDirectory, "..", "..", "Cargo.toml")
 const schemaSource = execFileSync(
   "cargo",
   [
     "run",
     "--quiet",
     "--manifest-path",
-    "../Cargo.toml",
+    manifestPath,
     "--example",
     "generate-web-schema",
   ],
