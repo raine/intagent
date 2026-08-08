@@ -382,12 +382,6 @@ export function EventRow({
     <>
       <Status status={event.status} />
       <strong>{event.title}</strong>
-      {run ? (
-        <span className="event-conclusion">
-          {run.conclusion.decision.replaceAll("_", " ")} ·{" "}
-          {run.conclusion.summary}
-        </span>
-      ) : null}
       <small>
         {event.source}/{event.kind}
       </small>

@@ -182,9 +182,7 @@ describe("React dashboard components", () => {
       "Open run inspector for Inspect the dashboard timeline",
     )
     expect(html).toContain('class="status-glyph"')
-    expect(html).toContain('class="event-conclusion"')
-    expect(html).toContain("action taken")
-    expect(html).toContain("Created a task and dispatched an investigation")
+    expect(html).not.toContain("Created a task and dispatched an investigation")
     expect(html).not.toContain("event-detail")
     expect(html).not.toContain("Open event inspector")
   })
