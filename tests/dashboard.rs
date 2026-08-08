@@ -189,6 +189,8 @@ async fn serves_inlined_assets_and_observable_content_types() {
     assert!(html.contains("RECENT EVENTS"));
     assert!(html.contains("SOURCES"));
     assert!(html.contains("localStorage.getItem(\"im-theme\")"));
+    assert!(html.contains("stored === \"system\""));
+    assert!(html.contains("dataset.themePreference"));
     assert!(html.contains("@media (width<=700px)"));
 
     let api = router

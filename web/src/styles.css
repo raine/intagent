@@ -234,13 +234,33 @@
     color: var(--red);
   }
 
-  .theme-toggle {
+  .theme-picker {
     background: var(--surface);
     border: 1px solid var(--edge);
     border-radius: 4px;
-    color: var(--ink-3);
+    display: inline-flex;
+    overflow: hidden;
+  }
+
+  .theme-option {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
     min-height: 25px;
-    padding: 3px 8px;
+    padding: 3px 7px;
+  }
+
+  .theme-option + .theme-option {
+    border-left: 1px solid var(--edge);
+  }
+
+  .theme-option[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+    color: var(--ink);
+  }
+
+  .theme-option span {
+    margin-right: 4px;
   }
 
   .connection-banner {
@@ -1255,9 +1275,18 @@
       white-space: nowrap;
     }
 
-    .theme-toggle {
+    .theme-picker {
       grid-column: 2;
       grid-row: 1 / 3;
+    }
+
+    .theme-option {
+      font-size: 11px;
+      padding-inline: 5px;
+    }
+
+    .theme-option span {
+      display: none;
     }
 
     .connection-banner {

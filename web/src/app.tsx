@@ -159,25 +159,60 @@ function Status({
   )
 }
 
-function ThemeToggle(): JSX.Element {
-  const [theme, setTheme] = useState<"light" | "dark">(
-    document.documentElement.dataset.theme === "light" ? "light" : "dark",
-  )
-  const toggle = (): void => {
-    const next = theme === "dark" ? "light" : "dark"
+type ThemePreference = "system" | "light" | "dark"
+
+const themeOptions: Array<{
+  value: ThemePreference
+  icon: string
+  label: string
+}> = [
+  { value: "system", icon: "◐", label: "System" },
+  { value: "light", icon: "☀", label: "Light" },
+  { value: "dark", icon: "☾", label: "Dark" },
+]
+
+export function ThemeToggle(): JSX.Element {
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    const value = document.documentElement.dataset.themePreference
+    return value === "light" || value === "dark" || value === "system"
+      ? value
+      : "system"
+  })
+
+  useEffect(() => {
+    const query = matchMedia("(prefers-color-scheme: light)")
+    const apply = (): void => {
+      document.documentElement.dataset.themePreference = theme
+      document.documentElement.dataset.theme =
+        theme === "system" ? (query.matches ? "light" : "dark") : theme
+    }
+    apply()
+    if (theme !== "system") return
+    query.addEventListener("change", apply)
+    return () => query.removeEventListener("change", apply)
+  }, [theme])
+
+  const select = (next: ThemePreference): void => {
     setTheme(next)
-    document.documentElement.dataset.theme = next
     localStorage.setItem("im-theme", next)
   }
+
   return (
-    <button
-      className="theme-toggle"
-      type="button"
-      onClick={toggle}
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-    >
-      {theme === "dark" ? "☾ dark" : "☀ light"}
-    </button>
+    <div className="theme-picker" role="group" aria-label="Color theme">
+      {themeOptions.map((option) => (
+        <button
+          className="theme-option"
+          type="button"
+          aria-pressed={theme === option.value}
+          aria-label={`${option.label} theme`}
+          onClick={() => select(option.value)}
+          key={option.value}
+        >
+          <span aria-hidden="true">{option.icon}</span>
+          {option.label.toLowerCase()}
+        </button>
+      ))}
+    </div>
   )
 }
 

@@ -1,7 +1,12 @@
 import { describe, expect, test } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { EventStatus } from "../src/api-types.ts"
-import { ActiveRunCard, EventRow, SourceList } from "../src/app.tsx"
+import {
+  ActiveRunCard,
+  EventRow,
+  SourceList,
+  ThemeToggle,
+} from "../src/app.tsx"
 import { matchesEventFilter, type EventFilter } from "../src/event-filters.ts"
 
 const eventStatuses: EventStatus[] = [
@@ -80,6 +85,17 @@ const event: Parameters<typeof EventRow>[0]["event"] = {
 }
 
 describe("React dashboard components", () => {
+  test("offers system, light, and dark theme preferences", () => {
+    document.documentElement.dataset.themePreference = "system"
+    const html = renderToStaticMarkup(<ThemeToggle />)
+
+    expect(html).toContain('role="group"')
+    expect(html).toContain('aria-label="Color theme"')
+    expect(html).toContain('aria-pressed="true" aria-label="System theme"')
+    expect(html).toContain('aria-pressed="false" aria-label="Light theme"')
+    expect(html).toContain('aria-pressed="false" aria-label="Dark theme"')
+  })
+
   test.each<{
     filter: EventFilter
     matching: EventStatus[]

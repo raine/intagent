@@ -405,10 +405,14 @@ fn dashboard_page() -> String {
   <script>
     try {{
       const stored = localStorage.getItem("im-theme")
-      document.documentElement.dataset.theme = stored === "light" || stored === "dark"
-        ? stored
-        : matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+      const preference = stored === "light" || stored === "dark" || stored === "system"
+        ? stored : "system"
+      document.documentElement.dataset.themePreference = preference
+      document.documentElement.dataset.theme = preference === "system"
+        ? matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+        : preference
     }} catch {{
+      document.documentElement.dataset.themePreference = "system"
       document.documentElement.dataset.theme = "dark"
     }}
   </script>
