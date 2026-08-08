@@ -227,22 +227,29 @@ fn list_events(connection: &Connection, limit: usize) -> Result<Vec<EventRecord>
 }
 
 fn event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<EventRecord, DatabaseError>> {
-    let id = row.get(0)?;
-    let source = row.get(1)?;
-    let entity_id = row.get(2)?;
-    let revision_id = row.get(3)?;
-    let kind = row.get(4)?;
-    let title = row.get(5)?;
-    let payload = row.get(6)?;
-    let operational_metadata = row.get(7)?;
-    let occurred_at = row.get(8)?;
-    let observed_at = row.get(9)?;
-    let status = EventStatus::parse(row.get(10)?);
-    let attempt_count = row.get(11)?;
-    let next_attempt_at = row.get(12)?;
-    let last_error = row.get(13)?;
-    let aven_ref = row.get(14)?;
-    let investigation_handle = row.get(15)?;
+    event_from_row_at(row, 0)
+}
+
+fn event_from_row_at(
+    row: &rusqlite::Row<'_>,
+    offset: usize,
+) -> rusqlite::Result<Result<EventRecord, DatabaseError>> {
+    let id = row.get(offset)?;
+    let source = row.get(offset + 1)?;
+    let entity_id = row.get(offset + 2)?;
+    let revision_id = row.get(offset + 3)?;
+    let kind = row.get(offset + 4)?;
+    let title = row.get(offset + 5)?;
+    let payload = row.get(offset + 6)?;
+    let operational_metadata = row.get(offset + 7)?;
+    let occurred_at = row.get(offset + 8)?;
+    let observed_at = row.get(offset + 9)?;
+    let status = EventStatus::parse(row.get(offset + 10)?);
+    let attempt_count = row.get(offset + 11)?;
+    let next_attempt_at = row.get(offset + 12)?;
+    let last_error = row.get(offset + 13)?;
+    let aven_ref = row.get(offset + 14)?;
+    let investigation_handle = row.get(offset + 15)?;
     Ok(status.map(|status| EventRecord {
         id,
         source,
@@ -401,17 +408,33 @@ fn list_triage_run_summaries(
            run.telemetry_version, run.telemetry_completeness, run.dispatch_sequence,
            run.dispatch_trigger, run.dispatch_prior_run_id, run.dispatch_scheduled_for,
            run.conclusion_json, run.turn_count, run.retry_count, run.compaction_count,
-           (SELECT COUNT(*) FROM triage_run_steps step WHERE step.run_id = run.id)
-         FROM triage_runs run ORDER BY run.started_at DESC, run.id DESC LIMIT ?1",
+           (SELECT COUNT(*) FROM triage_run_steps step WHERE step.run_id = run.id),
+           ev.id, COALESCE(ev.source, en.source), en.external_id, ev.revision_id,
+           en.kind, en.title, ev.payload, en.operational_metadata, ev.occurred_at,
+           ev.observed_at, ev.status, ev.attempt_count, ev.next_attempt_at,
+           ev.last_error, en.aven_ref, en.investigation_handle
+         FROM triage_runs run
+         JOIN events ev ON ev.id = run.event_id
+         JOIN entities en ON en.id = ev.entity_id
+         ORDER BY run.started_at DESC, run.id DESC LIMIT ?1",
     )?;
-    Ok(statement
-        .query_map([saturating_i64(limit)], |row| {
-            Ok(TriageRunSummary {
-                run: triage_run_from_row(row)?,
-                step_count: usize::try_from(row.get::<_, i64>(24)?).unwrap_or(usize::MAX),
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?)
+    let rows = statement.query_map([saturating_i64(limit)], |row| {
+        Ok((
+            triage_run_from_row(row)?,
+            row.get::<_, i64>(24)?,
+            event_from_row_at(row, 25)?,
+        ))
+    })?;
+    let mut summaries = Vec::new();
+    for row in rows {
+        let (run, step_count, event) = row?;
+        summaries.push(TriageRunSummary {
+            run,
+            event: event?,
+            step_count: usize::try_from(step_count).unwrap_or(usize::MAX),
+        });
+    }
+    Ok(summaries)
 }
 
 fn recent_triage_run_steps(

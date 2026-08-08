@@ -5,7 +5,8 @@ use intake::dashboard::{
     DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT, DashboardBindError, DashboardRunLimits,
     NON_LOOPBACK_WARNING, dashboard_bind, dashboard_router, dashboard_snapshot,
 };
-use intake::database::IntakeDatabase;
+use intake::database::{IntakeDatabase, RunId};
+use intake::run_detail::{RunDetailOptions, run_detail};
 use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -28,6 +29,47 @@ async fn matches_phase_zero_snapshot_fixture() {
     let serialized = actual.to_string();
     assert!(!serialized.contains("retained retry payload"));
     assert!(!serialized.contains("token=private"));
+}
+
+#[tokio::test]
+async fn dashboard_and_run_detail_share_presentation_facts() {
+    let (_directory, database) = fixture_database().await;
+    let readers = database.readers();
+    let snapshot = dashboard_snapshot(&readers, Utc::now()).await.unwrap();
+
+    for summary in &snapshot.runs {
+        let detail = run_detail(&readers, RunId(summary.id), RunDetailOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(summary.state, detail.run.state);
+        assert_eq!(summary.ended_at, detail.run.ended_at);
+        assert_eq!(summary.dispatch_sequence, detail.run.dispatch.sequence);
+        assert_eq!(summary.dispatch_trigger, detail.run.dispatch.trigger);
+        assert_eq!(summary.conclusion, detail.run.conclusion);
+        assert_eq!(summary.source, detail.event.source);
+        assert_eq!(summary.event_kind, detail.event.kind);
+        assert_eq!(summary.event_title, detail.event.title);
+
+        let event = snapshot
+            .events
+            .iter()
+            .find(|event| event.id == summary.event_id)
+            .unwrap();
+        assert_eq!(event.source, detail.event.source);
+        assert_eq!(event.entity_id, detail.event.entity_id);
+        assert_eq!(event.kind, detail.event.kind);
+        assert_eq!(event.title, detail.event.title);
+        assert_eq!(event.url, detail.event.url);
+        assert_eq!(event.occurred_at, detail.event.occurred_at);
+        assert_eq!(event.observed_at, detail.event.observed_at);
+        assert_eq!(event.status, detail.event.status);
+        assert_eq!(event.aven_ref, detail.event.aven_ref);
+        assert_eq!(
+            event.investigation_handle,
+            detail.event.investigation_handle
+        );
+    }
 }
 
 #[tokio::test]

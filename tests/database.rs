@@ -629,6 +629,38 @@ async fn open_typed_span_makes_run_partial_and_interrupted() {
 }
 
 #[tokio::test]
+async fn batch_run_summaries_include_associated_events() {
+    let temporary = TempDir::new().expect("temporary directory");
+    let path = temporary.path().join("run-summaries.sqlite");
+    let raw = Connection::open(&path).expect("fixture database");
+    raw.execute_batch(SCHEMA_FIXTURES[7]).expect("load fixture");
+    drop(raw);
+
+    let database = IntakeDatabase::open(&path).await.expect("database");
+    let summaries = database
+        .readers()
+        .list_triage_run_summaries(2)
+        .await
+        .expect("run summaries");
+
+    assert_eq!(summaries.len(), 2);
+    assert_eq!(summaries[0].run.id, 3);
+    assert_eq!(summaries[0].event.id, summaries[0].run.event_id);
+    assert_eq!(
+        summaries[0].event.title,
+        "Investigate delayed notifications"
+    );
+    assert_eq!(summaries[0].step_count, 0);
+    assert_eq!(summaries[1].run.id, 2);
+    assert_eq!(summaries[1].event.id, summaries[1].run.event_id);
+    assert_eq!(
+        summaries[1].event.title,
+        "Investigate delayed notifications"
+    );
+    assert_eq!(summaries[1].step_count, 1);
+}
+
+#[tokio::test]
 async fn every_phase_zero_schema_fixture_migrates_with_integrity() {
     for (version, fixture) in SCHEMA_FIXTURES.iter().enumerate() {
         let temporary = TempDir::new().expect("temporary directory");

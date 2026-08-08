@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Serialize, Serializer};
-use url::Url;
 
 use crate::database::{
-    ConclusionSource, DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus,
-    RunId, TriageCompactionRecord, TriageConclusion, TriageDecision, TriageEffectRecord,
+    DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId,
+    TriageCompactionRecord, TriageConclusion, TriageDecision, TriageEffectRecord,
     TriageRetryRecord, TriageRunPromptRecord, TriageRunRecord, TriageStepRecord, TriageTurnRecord,
 };
+pub use crate::presentation::safe_event_url;
+use crate::presentation::{EventPresentation, PresentedRun, present_event, present_run};
 
 #[derive(Clone, Debug)]
 pub struct RunDetailOptions {
@@ -326,17 +327,18 @@ pub async fn run_detail(
     let Some(event) = database.event(stored_run.event_id).await? else {
         return Ok(None);
     };
-    let run = display_run(stored_run, &event);
     let steps = database.triage_run_steps(run_id).await?;
     let turns = database.triage_run_turns(run_id).await?;
     let retries = database.triage_run_retries(run_id).await?;
     let compactions = database.triage_run_compactions(run_id).await?;
     let siblings = database.triage_runs_for_event(event.id).await?;
-    let dispatch = dispatch_projection(&run, &event, &siblings, options.max_attempts);
+    let presented = present_run(stored_run, &event);
+    let run = &presented.run;
+    let dispatch = dispatch_projection(&presented, &event, &siblings, options.max_attempts);
     let effects = database.triage_run_effects(run_id).await?;
     let prompts = database.triage_run_prompts(run_id).await?;
     let metrics = run_metrics(
-        &run,
+        run,
         &event,
         &steps,
         &turns,
@@ -344,7 +346,7 @@ pub async fn run_detail(
         &compactions,
         options.now,
     );
-    let all_entries = timeline_entries(&run, &steps, &turns, &retries, &compactions);
+    let all_entries = timeline_entries(run, &steps, &turns, &retries, &compactions);
     let offset = options.offset.min(9_007_199_254_740_991_usize);
     let limit = options.limit.clamp(1, 500);
     let total = all_entries.len();
@@ -368,7 +370,7 @@ pub async fn run_detail(
             termination_reason: run.termination_reason.clone(),
             failure_category: run.failure_category.clone(),
             dispatch,
-            conclusion: displayed_conclusion(&run),
+            conclusion: presented.conclusion.clone(),
             model: ModelProjection {
                 id: run.model_id.clone(),
                 provider: run.model_provider.clone(),
@@ -384,21 +386,18 @@ pub async fn run_detail(
         event: event_projection(&event),
         sibling_attempts: siblings
             .into_iter()
-            .map(|sibling| display_run(sibling, &event))
-            .enumerate()
-            .map(|(index, sibling)| SiblingAttempt {
-                id: sibling.id,
-                sequence: sibling
-                    .dispatch_sequence
-                    .unwrap_or_else(|| u32::try_from(index + 1).unwrap_or(u32::MAX)),
-                attempt: sibling.attempt,
-                started_at: sibling.started_at,
-                ended_at: sibling.ended_at,
-                state: sibling.outcome.unwrap_or_else(|| "active".into()),
-                failure_category: sibling.failure_category,
-                termination_reason: sibling.termination_reason,
-                decision: sibling.conclusion.map(|conclusion| conclusion.decision),
-                telemetry_completeness: sibling.telemetry_completeness,
+            .map(|sibling| present_run(sibling, &event))
+            .map(|sibling| SiblingAttempt {
+                id: sibling.run.id,
+                sequence: sibling.dispatch_sequence,
+                attempt: sibling.run.attempt,
+                started_at: sibling.run.started_at,
+                ended_at: sibling.run.ended_at,
+                state: sibling.run.outcome.unwrap_or_else(|| "active".into()),
+                failure_category: sibling.run.failure_category,
+                termination_reason: sibling.run.termination_reason,
+                decision: sibling.run.conclusion.map(|conclusion| conclusion.decision),
+                telemetry_completeness: sibling.run.telemetry_completeness,
             })
             .collect(),
         metrics,
@@ -809,77 +808,28 @@ fn timeline_entries(
     entries
 }
 
-pub(crate) fn displayed_conclusion(run: &TriageRunRecord) -> TriageConclusion {
-    if let Some(conclusion) = &run.conclusion {
-        return conclusion.clone();
-    }
-    let (decision, summary, outcome, follow_up, source) = match run.outcome.as_deref() {
-        None => (
-            TriageDecision::NeedsFollowUp,
-            "Triage is in progress; the final decision is pending.",
-            "The attempt has not reached a terminal outcome.",
-            None,
-            ConclusionSource::Derived,
-        ),
-        Some("failed") => (
-            TriageDecision::Failed,
-            "A model-authored conclusion is unavailable for this run.",
-            "The recorded attempt failed.",
-            Some("Review the failure category and timeline for available evidence."),
-            ConclusionSource::Unavailable,
-        ),
-        Some("interrupted") => (
-            TriageDecision::Canceled,
-            "A model-authored conclusion is unavailable for this run.",
-            "The recorded attempt was interrupted.",
-            Some("Review the timeline before deciding whether to retry."),
-            ConclusionSource::Unavailable,
-        ),
-        _ => (
-            TriageDecision::NeedsFollowUp,
-            "A model-authored conclusion is unavailable for this run.",
-            "The recorded attempt completed, but its decision was not captured.",
-            Some("Review the recorded effects and timeline for available evidence."),
-            ConclusionSource::Unavailable,
-        ),
-    };
-    TriageConclusion {
-        decision,
-        summary: summary.into(),
-        evidence: Vec::new(),
-        actions: Vec::new(),
-        outcome: outcome.into(),
-        follow_up: follow_up.map(str::to_string),
-        source,
-    }
-}
-
 fn dispatch_projection(
-    run: &TriageRunRecord,
+    presented: &PresentedRun,
     event: &EventRecord,
     siblings: &[TriageRunRecord],
     max_attempts: Option<u32>,
 ) -> DispatchProjection {
+    let run = &presented.run;
     let preceding = siblings
         .iter()
         .filter(|candidate| candidate.id < run.id)
         .max_by_key(|candidate| candidate.id);
-    let (trigger, source) = match run.dispatch_trigger {
-        Some(trigger) => (trigger, DispatchSource::Recorded),
-        None if event.source == "manual-injection" => {
-            (DispatchTrigger::ManualInjection, DispatchSource::Derived)
-        }
-        None if preceding.is_some() || run.attempt > 1 => {
-            (DispatchTrigger::BackoffRetry, DispatchSource::Derived)
-        }
-        None => (DispatchTrigger::Initial, DispatchSource::Derived),
+    let source = if presented.dispatch_recorded {
+        DispatchSource::Recorded
+    } else {
+        DispatchSource::Derived
     };
     let prior = run
         .dispatch_prior_run_id
         .and_then(|id| siblings.iter().find(|candidate| candidate.id == id))
         .or_else(|| {
             matches!(
-                trigger,
+                presented.dispatch_trigger,
                 DispatchTrigger::BackoffRetry
                     | DispatchTrigger::RecoveryRetry
                     | DispatchTrigger::OperatorRetry
@@ -888,45 +838,31 @@ fn dispatch_projection(
             .then_some(preceding)
             .flatten()
         });
-    let sequence = run.dispatch_sequence.unwrap_or_else(|| {
-        u32::try_from(
-            siblings
-                .iter()
-                .filter(|candidate| candidate.id <= run.id)
-                .count(),
-        )
-        .unwrap_or(u32::MAX)
-    });
     let scheduled_for = run.dispatch_scheduled_for.clone();
     let claim_floor = scheduled_for
         .as_deref()
         .filter(|scheduled| millis(scheduled) > millis(&event.observed_at))
         .unwrap_or(&event.observed_at);
     DispatchProjection {
-        sequence,
-        trigger,
+        sequence: presented.dispatch_sequence,
+        trigger: presented.dispatch_trigger,
         source,
         attempt: run.attempt,
         max_attempts,
         final_attempt: max_attempts.is_some_and(|limit| run.attempt >= limit),
         scheduled_for: scheduled_for.clone(),
         claimed_at: run.started_at.clone(),
-        prior_attempt: prior.map(|prior| DispatchPriorAttempt {
-            run_id: prior.id,
-            sequence: prior.dispatch_sequence.unwrap_or_else(|| {
-                u32::try_from(
-                    siblings
-                        .iter()
-                        .filter(|candidate| candidate.id <= prior.id)
-                        .count(),
-                )
-                .unwrap_or(u32::MAX)
-            }),
-            state: prior.outcome.clone().unwrap_or_else(|| "active".into()),
-            failure_category: prior.failure_category.clone(),
-            termination_reason: prior.termination_reason.clone(),
-            decision: prior.conclusion.as_ref().map(|value| value.decision),
-            ended_at: prior.ended_at.clone(),
+        prior_attempt: prior.map(|prior| {
+            let prior = present_run(prior.clone(), event);
+            DispatchPriorAttempt {
+                run_id: prior.run.id,
+                sequence: prior.dispatch_sequence,
+                state: prior.run.outcome.unwrap_or_else(|| "active".into()),
+                failure_category: prior.run.failure_category,
+                termination_reason: prior.run.termination_reason,
+                decision: prior.run.conclusion.as_ref().map(|value| value.decision),
+                ended_at: prior.run.ended_at,
+            }
         }),
         latency: DispatchLatency {
             source_lag_ms: elapsed(&event.occurred_at, &event.observed_at),
@@ -938,41 +874,24 @@ fn dispatch_projection(
     }
 }
 
-fn display_run(mut run: TriageRunRecord, event: &EventRecord) -> TriageRunRecord {
-    if run.outcome.is_none() && event.status != EventStatus::Processing {
-        run.ended_at = run.ended_at.or_else(|| Some(run.last_activity_at.clone()));
-        run.outcome = Some("interrupted".into());
-    }
-    run
-}
-
-pub fn safe_event_url(event: &EventRecord) -> Option<String> {
-    let metadata: serde_json::Value = serde_json::from_str(&event.operational_metadata).ok()?;
-    let mut url = Url::parse(metadata.get("url")?.as_str()?).ok()?;
-    if !matches!(url.scheme(), "http" | "https")
-        || !url.username().is_empty()
-        || url.password().is_some()
-    {
-        return None;
-    }
-    url.set_query(None);
-    url.set_fragment(None);
-    Some(url.into())
-}
-
 fn event_projection(event: &EventRecord) -> EventProjection {
+    let event = present_event(event);
+    event_projection_from_presentation(event)
+}
+
+fn event_projection_from_presentation(event: EventPresentation) -> EventProjection {
     EventProjection {
         id: event.id,
-        source: event.source.clone(),
-        entity_id: event.entity_id.clone(),
-        kind: event.kind.clone(),
-        title: event.title.clone(),
-        url: safe_event_url(event),
-        occurred_at: event.occurred_at.clone(),
-        observed_at: event.observed_at.clone(),
+        source: event.source,
+        entity_id: event.entity_id,
+        kind: event.kind,
+        title: event.title,
+        url: event.url,
+        occurred_at: event.occurred_at,
+        observed_at: event.observed_at,
         status: event.status,
-        aven_ref: event.aven_ref.clone(),
-        investigation_handle: event.investigation_handle.clone(),
+        aven_ref: event.aven_ref,
+        investigation_handle: event.investigation_handle,
     }
 }
 
