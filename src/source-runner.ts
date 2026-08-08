@@ -78,12 +78,17 @@ export async function pollSource(
   })()
   let timedOut = false
   let forceKill: ReturnType<typeof setTimeout> | undefined
+  const kill = (signal: NodeJS.Signals) => {
+    if (killProcessGroup(processHandle.pid, signal)) return
+    try {
+      processHandle.kill(signal)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+    }
+  }
   const terminate = () => {
-    killProcessGroup(processHandle.pid, "SIGTERM")
-    forceKill ??= setTimeout(
-      () => killProcessGroup(processHandle.pid, "SIGKILL"),
-      1_000,
-    )
+    kill("SIGTERM")
+    forceKill ??= setTimeout(() => kill("SIGKILL"), 1_000)
   }
   const timeout = setTimeout(() => {
     timedOut = true
@@ -134,16 +139,20 @@ export async function pollSource(
     clearTimeout(timeout)
     if (forceKill) {
       clearTimeout(forceKill)
-      killProcessGroup(processHandle.pid, "SIGKILL")
+      kill("SIGKILL")
     }
   }
 }
 
-function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
+function killProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
   try {
     process.kill(-pid, signal)
+    return true
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ESRCH") return true
+    if (code === "EPERM") return false
+    throw error
   }
 }
 

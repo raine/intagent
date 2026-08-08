@@ -325,11 +325,14 @@ async fn index() -> Response {
 async fn snapshot(State(state): State<DashboardState>) -> Response {
     match dashboard_snapshot(&state.database, Utc::now()).await {
         Ok(snapshot) => json_response(StatusCode::OK, &snapshot),
-        Err(_) => response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "text/plain;charset=utf-8",
-            "Operation failed",
-        ),
+        Err(error) => {
+            eprintln!("dashboard snapshot failed: {error}");
+            response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "text/plain;charset=utf-8",
+                "Operation failed",
+            )
+        }
     }
 }
 

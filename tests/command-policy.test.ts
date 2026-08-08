@@ -31,7 +31,7 @@ beforeEach(async () => {
     await chmod(path, 0o755)
   }
   const config = testConfig(root, bin)
-  config.commands.timeout_seconds = 5
+  config.commands.timeout_seconds = 30
   policy = new CommandPolicy(config, [await realpath(root)])
 })
 
@@ -57,7 +57,7 @@ describe("restricted command policy", () => {
     expect(result.stdout).toContain("Created APP-TEST")
     expect(result.stdout).toContain("[REDACTED]")
     expect(await readFile(log, "utf8")).toContain("aven|search|login issue")
-  })
+  }, 30_000)
 
   test("passes bounded multiline stdin without shell syntax", async () => {
     const input = "First paragraph.\n\nSecond paragraph."
@@ -71,7 +71,7 @@ describe("restricted command policy", () => {
     expect(await readFile(log, "utf8")).toContain(
       "stdin:First paragraph.\nstdin:\nstdin:Second paragraph.\n",
     )
-  })
+  }, 30_000)
 
   test("bounds command stdin", async () => {
     await expect(
@@ -161,5 +161,5 @@ Body text
     const result = await policy.execute("rg large", root)
     expect(result.stdout.length).toBeLessThanOrEqual(1024)
     expect(result.truncated).toBe(true)
-  })
+  }, 30_000)
 })

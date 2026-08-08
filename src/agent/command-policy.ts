@@ -129,12 +129,17 @@ export class CommandPolicy {
         stdout: "pipe",
         stderr: "pipe",
       })
+      const kill = (signal: NodeJS.Signals) => {
+        if (killProcessGroup(child.pid, signal)) return
+        try {
+          child.kill(signal)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+        }
+      }
       const terminate = () => {
-        killProcessGroup(child.pid, "SIGTERM")
-        forceKill ??= setTimeout(
-          () => killProcessGroup(child.pid, "SIGKILL"),
-          1_000,
-        )
+        kill("SIGTERM")
+        forceKill ??= setTimeout(() => kill("SIGKILL"), 1_000)
       }
       const cancel = () => terminate()
       signal?.addEventListener("abort", cancel, { once: true })
@@ -159,7 +164,7 @@ export class CommandPolicy {
         clearTimeout(timeout)
         if (forceKill) {
           clearTimeout(forceKill)
-          killProcessGroup(child.pid, "SIGKILL")
+          kill("SIGKILL")
         }
         signal?.removeEventListener("abort", cancel)
       }
@@ -293,11 +298,15 @@ function isFullyQuoted(word: WordNode, source: string): boolean {
   )
 }
 
-function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
+function killProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
   try {
     process.kill(-pid, signal)
+    return true
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ESRCH") return true
+    if (code === "EPERM") return false
+    throw error
   }
 }
 
