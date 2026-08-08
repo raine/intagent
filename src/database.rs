@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
@@ -56,6 +59,78 @@ pub enum DatabaseError {
     Io(#[from] std::io::Error),
     #[error("SQLite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("another intake watch or check owns the queue for {database}")]
+    QueueOwnerBusy { database: PathBuf },
+}
+
+#[derive(Debug)]
+pub struct QueueOwnerLock {
+    file: File,
+    database: PathBuf,
+}
+
+impl QueueOwnerLock {
+    pub fn acquire(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
+        let database = canonical_database_identity(path.as_ref())?;
+        let file_name = database
+            .file_name()
+            .ok_or_else(|| DatabaseError::InvalidValue("database path has no file name".into()))?;
+        let mut lock_name = file_name.to_os_string();
+        lock_name.push(".queue-owner.lock");
+        let lock_path = database.with_file_name(lock_name);
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .custom_flags(libc::O_NOFOLLOW)
+            .mode(0o600)
+            .open(lock_path)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if locked != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::EWOULDBLOCK)
+                || error.raw_os_error() == Some(libc::EAGAIN)
+            {
+                return Err(DatabaseError::QueueOwnerBusy { database });
+            }
+            return Err(DatabaseError::Io(error));
+        }
+        Ok(Self { file, database })
+    }
+
+    pub fn database(&self) -> &Path {
+        &self.database
+    }
+}
+
+impl Drop for QueueOwnerLock {
+    fn drop(&mut self) {
+        unsafe {
+            libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+fn canonical_database_identity(path: &Path) -> Result<PathBuf, DatabaseError> {
+    if path == Path::new(":memory:") {
+        return Err(DatabaseError::InvalidValue(
+            "queue ownership requires a file-backed database".into(),
+        ));
+    }
+    if path.exists() {
+        return Ok(std::fs::canonicalize(path)?);
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| DatabaseError::InvalidValue("database path has no parent".into()))?;
+    std::fs::create_dir_all(parent)?;
+    let parent = std::fs::canonicalize(parent)?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| DatabaseError::InvalidValue("database path has no file name".into()))?;
+    Ok(parent.join(name))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

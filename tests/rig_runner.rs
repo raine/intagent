@@ -1138,17 +1138,22 @@ fn complete_http_request(bytes: &[u8]) -> bool {
 
 async fn wait_for_file(path: &Path) {
     tokio::time::timeout(Duration::from_secs(2), async {
-        while !path.exists() {
+        while fs::read_to_string(path)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+            .is_none()
+        {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("fixture process should create PID file");
+    .expect("fixture process should write PID file");
 }
 
 fn read_pid(path: &Path) -> i32 {
     fs::read_to_string(path)
         .expect("read PID file")
+        .trim()
         .parse()
         .expect("parse PID")
 }
