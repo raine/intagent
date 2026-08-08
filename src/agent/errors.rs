@@ -2,6 +2,7 @@ use rig_agent::completion::PromptError;
 use rig_core::completion::CompletionError;
 
 use crate::database::ErrorCategory;
+use crate::errors::classify_message;
 
 use super::context::ProjectionError;
 use super::driver::{EngineError, is_context_limit};
@@ -53,12 +54,10 @@ impl TriageError {
             Self::ContextLimit(_) => ErrorCategory::ContextLimit,
             Self::Completion(error) => completion_category(error),
             Self::Prompt(PromptError::MaxTurnsError { .. }) => ErrorCategory::TurnLimit,
-            Self::Other(error) if error.to_string().to_ascii_lowercase().contains("auth") => {
-                ErrorCategory::Authentication
-            }
-            Self::Other(error) if error.to_string().to_ascii_lowercase().contains("not found") => {
-                ErrorCategory::NotFound
-            }
+            Self::Other(error) => match classify_message(&error.to_string()) {
+                category @ (ErrorCategory::Authentication | ErrorCategory::NotFound) => category,
+                _ => ErrorCategory::Unknown,
+            },
             _ => ErrorCategory::Unknown,
         }
     }
@@ -89,30 +88,7 @@ pub(crate) fn completion_category(error: &CompletionError) -> ErrorCategory {
         Some(408 | 504) => ErrorCategory::Timeout,
         Some(429) => ErrorCategory::RateLimit,
         _ if is_context_limit(error) => ErrorCategory::ContextLimit,
-        _ => {
-            let message = error.to_string().to_ascii_lowercase();
-            if message.contains("auth")
-                || message.contains("credential")
-                || message.contains("sign-in")
-                || message.contains("sign in")
-            {
-                ErrorCategory::Authentication
-            } else if message.contains("rate limit") || message.contains("429") {
-                ErrorCategory::RateLimit
-            } else if message.contains("timeout") || message.contains("timed out") {
-                ErrorCategory::Timeout
-            } else if message.contains("connection") || message.contains("socket") {
-                ErrorCategory::Connection
-            } else if message.contains("not found") || message.contains("404") {
-                ErrorCategory::NotFound
-            } else if message.contains("model")
-                && (message.contains("unavailable") || message.contains("does not exist"))
-            {
-                ErrorCategory::ModelUnavailable
-            } else {
-                ErrorCategory::Unknown
-            }
-        }
+        _ => classify_message(&error.to_string()),
     }
 }
 

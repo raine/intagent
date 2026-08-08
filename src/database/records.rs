@@ -6,6 +6,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::errors::ErrorCategory;
+
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("database actor is unavailable")]
@@ -179,41 +181,6 @@ impl SpanOutcome {
             Self::Failed => "failed",
             Self::Aborted => "aborted",
             Self::Interrupted => "interrupted",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ErrorCategory {
-    Authentication,
-    RateLimit,
-    Timeout,
-    Connection,
-    NotFound,
-    ModelUnavailable,
-    ContextLimit,
-    TurnLimit,
-    Aborted,
-    Interrupted,
-    ToolFailure,
-    Unknown,
-}
-
-impl ErrorCategory {
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Authentication => "authentication",
-            Self::RateLimit => "rate_limit",
-            Self::Timeout => "timeout",
-            Self::Connection => "connection",
-            Self::NotFound => "not_found",
-            Self::ModelUnavailable => "model_unavailable",
-            Self::ContextLimit => "context_limit",
-            Self::TurnLimit => "turn_limit",
-            Self::Aborted => "aborted",
-            Self::Interrupted => "interrupted",
-            Self::ToolFailure => "tool_failure",
-            Self::Unknown => "unknown",
         }
     }
 }

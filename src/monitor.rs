@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::rig_runner::{TriageError, TriageRunner};
 use crate::config::{IntakeConfig, SourceConfig};
 use crate::database::{ErrorCategory, EventRecord, IntakeDatabase};
+use crate::errors::{classify_message, public_error};
 use crate::source_runner::{SourceRunnerError, poll_source};
 
 const TRIAGE_RECOVERY_GRACE_SECONDS: i64 = 60;
@@ -248,7 +249,7 @@ where
                 ),
                 Ok(_) => {}
                 Err(error) => {
-                    let message = crate::dashboard::public_error(Some(&error.to_string()))
+                    let message = public_error(Some(&error.to_string()))
                         .unwrap_or_else(|| "Operation failed".into());
                     tracing::error!(
                         target: "intake::terminal::error",
@@ -388,17 +389,12 @@ fn source_failure_category(error: &SourceRunnerError) -> &'static str {
 }
 
 fn safe_message_category(message: &str) -> &'static str {
-    let message = message.to_ascii_lowercase();
-    if message.contains("auth") || message.contains("credential") || message.contains("token") {
-        "authentication"
-    } else if message.contains("rate limit") || message.contains("429") {
-        "rate_limit"
-    } else if message.contains("timeout") || message.contains("timed out") {
-        "timeout"
-    } else if message.contains("connection") || message.contains("socket") {
-        "connection"
-    } else {
-        "unknown"
+    match classify_message(message) {
+        category @ (ErrorCategory::Authentication
+        | ErrorCategory::RateLimit
+        | ErrorCategory::Timeout
+        | ErrorCategory::Connection) => category.as_str(),
+        _ => ErrorCategory::Unknown.as_str(),
     }
 }
 
@@ -406,38 +402,16 @@ fn duration_millis(duration: Duration) -> u64 {
     duration.as_millis().try_into().unwrap_or(u64::MAX)
 }
 
-fn category_name(category: ErrorCategory) -> &'static str {
-    match category {
-        ErrorCategory::Authentication => "authentication",
-        ErrorCategory::RateLimit => "rate_limit",
-        ErrorCategory::Timeout => "timeout",
-        ErrorCategory::Connection => "connection",
-        ErrorCategory::NotFound => "not_found",
-        ErrorCategory::ModelUnavailable => "model_unavailable",
-        ErrorCategory::ContextLimit => "context_limit",
-        ErrorCategory::TurnLimit => "turn_limit",
-        ErrorCategory::Aborted => "aborted",
-        ErrorCategory::Interrupted => "interrupted",
-        ErrorCategory::ToolFailure => "tool_failure",
-        ErrorCategory::Unknown => "unknown",
-    }
-}
-
 pub fn safe_error_category(error: &TriageError) -> &'static str {
     let category = error.category();
     if category != ErrorCategory::Unknown {
-        return category_name(category);
+        return category.as_str();
     }
-    let message = error.to_string().to_ascii_lowercase();
-    if message.contains("auth") || message.contains("credential") {
-        "authentication"
-    } else if message.contains("rate limit") || message.contains("429") {
-        "rate_limit"
-    } else if message.contains("timeout") || message.contains("timed out") {
-        "timeout"
-    } else if message.contains("connection") || message.contains("socket") {
-        "connection"
-    } else {
-        "unknown"
+    match classify_message(&error.to_string()) {
+        category @ (ErrorCategory::Authentication
+        | ErrorCategory::RateLimit
+        | ErrorCategory::Timeout
+        | ErrorCategory::Connection) => category.as_str(),
+        _ => ErrorCategory::Unknown.as_str(),
     }
 }

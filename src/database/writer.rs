@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::errors::ErrorCategory;
 use crate::protocol::{IntakeItem, IntakeItemKind};
 
 use super::DATABASE_QUEUE_CAPACITY;

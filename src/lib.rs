@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod dashboard;
 pub mod database;
+pub mod errors;
 pub mod logging;
 pub mod monitor;
 pub mod project_registry;

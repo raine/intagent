@@ -278,7 +278,7 @@ impl TriageRunLog {
                 "attempt": attempt,
                 "maxAttempts": max_attempts,
                 "delayMs": delay_ms,
-                "errorCategory": category.map(error_category_name),
+                "errorCategory": category.map(ErrorCategory::as_str),
             }),
         )
         .await;
@@ -325,7 +325,7 @@ impl TriageRunLog {
                     RunOutcome::Interrupted => "interrupted",
                 },
                 "durationMs": saturating_millis(self.started_at.elapsed()),
-                "failureCategory": failure_category.map(error_category_name),
+                "failureCategory": failure_category.map(ErrorCategory::as_str),
                 "terminationReason": safe_termination_reason(termination_reason),
                 "recordingFailed": self.recording_failed,
             }),
@@ -514,23 +514,6 @@ fn safe_termination_reason(value: &str) -> Option<&str> {
             | "legacy_interruption"
     )
     .then_some(value)
-}
-
-fn error_category_name(category: ErrorCategory) -> &'static str {
-    match category {
-        ErrorCategory::Authentication => "authentication",
-        ErrorCategory::RateLimit => "rate_limit",
-        ErrorCategory::Timeout => "timeout",
-        ErrorCategory::Connection => "connection",
-        ErrorCategory::NotFound => "not_found",
-        ErrorCategory::ModelUnavailable => "model_unavailable",
-        ErrorCategory::ContextLimit => "context_limit",
-        ErrorCategory::TurnLimit => "turn_limit",
-        ErrorCategory::Aborted => "aborted",
-        ErrorCategory::Interrupted => "interrupted",
-        ErrorCategory::ToolFailure => "tool_failure",
-        ErrorCategory::Unknown => "unknown",
-    }
 }
 
 fn saturating_millis(duration: Duration) -> u64 {

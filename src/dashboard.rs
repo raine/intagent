@@ -16,6 +16,7 @@ use crate::database::{
     DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus, RunId,
     TriageConclusion,
 };
+pub use crate::errors::public_error;
 use crate::run_detail::{RunDetailOptions, displayed_conclusion, run_detail, safe_event_url};
 
 const DASHBOARD_SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
@@ -295,34 +296,6 @@ pub async fn dashboard_snapshot(
         runs,
         events,
     })
-}
-
-pub fn public_error(error: Option<&str>) -> Option<String> {
-    let error = error?;
-    let value = error.to_lowercase();
-    let category = if ["auth", "credential", "token", "unauthorized", "forbidden"]
-        .iter()
-        .any(|needle| value.contains(needle))
-    {
-        "Authentication failed"
-    } else if value.contains("fastmail email response is invalid") {
-        "Fastmail email response is invalid"
-    } else if value.contains("rate limit") || value.contains("too many requests") {
-        "Rate limited"
-    } else if value.contains("timeout") || value.contains("timed out") {
-        "Request timed out"
-    } else if value.contains("connection reset") {
-        "Connection reset"
-    } else if value.contains("not found") || value.contains("404") {
-        "Resource not found (404)"
-    } else if value.contains("model") && value.contains("unavailable") {
-        "Model unavailable"
-    } else if value.contains("interrupt") {
-        "Triage interrupted"
-    } else {
-        "Operation failed"
-    };
-    Some(category.into())
 }
 
 fn event_projection(event: EventRecord) -> DashboardEvent {
