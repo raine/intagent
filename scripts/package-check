@@ -9,7 +9,7 @@ trap cleanup EXIT
 
 prefix="$temporary_dir/prefix"
 bin_directory="$prefix/bin"
-skills_directory="$prefix/share/intake/skills"
+skill_templates_directory="$prefix/share/doc/intake/examples/skills"
 config_directory="$temporary_dir/config"
 state_directory="$temporary_dir/state"
 web_directory="$temporary_dir/web"
@@ -61,15 +61,16 @@ if grep -R -E 'Command::new\("(bun|node)"' src \
   exit 1
 fi
 
-if [[ ! -d "$skills_directory" ]]; then
-  printf 'scripts/package-check: missing skill tree: %s\n' "$skills_directory" >&2
+if [[ ! -d "$skill_templates_directory" ]]; then
+  printf 'scripts/package-check: missing skill templates: %s\n' \
+    "$skill_templates_directory" >&2
   exit 1
 fi
-if find "$skills_directory" -type l -print -quit | grep -q .; then
-  printf '%s\n' 'scripts/package-check: installed skill tree contains a symlink' >&2
+if find "$skill_templates_directory" -type l -print -quit | grep -q .; then
+  printf '%s\n' 'scripts/package-check: installed skill templates contain a symlink' >&2
   exit 1
 fi
-diff -r skills "$skills_directory" >/dev/null
+diff -r examples/skills "$skill_templates_directory" >/dev/null
 
 XDG_CONFIG_HOME="$config_directory" XDG_STATE_HOME="$state_directory" \
   "$bin_directory/intake" init >/dev/null

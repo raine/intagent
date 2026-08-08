@@ -344,23 +344,6 @@ pub fn default_config_path() -> Result<PathBuf, ConfigError> {
     Ok(config_directory()?.join("config.yaml"))
 }
 
-pub fn application_skills_directory() -> Result<PathBuf, ConfigError> {
-    application_skills_directory_with_env(&env_map())
-}
-
-pub fn application_skills_directory_with_env(
-    environment: &HashMap<String, String>,
-) -> Result<PathBuf, ConfigError> {
-    if let Some(path) = environment.get("INTAKE_SKILLS_DIR") {
-        return expand_path_with_env(path, environment);
-    }
-    let executable = env::current_exe().map_err(ConfigError::Initialize)?;
-    let bin = executable
-        .parent()
-        .ok_or(ConfigError::MissingExecutableDirectory)?;
-    absolute_path(&bin.join("..").join("share/intake/skills")).map_err(ConfigError::Initialize)
-}
-
 pub fn expand_path(path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
     expand_path_with_env(path, &env_map())
 }
@@ -413,7 +396,6 @@ pub fn initialize_private_config(
     create_private_directory(&skills_directory)?;
     create_private_directory(&state)?;
 
-    let application_skills = application_skills_directory_with_env(environment)?;
     let home = home_directory(environment)?;
     let config = IntakeConfig {
         version: 1,
@@ -423,12 +405,8 @@ pub fn initialize_private_config(
             logs: state.join("logs").to_string_lossy().into_owned(),
         },
         skills: SkillsConfig {
-            directories: vec![
-                application_skills.to_string_lossy().into_owned(),
-                skills_directory.to_string_lossy().into_owned(),
-            ],
+            directories: vec![skills_directory.to_string_lossy().into_owned()],
             approved_roots: vec![
-                application_skills.to_string_lossy().into_owned(),
                 skills_directory.to_string_lossy().into_owned(),
                 home.join(".claude/skills").to_string_lossy().into_owned(),
             ],
@@ -464,7 +442,7 @@ pub fn initialize_private_config(
 }
 
 pub fn default_command_rules() -> Vec<CommandRule> {
-    ["aven", "workmux", "tmux", "git", "rg", "fd"]
+    ["git", "rg", "fd"]
         .into_iter()
         .map(|executable| CommandRule {
             executable: executable.into(),

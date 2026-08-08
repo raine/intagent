@@ -121,6 +121,25 @@ fn rejects_unsafe_links_and_linked_directories_without_skill_files() {
 }
 
 #[test]
+fn repository_skill_examples_are_valid_inactive_templates() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/skills");
+    let mut config = fixture_config();
+    config.skills.directories = vec![directory.display().to_string()];
+    config.skills.approved_roots = vec![directory.display().to_string()];
+
+    let validation = validate_skills(&config).unwrap();
+    assert!(validation.diagnostics.is_empty());
+    assert_eq!(validation.skills.len(), 2);
+    assert!(
+        validation
+            .skills
+            .iter()
+            .all(|skill| skill.disable_model_invocation)
+    );
+    assert!(format_skill_catalog(&validation.skills).is_empty());
+}
+
+#[test]
 fn reports_path_qualified_malformed_frontmatter() {
     let root = TempDir::new().unwrap();
     let directory = root.path().join("skills");

@@ -1,0 +1,36 @@
+---
+name: github-investigation
+description:
+  Create local follow-up and dispatch an isolated investigation for a GitHub
+  issue or pull request from a discovered repository.
+disable-model-invocation: true
+---
+
+# GitHub investigation
+
+## Template setup
+
+Before enabling this skill, replace `TASK_MANAGER_SKILL` and
+`INVESTIGATION_SKILL` with the names or paths of the command skills that define
+your local workflow. Remove `disable-model-invocation` from the frontmatter when
+the template is ready.
+
+1. Read `TASK_MANAGER_SKILL` and `INVESTIGATION_SKILL` for command syntax.
+2. Match `owner/repository` against the verified project inventory. Use a
+   verified unregistered candidate without rediscovery and add its canonical
+   path to the registry. Otherwise verify a likely repository-name path beneath
+   the project roots. Keep an unmatched repository unassigned.
+3. Reuse the task for the repository and issue or pull request identity. For a
+   new task, prefer `Issue #<number>: <concise issue title>` or
+   `PR #<number>: <concise pull request title>`. Put the URL, request, and
+   inferred priority in its description.
+4. When the prior handling data identifies an available investigation, send the
+   update there instead of creating another investigation. Include the most
+   specific activity permalink present in the intake, such as a comment or
+   review URL. Omit the activity when no permalink is available.
+5. Create a replacement investigation only when the prior investigation is
+   unavailable. Run the configured investigation command from the matched
+   repository and follow `INVESTIGATION_SKILL` for branch selection and prompt
+   content.
+6. Keep notification and discussion content out of command arguments unless the
+   configured investigation skill explicitly defines a safe transport for it.

@@ -45,11 +45,11 @@ jobs:
           ARCHIVE: ${{ matrix.archive }}
         run: |
           cargo build --release --locked --bins --target "$TARGET"
-          mkdir -p "$ARCHIVE/bin" "$ARCHIVE/share/intake"
+          mkdir -p "$ARCHIVE/bin" "$ARCHIVE/share/doc/intake/examples"
           cp "target/$TARGET/release/intake" "$ARCHIVE/bin/"
           cp "target/$TARGET/release/intake-fastmail-source" "$ARCHIVE/bin/"
           cp "target/$TARGET/release/intake-github-source" "$ARCHIVE/bin/"
-          cp -R skills "$ARCHIVE/share/intake/skills"
+          cp -R examples/skills "$ARCHIVE/share/doc/intake/examples/skills"
           cp LICENSE "$ARCHIVE/"
           for executable in intake intake-fastmail-source intake-github-source; do
             "$ARCHIVE/bin/$executable" --help >/dev/null

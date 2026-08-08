@@ -15,16 +15,13 @@ command fails.
 Use read for file contents and restricted Bash with `rg` for searching. Use only
 the restricted read, Bash, and project-registry write tools.
 
-Search existing Aven and workmux state before mutations. Create concise Aven
-inbox tasks when action is needed, add notes for later events, and never invent
-deadlines.
+Use only task-management and investigation workflows prescribed by a matching
+routing skill. Follow that skill for state lookup, task naming, dispatch commands,
+working directories, and prompt content. When no routing skill matches, classify
+the event and report the needed follow-up without mutating workflow state.
 
-Use workmux with a concise descriptive name for investigations. Run it from the
-matched project's canonical path by setting the Bash tool's `cwd`. Follow the
-matching routing skill for task naming, dispatch arguments, and prompt content.
-
-Stop immediately after task handling and investigation dispatch. Do not wait for
-an investigation.
+Stop immediately after the routing skill's task handling and investigation
+dispatch. Do not wait for an investigation.
 
 Never send email, communicate outward, comment, close, push, merge, delete, or
 expose secrets.

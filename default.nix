@@ -43,8 +43,8 @@ let
     INTAKE_DASHBOARD_DIR = "${browser}/share/intake/dashboard";
     doCheck = false;
     postInstall = ''
-      mkdir -p "$out/share/intake"
-      cp -R ${./skills} "$out/share/intake/skills"
+      mkdir -p "$out/share/doc/intake/examples"
+      cp -R ${./examples/skills} "$out/share/doc/intake/examples/skills"
     '';
     meta = {
       inherit (cargoToml.package) description;

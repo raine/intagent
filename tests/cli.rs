@@ -244,9 +244,6 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("config/config.yaml");
     let state = root.path().join("state");
-    let skills = root.path().join("application-skills");
-    fs::create_dir(&skills).unwrap();
-
     let first = intake(
         &root,
         [
@@ -393,7 +390,6 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
 fn watch_without_dashboard_handles_graceful_and_forced_signals() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("config/config.yaml");
-    fs::create_dir(root.path().join("application-skills")).unwrap();
     let initialized = intake(
         &root,
         [
@@ -659,7 +655,6 @@ fn intake(root: &TempDir, args: impl IntoIterator<Item = String>) -> std::proces
         .args(args)
         .env("HOME", root.path())
         .env("XDG_STATE_HOME", root.path().join("state"))
-        .env("INTAKE_SKILLS_DIR", root.path().join("application-skills"))
         .output()
         .unwrap()
 }
@@ -680,7 +675,6 @@ fn spawn_intake_args(root: &TempDir, args: impl IntoIterator<Item = String>) -> 
         .args(args)
         .env("HOME", root.path())
         .env("XDG_STATE_HOME", root.path().join("state"))
-        .env("INTAKE_SKILLS_DIR", root.path().join("application-skills"))
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -689,7 +683,6 @@ fn spawn_intake_args(root: &TempDir, args: impl IntoIterator<Item = String>) -> 
 
 fn initialize_test_config(root: &TempDir) -> std::path::PathBuf {
     let config = root.path().join("config/config.yaml");
-    fs::create_dir(root.path().join("application-skills")).unwrap();
     let initialized = intake(
         root,
         [
