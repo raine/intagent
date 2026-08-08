@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ffi::CString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::Utc;
@@ -18,14 +18,56 @@ use crate::config::{
     IntakeConfig, canonical_roots, config_directory, default_config_path, expand_path,
     initialize_private_config, load_config, project_registry_path, state_directory,
 };
-use crate::dashboard::{DashboardRunLimits, dashboard_bind, dashboard_router};
+use crate::dashboard::{
+    DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT, DashboardRunLimits, dashboard_bind,
+    dashboard_router,
+};
 use crate::database::{IntakeDatabase, QueueOwnerLock};
 use crate::logging::DurableLogStore;
 use crate::monitor::IntakeMonitor;
 use crate::project_registry::ensure_project_registry;
 use crate::protocol::IntakeItem;
 
-pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: 127.0.0.1)\n  --port PORT           bind port (default: 7331)\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n";
+pub static USAGE: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+    )
+});
+
+fn command_help(command: &str) -> Option<String> {
+    let dashboard_options = || {
+        format!(
+            "  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n"
+        )
+    };
+    let help = match command {
+        "watch" => format!(
+            "Usage: intake [--config PATH] watch [--dashboard] [--host HOST] [--port PORT] [--allow-non-loopback]\n\nMonitor sources and triage continuously.\n\nOptions:\n  --dashboard           serve the dashboard with watch\n{}",
+            dashboard_options()
+        ),
+        "check" => "Usage: intake [--config PATH] check\n\nPoll every source once and drain ready triage events.\n".into(),
+        "status" => "Usage: intake [--config PATH] status\n\nShow source and queue state.\n".into(),
+        "dashboard" => format!(
+            "Usage: intake [--config PATH] dashboard [--host HOST] [--port PORT] [--allow-non-loopback]\n\nServe the local monitoring dashboard.\n\nOptions:\n{}",
+            dashboard_options()
+        ),
+        "inject" => "Usage: intake [--config PATH] inject FILE\n\nQueue one IntakeItem JSON fixture.\n".into(),
+        "show" => "Usage: intake [--config PATH] show ID\n\nShow one intake event.\n".into(),
+        "retry" => "Usage: intake [--config PATH] retry ID\n\nQueue a retained event for another attempt.\n".into(),
+        "ignore" => "Usage: intake [--config PATH] ignore ID\n\nMark an event handled without action.\n".into(),
+        "login" => "Usage: intake login\n\nAuthenticate the ChatGPT subscription provider.\n".into(),
+        "init" => "Usage: intake [--config PATH] init\n\nCreate private configuration directories and config.\n".into(),
+        "validate-config" => "Usage: intake [--config PATH] validate-config\n\nValidate YAML, command boundaries, and skill links.\n".into(),
+        _ => return None,
+    };
+    Some(help)
+}
+
+fn requested_command_help(args: &[String]) -> Option<String> {
+    (args.len() == 2 && matches!(args[1].as_str(), "--help" | "-h"))
+        .then(|| command_help(&args[0]))
+        .flatten()
+}
 
 pub fn tracing_log_path(argv: &[String]) -> Option<PathBuf> {
     let default = state_directory()
@@ -35,6 +77,9 @@ pub fn tracing_log_path(argv: &[String]) -> Option<PathBuf> {
         Ok(parsed) => parsed,
         Err(_) => return default,
     };
+    if requested_command_help(&parsed.args).is_some() {
+        return None;
+    }
     let command = parsed.args.first().map(String::as_str);
     if command.is_none_or(|command| matches!(command, "help" | "--help" | "-h" | "login" | "init"))
     {
@@ -62,10 +107,21 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         .as_deref()
         .is_none_or(|command| matches!(command, "help" | "--help" | "-h"))
     {
-        print!("{USAGE}");
+        print!("{}", *USAGE);
+        return Ok(0);
+    }
+    if let Some(help) = requested_command_help(&args) {
+        print!("{help}");
         return Ok(0);
     }
     let command = args.remove(0);
+    let watch_options = (command == "watch")
+        .then(|| parse_watch_options(&args))
+        .transpose()?;
+    let dashboard_options = (command == "dashboard")
+        .then(|| parse_dashboard_options(&args))
+        .transpose()?;
+    validate_other_command_options(&command, &args)?;
     tracing::info!(
         target: "intake::cli",
         command = safe_cli_command(&command),
@@ -109,12 +165,6 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         return Ok(0);
     }
 
-    let watch_options = (command == "watch")
-        .then(|| parse_watch_options(&args))
-        .transpose()?;
-    let dashboard_options = (command == "dashboard")
-        .then(|| parse_dashboard_options(&args))
-        .transpose()?;
     let database_path = expand_path(&config.state.database)?;
     let queue_lock = if matches!(command.as_str(), "watch" | "check") {
         Some(QueueOwnerLock::acquire(&database_path)?)
@@ -482,6 +532,24 @@ pub fn parse_global_options(mut args: Vec<String>) -> Result<GlobalOptions> {
         None
     };
     Ok(GlobalOptions { config_path, args })
+}
+
+fn validate_other_command_options(command: &str, args: &[String]) -> Result<()> {
+    let positional_count = match command {
+        "check" | "status" | "login" | "init" | "validate-config" => 0,
+        "inject" | "show" | "retry" | "ignore" => 1,
+        "watch" | "dashboard" => return Ok(()),
+        _ => return Ok(()),
+    };
+    for (index, argument) in args.iter().enumerate() {
+        if argument.starts_with('-') {
+            bail!("Unknown {command} option: {argument}");
+        }
+        if index >= positional_count {
+            bail!("Unexpected {command} argument: {argument}");
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
