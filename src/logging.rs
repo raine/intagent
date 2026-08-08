@@ -249,10 +249,18 @@ impl TriageRunLog {
         .await;
     }
 
-    pub async fn finish_tool(&mut self, name: &str, failed: bool) {
+    pub async fn finish_tool(&mut self, name: &str, failed: bool, diagnostic: Option<&str>) {
         self.record(
             "tool_execution_end",
-            json!({ "toolName": safe_tool_name(name), "isError": failed }),
+            json!({
+                "toolName": safe_tool_name(name),
+                "isError": failed,
+                "diagnostic": failed.then(|| bounded_string(
+                    diagnostic.unwrap_or("tool failed without a diagnostic"),
+                    16 * 1024,
+                    &*self.store.redact,
+                )),
+            }),
         )
         .await;
     }

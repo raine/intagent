@@ -476,7 +476,10 @@ pub fn run_metrics(
         failed_tool_count: complete_enough.then(|| {
             steps
                 .iter()
-                .filter(|step| step.kind == "tool" && step.outcome.as_deref() == Some("failed"))
+                .filter(|step| {
+                    step.kind == "tool"
+                        && matches!(step.outcome.as_deref(), Some("failed" | "aborted"))
+                })
                 .count()
         }),
         turn_count: complete_enough.then_some(turns.len()),

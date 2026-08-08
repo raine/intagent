@@ -98,7 +98,9 @@ export function runSummaryCounts(detail: RunDetail): RunSummaryCounts {
     ),
     failedTools: summaryCount(
       detail.metrics.failedToolCount,
-      toolSpans.filter((entry) => entry.state === "failed").length,
+      toolSpans.filter(
+        (entry) => entry.state === "failed" || entry.state === "aborted",
+      ).length,
       timelineComplete,
     ),
     retries: summaryCount(detail.metrics.retryCount, retries, timelineComplete),
@@ -216,7 +218,10 @@ export function groupTimeline(detail: RunDetail): {
       const turnSpans = byOrdinal.get(turn.ordinal) ?? []
       const turnPhases = groupedPhases.get(turn.ordinal) ?? []
       const failedSpan = turnSpans.some(
-        (span) => span.state === "failed" || span.state === "interrupted",
+        (span) =>
+          span.state === "failed" ||
+          span.state === "aborted" ||
+          span.state === "interrupted",
       )
       const failedPhase = turnPhases.some(
         (phase) =>

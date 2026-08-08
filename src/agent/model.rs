@@ -87,7 +87,7 @@ pub fn triage_tools() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "minLength": 1, "maxLength": 32768 },
-                    "cwd": { "type": "string" },
+                    "cwd": { "type": "string", "description": "Absolute working directory. Use the matched project's canonical path for repository-scoped commands." },
                     "stdin": { "type": "string", "maxLength": 262144 }
                 },
                 "required": ["command"],

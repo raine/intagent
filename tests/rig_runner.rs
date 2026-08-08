@@ -22,6 +22,7 @@ use intake::config::{
 use intake::database::{DispatchTrigger, EventRecord, IntakeDatabase, RunId};
 use intake::logging::DurableLogStore;
 use intake::protocol::{IntakeItem, IntakeItemKind};
+use intake::run_detail::{RunDetailOptions, run_detail};
 use rig_agent::agent::hook::InvalidToolCallAction;
 use rig_agent::agent::run::{AgentRun, AgentRunStep, ModelTurn, ModelTurnOutcome};
 use rig_agent::prelude::PromptError;
@@ -560,6 +561,106 @@ async fn production_prompt_inventory_skills_and_storage_match_the_event_scope() 
 }
 
 #[tokio::test]
+async fn production_defaults_repository_commands_to_the_matched_project() {
+    let mut fixture = ProductionFixture::new("matched project", "github_pull_request").await;
+    let project = fixture.root.path().join("matched-project");
+    fs::create_dir(&project).expect("create matched project");
+    for arguments in [
+        vec!["init", "--quiet", project.to_str().expect("project path")],
+        vec![
+            "-C",
+            project.to_str().expect("project path"),
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/missing.git",
+        ],
+    ] {
+        let status = std::process::Command::new("/usr/bin/git")
+            .args(arguments)
+            .status()
+            .expect("run git fixture command");
+        assert!(status.success());
+    }
+    fs::write(
+        &fixture.registry,
+        format!("- {}\n", project.canonicalize().unwrap().display()),
+    )
+    .expect("write project registry");
+    fixture.event.payload = Some(
+        json!({
+            "metadata": { "repository": "owner/missing" },
+            "body": "Investigate the matching repository.",
+        })
+        .to_string(),
+    );
+    let model = MockCompletionModel::from_turns([
+        MockTurn::tool_call("call-pwd", "bash", json!({"command": "pwd"})),
+        MockTurn::text("done"),
+    ]);
+    let runner = fixture.runner(model);
+
+    runner
+        .run(fixture.event.clone(), CancellationToken::new())
+        .await
+        .expect("matched project run");
+
+    assert!(
+        fixture.output_text().contains(
+            &project
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        )
+    );
+}
+
+#[tokio::test]
+async fn production_rejects_workmux_outside_a_repository() {
+    let mut fixture = ProductionFixture::new("unmatched project", "github_pull_request").await;
+    fixture.config.commands.rules.push(CommandRule {
+        executable: "workmux".into(),
+    });
+    let model = MockCompletionModel::from_turns([
+        MockTurn::tool_call("call-workmux", "bash", json!({"command": "workmux status"})),
+        MockTurn::text("done"),
+    ]);
+    let runner = fixture.runner(model);
+
+    runner
+        .run(fixture.event.clone(), CancellationToken::new())
+        .await
+        .expect("model recovers from invalid workmux context");
+
+    let steps = fixture
+        .database
+        .readers()
+        .triage_run_steps(RunId(1))
+        .await
+        .expect("steps");
+    let tool = steps
+        .iter()
+        .find(|step| step.kind == "tool")
+        .expect("tool step");
+    assert_eq!(tool.outcome.as_deref(), Some("aborted"));
+    assert!(
+        fixture
+            .output_text()
+            .contains("Git repository working directory")
+    );
+    let detail = run_detail(
+        &fixture.database.readers(),
+        RunId(1),
+        RunDetailOptions::default(),
+    )
+    .await
+    .expect("run detail")
+    .expect("stored run");
+    assert_eq!(detail.metrics.failed_tool_count, Some(1));
+}
+
+#[tokio::test]
 async fn production_tools_reauthorize_and_denied_calls_have_no_effect() {
     let mut fixture = ProductionFixture::new("prompt injection", "email").await;
     fixture.event.payload = Some(
@@ -654,6 +755,23 @@ async fn production_failed_tool_can_be_recovered_by_the_model() {
         .map(|step| step.outcome.expect("tool outcome"))
         .collect::<Vec<_>>();
     assert_eq!(outcomes, ["failed", "succeeded"]);
+    let log_path = fs::read_dir(fixture.root.path().join("logs/triage"))
+        .expect("read triage logs")
+        .next()
+        .expect("triage log")
+        .expect("triage log entry")
+        .path();
+    let failed_tool = fs::read_to_string(log_path)
+        .expect("read triage log")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("triage log record"))
+        .find(|record| record["type"] == "tool_execution_end" && record["isError"] == true)
+        .expect("failed tool record");
+    let diagnostic = failed_tool["diagnostic"]
+        .as_str()
+        .expect("failure diagnostic");
+    assert!(diagnostic.contains("working directory:"));
+    assert!(diagnostic.contains("exit code: 1"));
 }
 
 #[tokio::test]
@@ -1027,6 +1145,9 @@ impl ProductionFixture {
                     },
                     CommandRule {
                         executable: "false".into(),
+                    },
+                    CommandRule {
+                        executable: "pwd".into(),
                     },
                 ],
             },

@@ -203,8 +203,16 @@ impl ProductionTools {
         match call.function.name.as_str() {
             "bash" => {
                 let input: BashInput = parse_arguments(call)?;
-                self.command
-                    .parse_and_authorize(&input.command, self.cwd(input.cwd.as_deref()))?;
+                let cwd = self.cwd(input.cwd.as_deref());
+                let parsed = self.command.parse_and_authorize(&input.command, cwd)?;
+                if parsed
+                    .stages
+                    .iter()
+                    .any(|stage| stage.first().is_some_and(|name| name == "workmux"))
+                    && !is_git_working_directory(cwd)
+                {
+                    bail!("workmux requires a Git repository working directory");
+                }
             }
             "read" => {
                 let input: ReadArguments = parse_arguments(call)?;
@@ -258,7 +266,15 @@ impl ProductionTools {
             Err(error) => return self.denied(error),
         };
         let combined = [
-            format!("exit code: {}", result.exit_code),
+            format!("working directory: {}", cwd.display()),
+            match result.failure {
+                Some(super::process::ProcessFailure::TimedOut) => format!(
+                    "termination: timed out after {} seconds",
+                    self.command.timeout.as_secs()
+                ),
+                Some(super::process::ProcessFailure::Cancelled) => "termination: cancelled".into(),
+                None => format!("exit code: {}", result.exit_code),
+            },
             if result.stdout.is_empty() {
                 "stdout: (empty)".into()
             } else {
@@ -293,7 +309,7 @@ impl ProductionTools {
         {
             self.recording_failed.store(true, Ordering::SeqCst);
         }
-        if result.exit_code == 0 {
+        if result.failure.is_none() && result.exit_code == 0 {
             ToolCallResult::allowed(combined)
         } else {
             ToolCallResult::failed(combined)
@@ -339,6 +355,13 @@ impl ProductionTools {
     fn denied(&self, error: impl std::fmt::Display) -> ToolCallResult {
         ToolCallResult::denied(self.command.filter(&error.to_string()))
     }
+}
+
+fn is_git_working_directory(path: &Path) -> bool {
+    path.ancestors().any(|directory| {
+        std::fs::symlink_metadata(directory.join(".git"))
+            .is_ok_and(|metadata| !metadata.file_type().is_symlink())
+    })
 }
 
 #[derive(Deserialize)]

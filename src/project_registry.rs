@@ -313,6 +313,9 @@ async fn git_output(cwd: &Path, arguments: &[&str]) -> Result<Option<String>> {
         },
     )
     .await?;
+    if let Some(failure) = output.failure {
+        bail!("Git metadata process {failure}");
+    }
     if output.stdout_truncated || output.stderr_truncated {
         bail!("Git metadata exceeds its size limit");
     }
