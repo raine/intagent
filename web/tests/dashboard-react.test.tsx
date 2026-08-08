@@ -89,11 +89,14 @@ describe("React dashboard components", () => {
     document.documentElement.dataset.themePreference = "system"
     const html = renderToStaticMarkup(<ThemeToggle />)
 
-    expect(html).toContain('role="group"')
+    expect(html).toContain('select class="theme-select"')
     expect(html).toContain('aria-label="Color theme"')
-    expect(html).toContain('aria-pressed="true" aria-label="System theme"')
-    expect(html).toContain('aria-pressed="false" aria-label="Light theme"')
-    expect(html).toContain('aria-pressed="false" aria-label="Dark theme"')
+    expect(html).toContain(
+      '<option value="system" selected="">◐ system</option>',
+    )
+    expect(html).toContain('<option value="light">☀ light</option>')
+    expect(html).toContain('<option value="dark">☾ dark</option>')
+    expect(html).not.toContain("aria-pressed")
   })
 
   test.each<{

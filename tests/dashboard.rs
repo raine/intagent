@@ -260,15 +260,14 @@ fn requires_acknowledgement_for_non_loopback_hosts() {
 
 fn assert_security_headers(response: &http::Response<Body>) {
     assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
-    assert!(
-        response
-            .headers()
-            .get("content-security-policy")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("default-src 'none'")
-    );
+    let content_security_policy = response
+        .headers()
+        .get("content-security-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_security_policy.contains("default-src 'none'"));
+    assert!(content_security_policy.contains("font-src data:"));
     assert_eq!(
         response
             .headers()

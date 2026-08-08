@@ -32,7 +32,7 @@ const SECURITY_HEADERS: [(&str, &str); 7] = [
     ("cache-control", "no-store"),
     (
         "content-security-policy",
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; font-src data:; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     ),
     ("cross-origin-resource-policy", "same-origin"),
     (
