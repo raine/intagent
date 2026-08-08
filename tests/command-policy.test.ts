@@ -30,7 +30,9 @@ beforeEach(async () => {
     await writeFile(path, body)
     await chmod(path, 0o755)
   }
-  policy = new CommandPolicy(testConfig(root, bin), [await realpath(root)])
+  const config = testConfig(root, bin)
+  config.commands.timeout_seconds = 5
+  policy = new CommandPolicy(config, [await realpath(root)])
 })
 
 afterEach(async () => {
@@ -150,7 +152,12 @@ Body text
   })
 
   test("enforces wall-clock timeout and output bounds", async () => {
-    await expect(policy.execute("rg slow", root)).rejects.toThrow()
+    const timeoutConfig = testConfig(root, bin)
+    timeoutConfig.commands.timeout_seconds = 1
+    const timeoutPolicy = new CommandPolicy(timeoutConfig, [
+      await realpath(root),
+    ])
+    await expect(timeoutPolicy.execute("rg slow", root)).rejects.toThrow()
     const result = await policy.execute("rg large", root)
     expect(result.stdout.length).toBeLessThanOrEqual(1024)
     expect(result.truncated).toBe(true)
