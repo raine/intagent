@@ -11,8 +11,12 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::database::{DatabaseError, DatabaseReaders, EventRecord, EventStatus, RunId};
-use crate::run_detail::{RunDetailOptions, run_detail, safe_event_url};
+use crate::database::{
+    DatabaseError, DatabaseReaders, EventRecord, EventStatus, RunId, TriageConclusion,
+};
+use crate::run_detail::{
+    RunDetailOptions, derived_dispatch_reason, displayed_conclusion, run_detail, safe_event_url,
+};
 
 const DASHBOARD_SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 const DASHBOARD_STYLES: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
@@ -135,6 +139,8 @@ pub struct DashboardRun {
     pub compaction_count: u32,
     pub telemetry_completeness: String,
     pub timeline_truncated: bool,
+    pub dispatch_reason: String,
+    pub conclusion: TriageConclusion,
     pub investigation_handle: Option<String>,
     pub steps: Vec<DashboardStep>,
 }
@@ -215,6 +221,12 @@ pub async fn dashboard_snapshot(
         } else {
             Vec::new()
         };
+        let dispatch_reason = summary
+            .run
+            .dispatch_reason
+            .clone()
+            .unwrap_or_else(|| derived_dispatch_reason(&event));
+        let conclusion = displayed_conclusion(&summary.run);
         runs.push(DashboardRun {
             id: summary.run.id,
             event_id: summary.run.event_id,
@@ -237,6 +249,8 @@ pub async fn dashboard_snapshot(
             compaction_count: summary.run.compaction_count,
             telemetry_completeness: summary.run.telemetry_completeness,
             timeline_truncated: summary.step_count > steps.len(),
+            dispatch_reason,
+            conclusion,
             investigation_handle: event.investigation_handle,
             steps: steps
                 .into_iter()

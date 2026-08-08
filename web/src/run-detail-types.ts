@@ -14,6 +14,26 @@ export type SafeErrorCategory =
   | "tool_failure"
   | "unknown"
 
+export type ConclusionDecision =
+  | "action_taken"
+  | "no_action"
+  | "needs_follow_up"
+  | "blocked"
+  | "failed"
+  | "canceled"
+  | "timed_out"
+  | "turn_limit"
+
+export interface TriageConclusion {
+  decision: ConclusionDecision
+  summary: string
+  evidence: string[]
+  actions: string[]
+  outcome: string
+  followUp: string | null
+  source: "model" | "derived" | "unavailable"
+}
+
 export interface RunMetrics {
   durationMs: {
     wall: number
@@ -118,6 +138,8 @@ export interface RunDetail {
     state: "active" | RunOutcome
     terminationReason: string | null
     failureCategory: SafeErrorCategory | null
+    dispatchReason: string
+    conclusion: TriageConclusion
     model: {
       id: string | null
       provider: string | null

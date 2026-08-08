@@ -48,6 +48,44 @@ describe("activity-first run inspector", () => {
     expect(html).not.toContain("aria-expanded")
   })
 
+  test("presents dispatch context and the operator conclusion accessibly", () => {
+    const html = render()
+
+    expect(html).toContain('aria-labelledby="conclusion-title"')
+    expect(html).toContain("Why intake dispatched the agent")
+    expect(html).toContain("Dispatch reason")
+    expect(html).toContain("Triage conclusion")
+    expect(html).toContain("Agent conclusion")
+    expect(html).toContain("action taken")
+    expect(html).toContain("Key evidence")
+    expect(html).toContain("Actions performed")
+    expect(html).toContain("Outcome")
+    expect(html).toContain("Follow-up")
+    expect(html).toContain("<ul>")
+  })
+
+  test("labels unavailable legacy conclusions honestly", () => {
+    const detail = runDetailFixture({
+      run: {
+        conclusion: {
+          decision: "needs_follow_up",
+          summary: "A model-authored conclusion is unavailable for this run.",
+          evidence: [],
+          actions: [],
+          outcome:
+            "The recorded attempt completed, but its decision was not captured.",
+          followUp:
+            "Review the recorded effects and timeline for available evidence.",
+          source: "unavailable",
+        },
+      },
+    })
+    const html = render(detail)
+
+    expect(html).toContain("Conclusion unavailable")
+    expect(html).toContain("A model-authored conclusion is unavailable")
+  })
+
   test("shows only tool calls when filtered", () => {
     const html = render(runDetailFixture(), "tools")
 

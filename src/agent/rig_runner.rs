@@ -19,6 +19,7 @@ use rig_core::message::{
     AssistantContent, Message, ReasoningContent, ToolCall, ToolResultContent, UserContent,
 };
 use rig_core::providers::chatgpt;
+use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use super::auth::{AuthPaths, authorize, chatgpt_client};
@@ -34,8 +35,9 @@ use super::telemetry::{CancellationTelemetry, PrototypeTelemetry};
 use super::tools::{CountingTools, ProductionTools, RecordingExecutableTools, ToolCallResult};
 use crate::config::{IntakeConfig, ThinkingLevel as ConfigThinkingLevel, expand_path};
 use crate::database::{
-    CompactionFinish, ErrorCategory, EventRecord, IntakeDatabase, RetryStart, RunFinish, RunId,
-    RunMetadata, RunOutcome, SpanOutcome, TurnFinish, TurnId, reported_usage,
+    CompactionFinish, ConclusionSource, ErrorCategory, EventRecord, IntakeDatabase, RetryStart,
+    RunFinish, RunId, RunMetadata, RunOutcome, SpanOutcome, TriageConclusion, TriageDecision,
+    TurnFinish, TurnId, reported_usage,
 };
 use crate::logging::{DurableLogStore, TriageRunLog};
 use crate::project_registry::{
@@ -112,9 +114,15 @@ impl TriageRunnerCore {
     }
 
     async fn start(&self, event: &EventRecord) -> Result<StartedRun, TriageError> {
+        let dispatch_reason = dispatch_reason(event);
         let run_id = self
             .database
-            .start_triage_run(event.id, event.attempt_count, Utc::now())
+            .start_triage_run_with_dispatch_reason(
+                event.id,
+                event.attempt_count,
+                Some(dispatch_reason.clone()),
+                Utc::now(),
+            )
             .await?;
         let mut log = self.logs.triage(event);
         log.start().await;
@@ -127,6 +135,9 @@ impl TriageRunnerCore {
             run_id,
             log,
             started_at: Instant::now(),
+            dispatch_reason,
+            conclusion: None,
+            tool_observations: Vec::new(),
         })
     }
 
@@ -156,9 +167,19 @@ impl TriageRunnerCore {
         started.log.finish(outcome, category, termination).await;
         let recording_complete = !started.log.recording_failed()
             && !matches!(&result, Err(TriageError::RecordingFailure));
+        let mut conclusion = started.conclusion.take().unwrap_or_else(|| {
+            fallback_conclusion(
+                &result,
+                &started.dispatch_reason,
+                &started.tool_observations,
+            )
+        });
+        if conclusion.actions.is_empty() {
+            conclusion.actions = observed_actions(&started.tool_observations);
+        }
         let finish_result = self
             .database
-            .finish_triage_run(
+            .finish_triage_run_with_conclusion(
                 started.run_id,
                 RunFinish {
                     outcome,
@@ -166,6 +187,7 @@ impl TriageRunnerCore {
                     failure_category: category,
                     recording_complete,
                 },
+                Some(conclusion),
                 Utc::now(),
             )
             .await;
@@ -487,6 +509,16 @@ impl TriageRunnerCore {
                         } else {
                             SpanOutcome::Succeeded
                         };
+                        started.tool_observations.push(ToolObservation {
+                            name: name.clone(),
+                            outcome: if result.denied {
+                                ToolObservationOutcome::Denied
+                            } else if result.failed {
+                                ToolObservationOutcome::Failed
+                            } else {
+                                ToolObservationOutcome::Succeeded
+                            },
+                        });
                         self.database
                             .finish_tool(started.run_id, tool_id, outcome, Utc::now())
                             .await?;
@@ -707,7 +739,14 @@ impl TriageRunnerCore {
             self.report(format!("thinking │ {}", self.filtered(&bounded)));
         }
         for text in assistant_texts(response) {
-            let bounded = bounded_chars(text, 4000);
+            if let Some(conclusion) = parse_conclusion(text, &self.command_policy) {
+                started.conclusion = Some(conclusion);
+            }
+            let visible = strip_conclusion(text).trim();
+            if visible.is_empty() {
+                continue;
+            }
+            let bounded = bounded_chars(visible, 4000);
             self.database
                 .record_assistant_text(started.run_id, Some(turn_id), bounded.clone(), Utc::now())
                 .await?;
@@ -840,6 +879,21 @@ struct StartedRun {
     run_id: RunId,
     log: TriageRunLog,
     started_at: Instant,
+    dispatch_reason: String,
+    conclusion: Option<TriageConclusion>,
+    tool_observations: Vec<ToolObservation>,
+}
+
+struct ToolObservation {
+    name: String,
+    outcome: ToolObservationOutcome,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ToolObservationOutcome {
+    Succeeded,
+    Failed,
+    Denied,
 }
 
 struct PreparedRun {
@@ -904,6 +958,212 @@ fn system_prompt(
         prompt.push_str(skill_catalog);
     }
     Ok(prompt.trim().to_string())
+}
+
+const CONCLUSION_START: &str = "<triage-conclusion>";
+const CONCLUSION_END: &str = "</triage-conclusion>";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelConclusion {
+    decision: TriageDecision,
+    summary: String,
+    evidence: Vec<String>,
+    actions: Vec<String>,
+    outcome: String,
+    follow_up: Option<String>,
+}
+
+fn dispatch_reason(event: &EventRecord) -> String {
+    let source = safe_context_label(&event.source, "intake source");
+    let kind = safe_context_label(&event.kind, "item");
+    format!(
+        "Dispatched because {source} reported a {kind} event that entered the triage queue (attempt {}).",
+        event.attempt_count
+    )
+}
+
+fn safe_context_label(value: &str, fallback: &str) -> String {
+    let value = value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        .take(64)
+        .collect::<String>();
+    if value.is_empty() {
+        fallback.into()
+    } else {
+        value
+    }
+}
+
+fn parse_conclusion(text: &str, policy: &CommandPolicy) -> Option<TriageConclusion> {
+    let start = text.rfind(CONCLUSION_START)? + CONCLUSION_START.len();
+    let remainder = &text[start..];
+    let end = remainder.find(CONCLUSION_END)?;
+    if !remainder[end + CONCLUSION_END.len()..].trim().is_empty() || end > 6000 {
+        return None;
+    }
+    let parsed: ModelConclusion = serde_json::from_str(remainder[..end].trim()).ok()?;
+    let summary = safe_conclusion_text(policy, &parsed.summary, 600);
+    let outcome = safe_conclusion_text(policy, &parsed.outcome, 400);
+    if summary.is_empty() || outcome.is_empty() {
+        return None;
+    }
+    Some(TriageConclusion {
+        decision: parsed.decision,
+        summary,
+        evidence: safe_conclusion_items(policy, parsed.evidence),
+        actions: safe_conclusion_items(policy, parsed.actions),
+        outcome,
+        follow_up: parsed
+            .follow_up
+            .map(|value| safe_conclusion_text(policy, &value, 400))
+            .filter(|value| !value.is_empty()),
+        source: ConclusionSource::Model,
+    })
+}
+
+fn strip_conclusion(text: &str) -> &str {
+    let Some(start) = text.rfind(CONCLUSION_START) else {
+        return text;
+    };
+    let Some(relative_end) = text[start..].find(CONCLUSION_END) else {
+        return text;
+    };
+    let end = start + relative_end + CONCLUSION_END.len();
+    if text[end..].trim().is_empty() {
+        &text[..start]
+    } else {
+        text
+    }
+}
+
+fn safe_conclusion_items(policy: &CommandPolicy, values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .take(5)
+        .map(|value| safe_conclusion_text(policy, &value, 300))
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+fn safe_conclusion_text(policy: &CommandPolicy, value: &str, max_bytes: usize) -> String {
+    let filtered = policy.filter(value);
+    let urls = regex::Regex::new(r"(?i)https?://\S+").expect("valid URL filter");
+    let credentials = regex::Regex::new(
+        r"(?i)\b(token|password|secret|authorization|oauth|api[_ -]?key)\s*[:=]\s*\S+",
+    )
+    .expect("valid credential filter");
+    let redacted = urls.replace_all(&filtered, "[link omitted]");
+    let redacted = credentials.replace_all(&redacted, "$1=[REDACTED]");
+    let normalized = redacted
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    truncate_chars(&normalized, max_bytes)
+}
+
+fn truncate_chars(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_string();
+    }
+    let mut end = max_bytes.saturating_sub(1);
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &value[..end])
+}
+
+fn observed_actions(observations: &[ToolObservation]) -> Vec<String> {
+    observations
+        .iter()
+        .take(5)
+        .map(|item| {
+            format!(
+                "{} tool {}.",
+                safe_context_label(&item.name, "restricted"),
+                match item.outcome {
+                    ToolObservationOutcome::Succeeded => "completed",
+                    ToolObservationOutcome::Failed => "failed",
+                    ToolObservationOutcome::Denied => "was denied",
+                }
+            )
+        })
+        .collect()
+}
+
+fn fallback_conclusion(
+    result: &Result<(), TriageError>,
+    dispatch_reason: &str,
+    observations: &[ToolObservation],
+) -> TriageConclusion {
+    let denied = observations
+        .iter()
+        .any(|item| item.outcome == ToolObservationOutcome::Denied);
+    let failed = observations
+        .iter()
+        .any(|item| item.outcome == ToolObservationOutcome::Failed);
+    let (decision, summary, outcome, follow_up) = match result {
+        Ok(()) => (
+            TriageDecision::NoAction,
+            "Triage completed without a model-authored conclusion.",
+            "The attempt completed successfully.",
+            None,
+        ),
+        Err(TriageError::Cancelled) => (
+            TriageDecision::Canceled,
+            "Triage was canceled before the agent supplied a conclusion.",
+            "The attempt was interrupted.",
+            Some("Retry triage if the event still needs review."),
+        ),
+        Err(TriageError::WallTimeout) => (
+            TriageDecision::TimedOut,
+            "Triage reached its time limit before the agent supplied a conclusion.",
+            "The attempt timed out.",
+            Some("Review the recorded activity before retrying."),
+        ),
+        Err(error) if error.category() == ErrorCategory::TurnLimit => (
+            TriageDecision::TurnLimit,
+            "Triage reached its turn limit before the agent supplied a conclusion.",
+            "The attempt stopped at the configured turn limit.",
+            Some("Review the recorded activity before retrying."),
+        ),
+        Err(_) if denied => (
+            TriageDecision::Blocked,
+            "Triage could not complete an action because a tool call was denied.",
+            "The attempt ended after a denied action.",
+            Some("Review the requested action and capability policy."),
+        ),
+        Err(_) => (
+            TriageDecision::Failed,
+            "Triage failed before the agent supplied a conclusion.",
+            "The attempt failed.",
+            Some("Review the failure category and recorded activity before retrying."),
+        ),
+    };
+    let actions = observed_actions(observations);
+    let mut evidence = vec![dispatch_reason.to_string()];
+    if failed {
+        evidence.push("At least one recorded tool call failed.".into());
+    }
+    TriageConclusion {
+        decision,
+        summary: summary.into(),
+        evidence,
+        actions,
+        outcome: outcome.into(),
+        follow_up: follow_up.map(str::to_string),
+        source: ConclusionSource::Derived,
+    }
 }
 
 pub fn build_event_prompt(event: &EventRecord) -> Result<String, TriageError> {

@@ -20,6 +20,16 @@
     "telemetry": {
       "schemaVersion": 1,
       "completeness": "complete"
+    },
+    "dispatchReason": "Dispatched because fastmail reported a email event that entered the triage queue (attempt 1).",
+    "conclusion": {
+      "summary": "A model-authored conclusion is unavailable for this run.",
+      "evidence": [],
+      "actions": [],
+      "source": "unavailable",
+      "decision": "needs_follow_up",
+      "outcome": "The recorded attempt completed, but its decision was not captured.",
+      "followUp": "Review the recorded effects and timeline for available evidence."
     }
   },
   "event": {

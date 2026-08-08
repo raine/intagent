@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { RunRoute as RunDetailRoute } from "./run-inspector.tsx"
+import type { TriageConclusion } from "./run-detail-types.ts"
 
 type EventStatus =
   | "pending"
@@ -47,6 +48,8 @@ interface DashboardRun {
   compactionCount: number
   telemetryCompleteness: "complete" | "partial" | "legacy"
   timelineTruncated: boolean
+  dispatchReason: string
+  conclusion: TriageConclusion
   investigationHandle: string | null
   steps: Array<{
     id: number
@@ -403,6 +406,10 @@ export function ActiveRunCard({
           inspect run →
         </button>
       </div>
+      <p className="active-run-dispatch">
+        <b>Dispatch</b>
+        <span>{run.dispatchReason}</span>
+      </p>
       <div
         className={`active-run-activity${expanded ? " is-expanded" : ""}`}
         aria-label={
@@ -435,6 +442,12 @@ export function EventRow({
     <>
       <Status status={event.status} />
       <strong>{event.title}</strong>
+      {run ? (
+        <span className="event-conclusion">
+          {run.conclusion.decision.replaceAll("_", " ")} ·{" "}
+          {run.conclusion.summary}
+        </span>
+      ) : null}
       <small>
         {event.source}/{event.kind}
       </small>

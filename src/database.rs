@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use rig_core::completion::Usage;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params, types::Type};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -21,7 +21,7 @@ pub const DATABASE_QUEUE_CAPACITY: usize = 64;
 pub const DATABASE_READER_COUNT: usize = 2;
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
 
-pub const MIGRATIONS: [&str; 7] = [
+pub const MIGRATIONS: [&str; 8] = [
     include_str!("migrations/001-initial.sql"),
     include_str!("migrations/002-global-entity-identity.sql"),
     include_str!("migrations/003-triage-runs.sql"),
@@ -29,6 +29,7 @@ pub const MIGRATIONS: [&str; 7] = [
     include_str!("migrations/005-redact-legacy-command-events.sql"),
     include_str!("migrations/006-step-summaries.sql"),
     include_str!("migrations/007-run-prompts.sql"),
+    include_str!("migrations/008-triage-conclusions.sql"),
 ];
 
 static MEMORY_DATABASE_ID: AtomicU64 = AtomicU64::new(1);
@@ -332,6 +333,39 @@ pub struct CompactionFinish {
     pub usage: Option<ReportedUsage>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TriageDecision {
+    ActionTaken,
+    NoAction,
+    NeedsFollowUp,
+    Blocked,
+    Failed,
+    Canceled,
+    TimedOut,
+    TurnLimit,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConclusionSource {
+    Model,
+    Derived,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriageConclusion {
+    pub decision: TriageDecision,
+    pub summary: String,
+    pub evidence: Vec<String>,
+    pub actions: Vec<String>,
+    pub outcome: String,
+    pub follow_up: Option<String>,
+    pub source: ConclusionSource,
+}
+
 #[derive(Clone, Debug)]
 pub struct RunFinish {
     pub outcome: RunOutcome,
@@ -359,6 +393,8 @@ pub struct TriageRunRecord {
     pub max_tokens: Option<i64>,
     pub telemetry_version: Option<i64>,
     pub telemetry_completeness: String,
+    pub dispatch_reason: Option<String>,
+    pub conclusion: Option<TriageConclusion>,
     pub turn_count: u32,
     pub retry_count: u32,
     pub compaction_count: u32,
@@ -580,9 +616,21 @@ impl IntakeDatabase {
         attempt: u32,
         now: DateTime<Utc>,
     ) -> Result<RunId, DatabaseError> {
+        self.start_triage_run_with_dispatch_reason(event_id, attempt, None, now)
+            .await
+    }
+
+    pub async fn start_triage_run_with_dispatch_reason(
+        &self,
+        event_id: i64,
+        attempt: u32,
+        dispatch_reason: Option<String>,
+        now: DateTime<Utc>,
+    ) -> Result<RunId, DatabaseError> {
         self.request(|reply| WriteOperation::StartRun {
             event_id,
             attempt,
+            dispatch_reason,
             now: timestamp(now),
             reply,
         })
@@ -797,9 +845,21 @@ impl IntakeDatabase {
         finish: RunFinish,
         now: DateTime<Utc>,
     ) -> Result<(), DatabaseError> {
+        self.finish_triage_run_with_conclusion(run_id, finish, None, now)
+            .await
+    }
+
+    pub async fn finish_triage_run_with_conclusion(
+        &self,
+        run_id: RunId,
+        finish: RunFinish,
+        conclusion: Option<TriageConclusion>,
+        now: DateTime<Utc>,
+    ) -> Result<(), DatabaseError> {
         self.request(|reply| WriteOperation::FinishRun {
             run_id,
             finish,
+            conclusion,
             now: timestamp(now),
             reply,
         })
@@ -1066,6 +1126,7 @@ enum WriteOperation {
     StartRun {
         event_id: i64,
         attempt: u32,
+        dispatch_reason: Option<String>,
         now: String,
         reply: Reply<RunId>,
     },
@@ -1155,6 +1216,7 @@ enum WriteOperation {
     FinishRun {
         run_id: RunId,
         finish: RunFinish,
+        conclusion: Option<TriageConclusion>,
         now: String,
         reply: Reply<()>,
     },
@@ -1390,9 +1452,19 @@ fn dispatch_write(connection: &mut Connection, operation: WriteOperation) {
         WriteOperation::StartRun {
             event_id,
             attempt,
+            dispatch_reason,
             now,
             reply: sender,
-        } => reply!(sender, start_run(connection, event_id, attempt, &now)),
+        } => reply!(
+            sender,
+            start_run(
+                connection,
+                event_id,
+                attempt,
+                dispatch_reason.as_deref(),
+                &now
+            )
+        ),
         WriteOperation::SetRunMetadata {
             run_id,
             metadata,
@@ -1516,9 +1588,13 @@ fn dispatch_write(connection: &mut Connection, operation: WriteOperation) {
         WriteOperation::FinishRun {
             run_id,
             finish,
+            conclusion,
             now,
             reply: sender,
-        } => reply!(sender, finish_run(connection, run_id, finish, &now)),
+        } => reply!(
+            sender,
+            finish_run(connection, run_id, finish, conclusion, &now)
+        ),
         WriteOperation::Succeed {
             event_id,
             now,
@@ -1781,13 +1857,19 @@ fn start_run(
     connection: &Connection,
     event_id: i64,
     attempt: u32,
+    dispatch_reason: Option<&str>,
     now: &str,
 ) -> Result<RunId, DatabaseError> {
     connection.execute(
         "INSERT INTO triage_runs(event_id, attempt, started_at, last_activity_at,
-           telemetry_version, telemetry_completeness)
-         VALUES (?1, ?2, ?3, ?3, 2, 'partial')",
-        params![event_id, attempt, now],
+           telemetry_version, telemetry_completeness, dispatch_reason)
+         VALUES (?1, ?2, ?3, ?3, 2, 'partial', ?4)",
+        params![
+            event_id,
+            attempt,
+            now,
+            dispatch_reason.map(|value| bounded_detail(value, 1000))
+        ],
     )?;
     Ok(RunId(connection.last_insert_rowid()))
 }
@@ -2103,10 +2185,13 @@ fn finish_run(
     connection: &mut Connection,
     run_id: RunId,
     finish: RunFinish,
+    conclusion: Option<TriageConclusion>,
     now: &str,
 ) -> Result<(), DatabaseError> {
     flush_connection(connection)?;
     let transaction = connection.transaction()?;
+    let conclusion = conclusion.unwrap_or_else(|| fallback_conclusion(&finish));
+    let conclusion_json = serde_json::to_string(&conclusion)?;
     let open_count: i64 = transaction.query_row(
         "SELECT
            (SELECT COUNT(*) FROM triage_run_steps WHERE run_id = ?1 AND ended_at IS NULL) +
@@ -2123,19 +2208,64 @@ fn finish_run(
     transaction.execute(
         "UPDATE triage_runs SET ended_at = ?1, last_activity_at = ?1,
            outcome = ?2, termination_reason = ?3, failure_category = ?4,
-           telemetry_completeness = ?5
-         WHERE id = ?6 AND ended_at IS NULL",
+           telemetry_completeness = ?5, conclusion_json = ?6
+         WHERE id = ?7 AND ended_at IS NULL",
         params![
             now,
             finish.outcome.as_str(),
             safe_termination_reason(&finish.termination_reason),
             finish.failure_category.map(ErrorCategory::as_str),
             if complete { "complete" } else { "partial" },
+            conclusion_json,
             run_id.0,
         ],
     )?;
     transaction.commit()?;
     flush_connection(connection)
+}
+
+fn fallback_conclusion(finish: &RunFinish) -> TriageConclusion {
+    let (decision, summary, outcome, follow_up) = match (finish.outcome, finish.failure_category) {
+        (RunOutcome::Succeeded, _) => (
+            TriageDecision::NoAction,
+            "Triage completed without a model-authored conclusion.",
+            "The attempt completed successfully.",
+            None,
+        ),
+        (RunOutcome::Interrupted, _) => (
+            TriageDecision::Canceled,
+            "Triage ended before the agent supplied a conclusion.",
+            "The attempt was interrupted.",
+            Some("Retry triage if this event still needs review."),
+        ),
+        (RunOutcome::Failed, Some(ErrorCategory::Timeout)) => (
+            TriageDecision::TimedOut,
+            "Triage reached its time limit before the agent supplied a conclusion.",
+            "The attempt timed out.",
+            Some("Retry triage or review the recorded activity."),
+        ),
+        (RunOutcome::Failed, Some(ErrorCategory::TurnLimit)) => (
+            TriageDecision::TurnLimit,
+            "Triage reached its turn limit before the agent supplied a conclusion.",
+            "The attempt stopped at the configured turn limit.",
+            Some("Review the recorded activity before retrying."),
+        ),
+        (RunOutcome::Failed, _) => (
+            TriageDecision::Failed,
+            "Triage failed before the agent supplied a conclusion.",
+            "The attempt failed.",
+            Some("Review the failure category and recorded activity before retrying."),
+        ),
+    };
+    TriageConclusion {
+        decision,
+        summary: summary.into(),
+        evidence: Vec::new(),
+        actions: Vec::new(),
+        outcome: outcome.into(),
+        follow_up: follow_up.map(str::to_string),
+        source: ConclusionSource::Derived,
+    }
 }
 
 fn succeed(connection: &mut Connection, event_id: i64, now: &str) -> Result<(), DatabaseError> {
@@ -2428,7 +2558,8 @@ fn triage_run(
             "SELECT id, event_id, attempt, started_at, ended_at, last_activity_at,
                outcome, termination_reason, failure_category, model_id, model_provider,
                thinking_level, context_window, max_tokens, telemetry_version,
-               telemetry_completeness, turn_count, retry_count, compaction_count
+               telemetry_completeness, dispatch_reason, conclusion_json,
+               turn_count, retry_count, compaction_count
              FROM triage_runs WHERE id = ?1",
             [id.0],
             triage_run_from_row,
@@ -2455,9 +2586,17 @@ fn triage_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TriageRunRec
         max_tokens: row.get(13)?,
         telemetry_version: row.get(14)?,
         telemetry_completeness: row.get(15)?,
-        turn_count: row.get(16)?,
-        retry_count: row.get(17)?,
-        compaction_count: row.get(18)?,
+        dispatch_reason: row.get(16)?,
+        conclusion: row
+            .get::<_, Option<String>>(17)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(17, Type::Text, Box::new(error))
+            })?,
+        turn_count: row.get(18)?,
+        retry_count: row.get(19)?,
+        compaction_count: row.get(20)?,
     })
 }
 
@@ -2498,8 +2637,8 @@ fn list_triage_run_summaries(
            run.last_activity_at, run.outcome, run.termination_reason,
            run.failure_category, run.model_id, run.model_provider,
            run.thinking_level, run.context_window, run.max_tokens,
-           run.telemetry_version, run.telemetry_completeness, run.turn_count,
-           run.retry_count, run.compaction_count,
+           run.telemetry_version, run.telemetry_completeness, run.dispatch_reason,
+           run.conclusion_json, run.turn_count, run.retry_count, run.compaction_count,
            (SELECT COUNT(*) FROM triage_run_steps step WHERE step.run_id = run.id)
          FROM triage_runs run ORDER BY run.started_at DESC, run.id DESC LIMIT ?1",
     )?;
@@ -2507,7 +2646,7 @@ fn list_triage_run_summaries(
         .query_map([saturating_i64(limit)], |row| {
             Ok(TriageRunSummary {
                 run: triage_run_from_row(row)?,
-                step_count: usize::try_from(row.get::<_, i64>(19)?).unwrap_or(usize::MAX),
+                step_count: usize::try_from(row.get::<_, i64>(21)?).unwrap_or(usize::MAX),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?)
@@ -2544,7 +2683,8 @@ fn triage_runs_for_event(
         "SELECT id, event_id, attempt, started_at, ended_at, last_activity_at,
            outcome, termination_reason, failure_category, model_id, model_provider,
            thinking_level, context_window, max_tokens, telemetry_version,
-           telemetry_completeness, turn_count, retry_count, compaction_count
+           telemetry_completeness, dispatch_reason, conclusion_json,
+           turn_count, retry_count, compaction_count
          FROM triage_runs WHERE event_id = ?1 ORDER BY attempt, id",
     )?;
     Ok(statement
@@ -2713,12 +2853,27 @@ fn interrupt_runs(
         let run_id = RunId(*id);
         close_open_telemetry(transaction, run_id, ended_at)?;
         refresh_counts(transaction, run_id, ended_at)?;
+        let conclusion = TriageConclusion {
+            decision: TriageDecision::Canceled,
+            summary: "Triage ended before the agent supplied a conclusion.".into(),
+            evidence: Vec::new(),
+            actions: Vec::new(),
+            outcome: "The attempt was interrupted.".into(),
+            follow_up: Some("Retry triage if this event still needs review.".into()),
+            source: ConclusionSource::Derived,
+        };
         transaction.execute(
             "UPDATE triage_runs SET ended_at = ?1, last_activity_at = ?1,
                outcome = 'interrupted', termination_reason = ?2,
-               failure_category = 'interrupted', telemetry_completeness = 'partial'
-             WHERE id = ?3 AND ended_at IS NULL",
-            params![ended_at, termination_reason, id],
+               failure_category = 'interrupted', telemetry_completeness = 'partial',
+               conclusion_json = ?3
+             WHERE id = ?4 AND ended_at IS NULL",
+            params![
+                ended_at,
+                termination_reason,
+                serde_json::to_string(&conclusion)?,
+                id
+            ],
         )?;
     }
     Ok(())

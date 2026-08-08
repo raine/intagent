@@ -613,6 +613,8 @@ export function RunInspector({
           </div>
         </section>
 
+        <ConclusionPanel detail={detail} />
+
         {notices.length ? (
           <section className="attention-stack" aria-label="Run attention">
             {notices.map((notice, index) => (
@@ -653,6 +655,79 @@ export function RunInspector({
         <RunPrompts detail={detail} />
         <RunDetails detail={detail} />
       </main>
+    </div>
+  )
+}
+
+function ConclusionPanel({ detail }: { detail: RunDetail }): JSX.Element {
+  const conclusion = detail.run.conclusion
+  const sourceLabel =
+    conclusion.source === "model"
+      ? "Agent conclusion"
+      : conclusion.source === "derived"
+        ? "Derived from recorded facts"
+        : "Conclusion unavailable"
+  return (
+    <section className="conclusion-panel" aria-labelledby="conclusion-title">
+      <article className="dispatch-context">
+        <span>Why intake dispatched the agent</span>
+        <h2>Dispatch reason</h2>
+        <p>{detail.run.dispatchReason}</p>
+      </article>
+      <article className="triage-conclusion">
+        <header>
+          <div>
+            <span>{sourceLabel}</span>
+            <h2 id="conclusion-title">Triage conclusion</h2>
+          </div>
+          <strong className={`decision decision-${conclusion.decision}`}>
+            {stateLabel(conclusion.decision)}
+          </strong>
+        </header>
+        <p className="conclusion-summary">{conclusion.summary}</p>
+        <dl className="conclusion-facts">
+          {conclusion.evidence.length ? (
+            <ConclusionList label="Key evidence" items={conclusion.evidence} />
+          ) : null}
+          {conclusion.actions.length ? (
+            <ConclusionList
+              label="Actions performed"
+              items={conclusion.actions}
+            />
+          ) : null}
+          <div>
+            <dt>Outcome</dt>
+            <dd>{conclusion.outcome}</dd>
+          </div>
+          {conclusion.followUp ? (
+            <div>
+              <dt>Follow-up</dt>
+              <dd>{conclusion.followUp}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </article>
+    </section>
+  )
+}
+
+function ConclusionList({
+  label,
+  items,
+}: {
+  label: string
+  items: string[]
+}): JSX.Element {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        <ul>
+          {items.map((item, index) => (
+            <li key={`${label}-${index}`}>{item}</li>
+          ))}
+        </ul>
+      </dd>
     </div>
   )
 }
@@ -1062,7 +1137,7 @@ function WallTrack({
   state: string
 }): JSX.Element {
   return (
-    <span className="wall-track" aria-label={label}>
+    <span className="wall-track" role="img" aria-label={label}>
       <i
         className={`wall-segment segment-${kind} segment-${state}${position.marker ? " is-marker" : ""}`}
         style={{

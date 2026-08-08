@@ -465,26 +465,51 @@ async fn command_cancellation_kills_child_and_grandchild() {
     assert!(!process_exists(grandchild));
 }
 
+fn conclusion_text(decision: &str, summary: &str) -> String {
+    format!(
+        "<triage-conclusion>\n{}\n</triage-conclusion>",
+        json!({
+            "decision": decision,
+            "summary": summary,
+            "evidence": ["The event was reviewed against the local project context."],
+            "actions": [],
+            "outcome": "Triage recorded the decision.",
+            "followUp": null,
+        })
+    )
+}
+
 #[tokio::test]
 async fn production_scenarios_preserve_tool_effect_compatibility() {
     let scenarios = [
-        ("new email", "email", true),
-        ("email follow-up", "email", true),
-        ("informational email", "email", false),
-        ("GitHub issue", "github_issue", true),
-        ("GitHub pull request", "github_pull_request", true),
-        ("ambiguous project", "github_issue", false),
+        ("new email", "email", true, "action_taken"),
+        ("email follow-up", "email", true, "action_taken"),
+        ("informational email", "email", false, "no_action"),
+        ("GitHub issue", "github_issue", true, "action_taken"),
+        (
+            "GitHub pull request",
+            "github_pull_request",
+            true,
+            "action_taken",
+        ),
+        (
+            "ambiguous project",
+            "github_issue",
+            false,
+            "needs_follow_up",
+        ),
     ];
 
-    for (title, kind, actionable) in scenarios {
+    for (title, kind, actionable, decision) in scenarios {
         let fixture = ProductionFixture::new(title, kind).await;
+        let final_text = conclusion_text(decision, "The event was triaged from observable facts.");
         let model = if actionable {
             MockCompletionModel::from_turns([
                 MockTurn::tool_call("call-1", "bash", json!({"command": "printf handled"})),
-                MockTurn::text("finished"),
+                MockTurn::text(final_text),
             ])
         } else {
-            MockCompletionModel::from_turns([MockTurn::text("no local action")])
+            MockCompletionModel::from_turns([MockTurn::text(final_text)])
         };
         let runner = fixture.runner(model);
 
@@ -496,6 +521,21 @@ async fn production_scenarios_preserve_tool_effect_compatibility() {
         let run = fixture.run_record().await;
         assert_eq!(run.outcome.as_deref(), Some("succeeded"), "{title}");
         assert_eq!(run.telemetry_completeness, "complete", "{title}");
+        assert!(
+            run.dispatch_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains(kind)),
+            "{title}"
+        );
+        let conclusion = run.conclusion.as_ref().expect("stored conclusion");
+        assert_eq!(
+            serde_json::to_value(conclusion.decision).unwrap(),
+            json!(decision)
+        );
+        assert_eq!(
+            serde_json::to_value(conclusion.source).unwrap(),
+            json!("model")
+        );
         let steps = fixture
             .database
             .readers()
@@ -581,7 +621,17 @@ async fn production_tools_reauthorize_and_denied_calls_have_no_effect() {
             "bash",
             json!({"command": format!("touch {}", forbidden.display())}),
         ),
-        MockTurn::text("recovered from denial"),
+        MockTurn::text(format!(
+            "<triage-conclusion>\n{}\n</triage-conclusion>",
+            json!({
+                "decision": "blocked",
+                "summary": "The requested action was denied; token=private-value",
+                "evidence": ["https://example.invalid/private?oauth=secret"],
+                "actions": ["Attempted an action outside the restricted capability set."],
+                "outcome": "No external effect occurred.",
+                "followUp": "Review the capability policy.",
+            })
+        )),
     ]);
     let runner = fixture.runner(model);
 
@@ -604,6 +654,16 @@ async fn production_tools_reauthorize_and_denied_calls_have_no_effect() {
         .find(|step| step.kind == "tool")
         .expect("authorized tool name receives denied result");
     assert_eq!(tool.outcome.as_deref(), Some("aborted"));
+    let run = fixture.run_record().await;
+    let conclusion = run.conclusion.expect("blocked conclusion");
+    assert_eq!(
+        serde_json::to_value(conclusion.decision).unwrap(),
+        json!("blocked")
+    );
+    let stored = serde_json::to_string(&conclusion).unwrap();
+    assert!(!stored.contains("private-value"));
+    assert!(!stored.contains("example.invalid"));
+    assert!(!stored.contains("oauth=secret"));
 }
 
 #[tokio::test]
@@ -750,6 +810,43 @@ async fn production_max_turns_timeout_and_cancellation_close_every_attempt() {
     assert_eq!(run.outcome.as_deref(), Some("interrupted"));
     assert_eq!(run.termination_reason.as_deref(), Some("aborted"));
     assert_eq!(run.telemetry_completeness, "partial");
+    assert_eq!(
+        serde_json::to_value(run.conclusion.expect("cancellation conclusion").decision).unwrap(),
+        json!("canceled")
+    );
+}
+
+#[tokio::test]
+async fn production_failed_model_persists_a_safe_conclusion() {
+    let fixture = ProductionFixture::new("failed model", "email").await;
+    let runner = fixture.runner_with(
+        MockCompletionModel::from_turns([MockTurn::error(
+            "provider failed with token=private-value",
+        )]),
+        ProviderRetryPolicy {
+            max_retries: 0,
+            initial_delay: Duration::ZERO,
+            max_delay: Duration::ZERO,
+        },
+        Duration::from_secs(5),
+    );
+
+    runner
+        .run(fixture.event.clone(), CancellationToken::new())
+        .await
+        .expect_err("model failure should fail triage");
+
+    let run = fixture.run_record().await;
+    let conclusion = run.conclusion.expect("failed model conclusion");
+    assert_eq!(
+        serde_json::to_value(conclusion.decision).unwrap(),
+        json!("failed")
+    );
+    assert!(
+        !serde_json::to_string(&conclusion)
+            .unwrap()
+            .contains("private-value")
+    );
 }
 
 #[tokio::test]
@@ -1114,6 +1211,16 @@ async fn assert_closed_failure(fixture: &ProductionFixture, reason: &str) {
     let run = fixture.run_record().await;
     assert_eq!(run.outcome.as_deref(), Some("failed"));
     assert_eq!(run.termination_reason.as_deref(), Some(reason));
+    let conclusion = run.conclusion.as_ref().expect("derived conclusion");
+    let expected = match reason {
+        "turn_limit" => "turn_limit",
+        "wall_timeout" => "timed_out",
+        _ => "failed",
+    };
+    assert_eq!(
+        serde_json::to_value(conclusion.decision).unwrap(),
+        json!(expected)
+    );
     let steps = fixture
         .database
         .readers()
