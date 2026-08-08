@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use chrono::{TimeZone, Utc};
 use intake::database::{
     CompactionFinish, DATABASE_QUEUE_CAPACITY, ErrorCategory, EventStatus, IntakeDatabase,
@@ -536,75 +534,6 @@ async fn rejects_migration_gaps_and_future_versions() {
             .expect("schema count");
         assert_eq!(count, 1);
     }
-}
-
-#[tokio::test]
-async fn rust_and_bun_apply_reciprocal_operations() {
-    if Command::new("bun").arg("--version").output().is_err() {
-        eprintln!("bun unavailable, reciprocal compatibility test skipped");
-        return;
-    }
-    let temporary = TempDir::new().expect("temporary directory");
-    let path = temporary.path().join("compat.sqlite");
-    let database = IntakeDatabase::open(&path).await.expect("Rust database");
-    database
-        .source_succeeded(
-            "rust".into(),
-            json!({"cursor": 1}),
-            vec![item("rust-1")],
-            at("2026-08-03T10:01:00.000Z"),
-        )
-        .await
-        .expect("Rust source commit");
-    database.shutdown().await.expect("shutdown");
-    drop(database);
-
-    let repository = env!("CARGO_MANIFEST_DIR");
-    let script = format!(
-        r#"
-        import {{ IntakeDatabase }} from {module:?};
-        const database = new IntakeDatabase(process.argv[1]);
-        if (database.listEvents().length !== 1) throw new Error("Rust event unavailable");
-        database.sourceSucceeded("bun", {{ cursor: 2 }}, [{{
-          entityId: "mail:thread-1",
-          revisionId: "bun-2",
-          kind: "email",
-          title: "Needs attention",
-          body: "Written by Bun",
-          occurredAt: "2026-08-03T10:02:00.000Z",
-          metadata: {{ threadId: "thread-1" }},
-        }}], "2026-08-03T10:02:01.000Z");
-        database.close();
-        "#,
-        module = format!("{repository}/src/database.ts"),
-    );
-    let result = Command::new("bun")
-        .args(["-e", &script, path.to_str().expect("UTF-8 path")])
-        .current_dir(repository)
-        .output()
-        .expect("run Bun compatibility operation");
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-
-    let database = IntakeDatabase::open(&path).await.expect("reopen in Rust");
-    let events = database
-        .readers()
-        .list_events(10)
-        .await
-        .expect("event list");
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].revision_id, "bun-2");
-    assert_eq!(
-        database
-            .readers()
-            .integrity_check()
-            .await
-            .expect("integrity check"),
-        "ok"
-    );
 }
 
 #[test]

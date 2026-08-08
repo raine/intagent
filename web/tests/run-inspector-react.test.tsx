@@ -97,20 +97,20 @@ describe("activity-first run inspector", () => {
   test("shows commands and read targets on tool rows", () => {
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.id === 2
-        ? { ...entry, label: "read", summary: "/workspace/src/dashboard.ts" }
+        ? { ...entry, label: "read", summary: "/workspace/src/dashboard.rs" }
         : entry.type === "span" && entry.id === 4
           ? {
               ...entry,
               label: "bash",
-              summary: "bun test tests/dashboard.test.ts",
+              summary: "cargo test --test dashboard",
             }
           : entry,
     )
     const html = render(runDetailFixture({ entries }), "tools")
 
     expect(html).toContain('class="phase-summary"')
-    expect(html).toContain("/workspace/src/dashboard.ts")
-    expect(html).toContain("bun test tests/dashboard.test.ts")
+    expect(html).toContain("/workspace/src/dashboard.rs")
+    expect(html).toContain("cargo test --test dashboard")
     expect(html).not.toContain("Read target")
     expect(html).not.toContain(">Command<")
     expect(html).not.toContain("<strong>bash</strong>")
@@ -118,7 +118,7 @@ describe("activity-first run inspector", () => {
   })
 
   test("offers an accessible full view for long commands", () => {
-    const command = `bun test ${"tests/run-inspector-react.test.tsx ".repeat(8)}`
+    const command = `cargo test ${"--test run_detail ".repeat(16)}`
     const entries = cleanEntries().map((entry) =>
       entry.type === "span" && entry.id === 4
         ? { ...entry, label: "Bash", summary: command }
