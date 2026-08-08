@@ -9,7 +9,7 @@ use regex::{Regex, RegexBuilder};
 use tokio_util::sync::CancellationToken;
 use tree_sitter::{Node, Parser};
 
-use crate::agent::process::{ProcessOptions, run_process};
+use crate::agent::process::{ProcessFailure, ProcessOptions, run_process};
 use crate::config::{CommandRule, IntakeConfig, is_within};
 
 pub const MAX_COMMAND_STDIN_BYTES: usize = 256 * 1024;
@@ -27,6 +27,7 @@ pub struct CommandResult {
     pub stdout: String,
     pub stderr: String,
     pub truncated: bool,
+    pub failure: Option<ProcessFailure>,
 }
 
 #[derive(Clone, Debug)]
@@ -146,6 +147,7 @@ impl CommandPolicy {
         let mut stderr = String::new();
         let mut truncated = false;
         let mut exit_code = 0;
+        let mut failure = None;
 
         for (stage, executable) in parsed.stages.iter().zip(executables) {
             let output = run_process(
@@ -160,25 +162,16 @@ impl CommandPolicy {
                     cancellation: cancellation.child_token(),
                 },
             )
-            .await
-            .map_err(|error| {
-                let message = error.to_string();
-                if message.contains("cancelled") {
-                    anyhow::anyhow!("command cancelled")
-                } else if message.contains("timed out") {
-                    anyhow::anyhow!("command timed out")
-                } else {
-                    error
-                }
-            })?;
+            .await?;
             exit_code = output.status.code().unwrap_or(-1);
+            failure = output.failure;
             stdin = Some(output.stdout);
             stderr.push_str(&String::from_utf8_lossy(&output.stderr));
             if output.stderr_truncated {
                 stderr.push_str("\n[stderr truncated]");
             }
             truncated |= output.stdout_truncated || output.stderr_truncated;
-            if !output.status.success() {
+            if failure.is_some() || !output.status.success() {
                 break;
             }
         }
@@ -189,6 +182,7 @@ impl CommandPolicy {
             )),
             stderr: self.filter(&stderr),
             truncated,
+            failure,
         })
     }
 

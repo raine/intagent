@@ -15,12 +15,22 @@ pub struct ProcessOutput {
     pub stderr: Vec<u8>,
     pub stdout_truncated: bool,
     pub stderr_truncated: bool,
+    pub failure: Option<ProcessFailure>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProcessFailure {
     Cancelled,
     TimedOut,
+}
+
+impl std::fmt::Display for ProcessFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Cancelled => "was cancelled",
+            Self::TimedOut => "timed out",
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +113,7 @@ where
                 status,
                 stdout,
                 stderr,
+                failure: None,
                 stdout_truncated,
                 stderr_truncated,
             })
@@ -120,17 +131,21 @@ where
         }
     };
 
-    terminate_and_reap(&mut child, pid, Duration::from_secs(1)).await?;
+    let status = terminate_and_reap(&mut child, pid, Duration::from_secs(1)).await?;
     guard.disarm();
-    stdout_task.abort();
-    stderr_task.abort();
     if let Some(task) = stdin_task {
         task.abort();
     }
-    match failure {
-        ProcessFailure::Cancelled => bail!("process cancelled"),
-        ProcessFailure::TimedOut => bail!("process timed out"),
-    }
+    let (stdout, stdout_truncated) = stdout_task.await.context("join stdout reader")??;
+    let (stderr, stderr_truncated) = stderr_task.await.context("join stderr reader")??;
+    Ok(ProcessOutput {
+        status,
+        stdout,
+        stderr,
+        stdout_truncated,
+        stderr_truncated,
+        failure: Some(failure),
+    })
 }
 
 pub async fn supervise_process<I, S>(
@@ -163,7 +178,7 @@ where
             Ok(status)
         }
         () = cancellation.cancelled() => {
-            terminate_and_reap(&mut child, pid, termination_grace).await?;
+            let _ = terminate_and_reap(&mut child, pid, termination_grace).await?;
             guard.disarm();
             bail!("supervised process canceled")
         }
@@ -189,12 +204,11 @@ async fn read_bounded(
     }
 }
 
-async fn terminate_and_reap(child: &mut Child, pid: i32, grace: Duration) -> Result<()> {
+async fn terminate_and_reap(child: &mut Child, pid: i32, grace: Duration) -> Result<ExitStatus> {
     terminate_group(pid, libc::SIGTERM);
     tokio::time::sleep(grace).await;
     terminate_group(pid, libc::SIGKILL);
-    child.wait().await.context("reap terminated process")?;
-    Ok(())
+    child.wait().await.context("reap terminated process")
 }
 
 #[cfg(unix)]

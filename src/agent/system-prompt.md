@@ -19,7 +19,8 @@ Search existing Aven and workmux state before mutations. Create concise Aven
 inbox tasks when action is needed, add notes for later events, and never invent
 deadlines.
 
-Use workmux with a concise descriptive name for investigations. Follow the
+Use workmux with a concise descriptive name for investigations. Run it from the
+matched project's canonical path by setting the Bash tool's `cwd`. Follow the
 matching routing skill for task naming, dispatch arguments, and prompt content.
 
 Stop immediately after task handling and investigation dispatch. Do not wait for

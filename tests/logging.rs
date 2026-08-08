@@ -53,7 +53,12 @@ async fn writes_bounded_redacted_triage_lifecycle() {
     run.start_turn(1).await;
     run.start_tool("/private/tool", Some("visible-secret command"))
         .await;
-    run.finish_tool("/private/tool", false).await;
+    run.finish_tool(
+        "/private/tool",
+        true,
+        Some("working directory: /project\nstderr: visible-secret failure"),
+    )
+    .await;
     run.reasoning(Some("visible-secret reasoning")).await;
     run.finish_turn(1, json!({"usage": null})).await;
     run.finish(RunOutcome::Succeeded, None, "completed").await;
@@ -83,6 +88,11 @@ async fn writes_bounded_redacted_triage_lifecycle() {
     assert!(!serialized.contains("/private"));
     assert!(!serialized.contains("inspect visible"));
     assert!(serialized.contains("[REDACTED]"));
+    assert_eq!(records[5]["isError"], true);
+    assert_eq!(
+        records[5]["diagnostic"],
+        "working directory: /project\nstderr: [REDACTED] failure"
+    );
     assert_eq!(
         fs::metadata(temporary.path())
             .expect("log directory")

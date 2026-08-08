@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use intake::agent::command_policy::{CommandPolicy, MAX_COMMAND_STDIN_BYTES};
+use intake::agent::process::ProcessFailure;
 use intake::config::{CommandRule, load_config};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -47,7 +48,7 @@ fn fixture_with_timeout(timeout_seconds: u64) -> Fixture {
                 "#!/bin/sh\ni=0; while [ $i -lt 400 ]; do printf '0123456789'; i=$((i+1)); done\n"
                     .to_string()
             }
-            "slow" => "#!/bin/sh\n/bin/sleep 60\n".to_string(),
+            "slow" => "#!/bin/sh\nprintf 'started before timeout\\n'\nprintf 'failure detail before timeout\\n' >&2\n/bin/sleep 60\n".to_string(),
             "ignore-term" => format!(
                 "#!/bin/sh\ntrap '' TERM\n/bin/sh -c 'trap \"\" TERM; while :; do /bin/sleep 1; done' &\nprintf '%s' $! > '{}.pid'\nwait\n",
                 marker.display()
@@ -323,9 +324,10 @@ async fn bounds_output_and_propagates_timeout_and_cancellation() {
             None,
         )
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(timeout.contains("timed out"), "{timeout}");
+        .unwrap();
+    assert_eq!(timeout.failure, Some(ProcessFailure::TimedOut));
+    assert_eq!(timeout.stdout, "started before timeout\n");
+    assert_eq!(timeout.stderr, "failure detail before timeout\n");
 
     let cancellation = CancellationToken::new();
     let trigger = cancellation.clone();
@@ -337,21 +339,19 @@ async fn bounds_output_and_propagates_timeout_and_cancellation() {
         .policy
         .execute("slow", &timeout_fixture.root, cancellation, None)
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(cancelled.contains("cancelled"), "{cancelled}");
+        .unwrap();
+    assert_eq!(cancelled.failure, Some(ProcessFailure::Cancelled));
 }
 
 #[tokio::test]
 async fn times_out_when_an_exited_parent_leaves_pipe_holding_descendants() {
     let fixture = fixture_with_timeout(10);
-    let error = fixture
+    let result = fixture
         .policy
         .execute("orphan", &fixture.root, CancellationToken::new(), None)
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("timed out"), "{error}");
+        .unwrap();
+    assert_eq!(result.failure, Some(ProcessFailure::TimedOut));
     let pid: i32 = fs::read_to_string(format!("{}.orphan.pid", fixture.marker.display()))
         .unwrap()
         .parse()
@@ -363,13 +363,12 @@ async fn times_out_when_an_exited_parent_leaves_pipe_holding_descendants() {
 #[tokio::test]
 async fn kills_descendants_that_ignore_sigterm() {
     let fixture = fixture_with_timeout(10);
-    let error = fixture
+    let result = fixture
         .policy
         .execute("ignore-term", &fixture.root, CancellationToken::new(), None)
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("timed out"), "{error}");
+        .unwrap();
+    assert_eq!(result.failure, Some(ProcessFailure::TimedOut));
     let pid: i32 = fs::read_to_string(format!("{}.pid", fixture.marker.display()))
         .unwrap()
         .parse()

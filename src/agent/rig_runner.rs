@@ -273,25 +273,28 @@ impl TriageRunnerCore {
         let inventory =
             load_project_inventory(&self.registry_path, &self.config.project_roots).await?;
         let repository = github_repository_from_event(event);
-        let known = repository.as_ref().is_some_and(|repository| {
-            inventory.projects.iter().any(|project| {
+        let matched = repository.as_ref().and_then(|repository| {
+            inventory.projects.iter().find(|project| {
                 project
                     .github_repositories
                     .iter()
                     .any(|known| known.eq_ignore_ascii_case(repository))
             })
         });
-        let likely = if known {
+        let likely = if matched.is_some() {
             None
         } else if let Some(repository) = repository {
             find_likely_project(&repository, &self.config.project_roots).await?
         } else {
             None
         };
-        let cwd =
+        let cwd = if let Some(project) = matched.or(likely.as_ref()) {
+            std::fs::canonicalize(&project.path)?
+        } else {
             std::fs::canonicalize(expand_path(self.config.project_roots.first().ok_or_else(
                 || TriageError::Configuration("project_roots is empty".into()),
-            )?)?)?;
+            )?)?)?
+        };
         let mut read_roots = self.config.project_roots.clone();
         read_roots.extend(self.config.skills.approved_roots.clone());
         read_roots.push(self.registry_path.to_string_lossy().into_owned());
@@ -512,7 +515,10 @@ impl TriageRunnerCore {
                         self.database
                             .finish_tool(started.run_id, tool_id, outcome, Utc::now())
                             .await?;
-                        started.log.finish_tool(&name, result.failed).await;
+                        started
+                            .log
+                            .finish_tool(&name, result.failed, Some(&result.output))
+                            .await;
                         self.report(format!(
                             "{} {name}\n{}",
                             if result.failed { "✗" } else { "✓" },

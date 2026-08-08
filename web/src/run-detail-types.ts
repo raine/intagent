@@ -128,7 +128,7 @@ export type RunTimelineEntry =
       summary: string | null
       startedAt: string
       endedAt: string | null
-      state: "active" | RunOutcome
+      state: "active" | RunOutcome | "aborted"
     }
   | {
       type: "retry"
