@@ -1,18 +1,11 @@
 import type { RunDetail, RunTimelineEntry } from "./run-detail-types.ts"
 
-export type TimelineFilter =
-  | "all"
-  | "attention"
-  | "tools"
-  | "thinking"
-  | "retries"
-  | "compactions"
+export type TimelineFilter = "all" | "tools" | "thinking" | "retries"
 
 export type SpanEntry = Extract<RunTimelineEntry, { type: "span" }>
 export type TurnEntry = Extract<RunTimelineEntry, { type: "turn" }>
 export type RetryEntry = Extract<RunTimelineEntry, { type: "retry" }>
-export type CompactionEntry = Extract<RunTimelineEntry, { type: "compaction" }>
-export type PhaseEntry = RetryEntry | CompactionEntry
+export type PhaseEntry = RetryEntry
 
 export interface GroupedSpan extends SpanEntry {
   blockCount: number
@@ -36,19 +29,10 @@ export interface RunSummaryCounts {
   toolCalls: SummaryCount
   failedTools: SummaryCount
   retries: SummaryCount
-  compactions: SummaryCount
-  incompleteCompactions: SummaryCount
 }
 
 export interface TimeBudgetPart {
-  key:
-    | "setup"
-    | "thinking"
-    | "tool"
-    | "retryWait"
-    | "compaction"
-    | "gaps"
-    | "finalization"
+  key: "setup" | "thinking" | "tool" | "retryWait" | "gaps" | "finalization"
   label: string
   value: number
 }
@@ -58,7 +42,6 @@ const budgetLabels: Record<TimeBudgetPart["key"], string> = {
   thinking: "Thinking / model",
   tool: "Tool wall time",
   retryWait: "Retry wait",
-  compaction: "Compaction",
   gaps: "Gaps / other",
   finalization: "Finalization",
 }
@@ -83,12 +66,6 @@ export function runSummaryCounts(detail: RunDetail): RunSummaryCounts {
   const retries = detail.timeline.entries.filter(
     (entry) => entry.type === "retry",
   ).length
-  const compactions = detail.timeline.entries.filter(
-    (entry) => entry.type === "compaction",
-  )
-  const incompleteCompactions = compactions.filter((entry) =>
-    ["failed", "aborted", "interrupted"].includes(entry.state),
-  ).length
 
   return {
     toolCalls: summaryCount(
@@ -104,15 +81,6 @@ export function runSummaryCounts(detail: RunDetail): RunSummaryCounts {
       timelineComplete,
     ),
     retries: summaryCount(detail.metrics.retryCount, retries, timelineComplete),
-    compactions: summaryCount(
-      detail.metrics.compactionCount,
-      compactions.length,
-      timelineComplete,
-    ),
-    incompleteCompactions: {
-      value: incompleteCompactions,
-      exact: timelineComplete || detail.metrics.compactionCount === 0,
-    },
   }
 }
 
@@ -124,7 +92,6 @@ export function timeBudget(
     "thinking",
     "tool",
     "retryWait",
-    "compaction",
     "gaps",
     "finalization",
   ]
@@ -185,8 +152,7 @@ export function groupTimeline(detail: RunDetail): {
     (entry): entry is SpanEntry => entry.type === "span",
   )
   const phases = detail.timeline.entries.filter(
-    (entry): entry is PhaseEntry =>
-      entry.type === "retry" || entry.type === "compaction",
+    (entry): entry is PhaseEntry => entry.type === "retry",
   )
   const groupedSpans = mergeThinkingSpans(spans)
   const turnOrdinals = new Set(turns.map((turn) => turn.ordinal))
@@ -224,10 +190,7 @@ export function groupTimeline(detail: RunDetail): {
           span.state === "interrupted",
       )
       const failedPhase = turnPhases.some(
-        (phase) =>
-          phase.state === "failed" ||
-          phase.state === "aborted" ||
-          phase.state === "interrupted",
+        (phase) => phase.state === "interrupted",
       )
       const hasTelemetryGap =
         detail.run.telemetry.completeness === "partial" &&
@@ -262,12 +225,7 @@ export function matchesFilter(
   if (filter === "thinking")
     return entry.type === "span" && entry.kind === "thinking"
   if (filter === "retries") return entry.type === "retry"
-  if (filter === "compactions") return entry.type === "compaction"
-  return (
-    (entry.type === "span" && entry.state === "failed") ||
-    (entry.type === "retry" && entry.state !== "succeeded") ||
-    (entry.type === "compaction" && entry.state !== "succeeded")
-  )
+  return false
 }
 
 export function runEnd(detail: RunDetail, now: number): number {
@@ -304,13 +262,4 @@ export function entryPosition(
     width: Math.min(100, width),
     marker: width < 0.7,
   }
-}
-
-export function eventRunDisagree(detail: RunDetail): boolean {
-  const event = detail.event.status
-  const run = detail.run.state
-  if (run === "active") return event !== "processing"
-  if (run === "succeeded") return event !== "succeeded"
-  if (run === "failed") return event !== "failed" && event !== "retryable"
-  return event === "processing" || event === "succeeded"
 }

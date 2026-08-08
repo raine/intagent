@@ -243,7 +243,6 @@ describe("activity-first run inspector", () => {
     )
 
     expect(html).toContain("Execution failed")
-    expect(html).toContain("Run failed")
     expect(html).toContain("1 model retry")
     expect(html).toContain("Model retry 1 of 3")
   })
@@ -277,7 +276,6 @@ describe("activity-first run inspector", () => {
     )
 
     expect(html).toContain("Execution interrupted")
-    expect(html).toContain("Run interrupted")
     expect(html).toContain("interrupted and clamped to run end")
   })
 
@@ -325,7 +323,7 @@ describe("activity-first run inspector", () => {
     expect(html).not.toContain("Succeeded cleanly")
   })
 
-  test("renders an active stalled warning separately from connection state", () => {
+  test("omits attention warnings", () => {
     const html = render(
       runDetailFixture({
         run: {
@@ -337,8 +335,8 @@ describe("activity-first run inspector", () => {
       }),
     )
 
-    expect(html).toContain("No telemetry for")
-    expect(html).toContain("Dashboard connection health is reported separately")
+    expect(html).not.toContain("No telemetry for")
+    expect(html).not.toContain('aria-label="Run attention"')
   })
 
   test("renders a bounded empty terminal timeline", () => {
@@ -354,7 +352,7 @@ describe("activity-first run inspector", () => {
     )
   })
 
-  test("renders compactions and retries as first-class phases", () => {
+  test("omits compactions from activity and time accounting", () => {
     const html = render(
       runDetailFixture({
         entries: [...cleanEntries(), retry(), compaction("aborted")],
@@ -377,9 +375,9 @@ describe("activity-first run inspector", () => {
     )
 
     expect(html).toContain("Model retry 1 of 3")
-    expect(html).toContain("threshold compaction")
-    expect(html).toContain("180K before")
-    expect(html).toContain("1 incomplete compaction")
+    expect(html).not.toContain("threshold compaction")
+    expect(html).not.toContain("180K before")
+    expect(html).not.toContain(">Compaction<")
   })
 
   test("uses an honest fallback for partial legacy telemetry", () => {
@@ -684,22 +682,21 @@ describe("run inspector derivation", () => {
     ).toEqual([false, true])
   })
 
-  test("uses explicit turn association for retries and compactions", () => {
+  test("uses explicit turn association for retries", () => {
     const assignedRetry = { ...retry(), turnOrdinal: 2 }
-    const unassignedCompaction = { ...compaction(), turnOrdinal: null }
     const detail = runDetailFixture({
       entries: [
         turn(1, "2026-08-05T10:00:01.000Z", "2026-08-05T10:00:05.000Z"),
         turn(2, "2026-08-05T10:00:06.000Z", "2026-08-05T10:00:10.000Z"),
         assignedRetry,
-        unassignedCompaction,
+        { ...compaction(), turnOrdinal: null },
       ],
     })
 
     const grouped = groupTimeline(detail)
     expect(grouped.turns[0]?.phases).toHaveLength(0)
     expect(grouped.turns[1]?.phases).toEqual([assignedRetry])
-    expect(grouped.unassigned).toEqual([unassignedCompaction])
+    expect(grouped.unassigned).toEqual([])
   })
 
   test("renders successful retries directly without error treatment", () => {

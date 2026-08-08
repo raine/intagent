@@ -1950,50 +1950,6 @@
     padding-left: 17px;
   }
 
-  .attention-stack {
-    display: grid;
-    gap: 6px;
-  }
-
-  .attention-banner {
-    align-items: start;
-    background: var(--surface);
-    border: 1px solid var(--edge);
-    display: grid;
-    gap: 10px;
-    grid-template-columns: 20px minmax(0, 1fr);
-    padding: 9px 12px;
-  }
-
-  .attention-banner > span {
-    border: 1px solid currentColor;
-    border-radius: 50%;
-    color: var(--blue);
-    font-weight: 800;
-    height: 18px;
-    line-height: 16px;
-    text-align: center;
-    width: 18px;
-  }
-
-  .attention-warning > span {
-    color: var(--yellow);
-  }
-
-  .attention-critical > span {
-    color: var(--red);
-  }
-
-  .attention-banner strong {
-    color: var(--ink);
-  }
-
-  .attention-banner p {
-    color: var(--ink-3);
-    font-size: 12px;
-    margin-top: 1px;
-  }
-
   .metric-grid {
     display: grid;
     gap: 1px;
@@ -2093,10 +2049,6 @@
 
   .budget-retryWait {
     background: var(--viz-retry);
-  }
-
-  .budget-compaction {
-    background: var(--viz-compaction);
   }
 
   .budget-gaps {
@@ -2519,10 +2471,6 @@
     color: var(--viz-retry);
   }
 
-  .phase-compaction .phase-glyph {
-    color: var(--viz-compaction);
-  }
-
   .phase-failed .phase-glyph,
   .phase-interrupted .phase-glyph,
   .phase-aborted .phase-glyph {
@@ -2570,10 +2518,6 @@
     background: var(--viz-retry);
   }
 
-  .segment-compaction {
-    background: var(--viz-compaction);
-  }
-
   .segment-failed,
   .segment-interrupted,
   .segment-aborted {
@@ -2597,10 +2541,6 @@
 
   .segment-retry.is-marker {
     color: var(--viz-retry);
-  }
-
-  .segment-compaction.is-marker {
-    color: var(--viz-compaction);
   }
 
   .turn-gap {
@@ -2811,7 +2751,6 @@
 
   .verdict-outcome p,
   .verdict-disposition small,
-  .attention-banner p,
   .section-heading > strong,
   .timeline-controls button,
   .details-grid h3,
@@ -2989,10 +2928,6 @@
 
     .conclusion-facts {
       grid-template-columns: 1fr;
-    }
-
-    .attention-stack {
-      order: 3;
     }
 
     .metric-grid {
