@@ -5,8 +5,8 @@ use serde::{Serialize, Serializer};
 use url::Url;
 
 use crate::database::{
-    ConclusionSource, DatabaseError, DatabaseReaders, EventRecord, EventStatus, RunId,
-    TriageCompactionRecord, TriageConclusion, TriageDecision, TriageEffectRecord,
+    ConclusionSource, DatabaseError, DatabaseReaders, DispatchTrigger, EventRecord, EventStatus,
+    RunId, TriageCompactionRecord, TriageConclusion, TriageDecision, TriageEffectRecord,
     TriageRetryRecord, TriageRunPromptRecord, TriageRunRecord, TriageStepRecord, TriageTurnRecord,
 };
 
@@ -15,6 +15,7 @@ pub struct RunDetailOptions {
     pub offset: usize,
     pub limit: usize,
     pub max_turns: Option<u32>,
+    pub max_attempts: Option<u32>,
     pub wall_timeout_ms: Option<u64>,
     pub now: DateTime<Utc>,
 }
@@ -25,6 +26,7 @@ impl Default for RunDetailOptions {
             offset: 0,
             limit: 200,
             max_turns: None,
+            max_attempts: None,
             wall_timeout_ms: None,
             now: Utc::now(),
         }
@@ -57,10 +59,53 @@ pub struct RunProjection {
     pub state: String,
     pub termination_reason: Option<String>,
     pub failure_category: Option<String>,
-    pub dispatch_reason: String,
+    pub dispatch: DispatchProjection,
     pub conclusion: TriageConclusion,
     pub model: ModelProjection,
     pub telemetry: TelemetryProjection,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchProjection {
+    pub sequence: u32,
+    pub trigger: DispatchTrigger,
+    pub source: DispatchSource,
+    pub attempt: u32,
+    pub max_attempts: Option<u32>,
+    pub final_attempt: bool,
+    pub scheduled_for: Option<String>,
+    pub claimed_at: String,
+    pub prior_attempt: Option<DispatchPriorAttempt>,
+    pub latency: DispatchLatency,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DispatchSource {
+    Recorded,
+    Derived,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchPriorAttempt {
+    pub run_id: i64,
+    pub sequence: u32,
+    pub state: String,
+    pub failure_category: Option<String>,
+    pub termination_reason: Option<String>,
+    pub decision: Option<TriageDecision>,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchLatency {
+    pub source_lag_ms: Option<i64>,
+    pub backoff_wait_ms: Option<i64>,
+    pub claim_delay_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -100,11 +145,14 @@ pub struct EventProjection {
 #[serde(rename_all = "camelCase")]
 pub struct SiblingAttempt {
     pub id: i64,
+    pub sequence: u32,
     pub attempt: u32,
     pub started_at: String,
     pub ended_at: Option<String>,
     pub state: String,
     pub failure_category: Option<String>,
+    pub termination_reason: Option<String>,
+    pub decision: Option<TriageDecision>,
     pub telemetry_completeness: String,
 }
 
@@ -121,8 +169,6 @@ pub struct RunMetrics {
     pub peak_context_tokens: Option<i64>,
     #[serde(serialize_with = "serialize_js_number_option")]
     pub peak_context_percent: Option<f64>,
-    pub source_lag_ms: Option<i64>,
-    pub queue_wait_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -285,6 +331,7 @@ pub async fn run_detail(
     let retries = database.triage_run_retries(run_id).await?;
     let compactions = database.triage_run_compactions(run_id).await?;
     let siblings = database.triage_runs_for_event(event.id).await?;
+    let dispatch = dispatch_projection(&run, &event, &siblings, options.max_attempts);
     let effects = database.triage_run_effects(run_id).await?;
     let prompts = database.triage_run_prompts(run_id).await?;
     let metrics = run_metrics(
@@ -319,10 +366,7 @@ pub async fn run_detail(
             state: run.outcome.clone().unwrap_or_else(|| "active".into()),
             termination_reason: run.termination_reason.clone(),
             failure_category: run.failure_category.clone(),
-            dispatch_reason: run
-                .dispatch_reason
-                .clone()
-                .unwrap_or_else(|| derived_dispatch_reason(&event)),
+            dispatch,
             conclusion: displayed_conclusion(&run),
             model: ModelProjection {
                 id: run.model_id.clone(),
@@ -340,13 +384,19 @@ pub async fn run_detail(
         sibling_attempts: siblings
             .into_iter()
             .map(|sibling| display_run(sibling, &event))
-            .map(|sibling| SiblingAttempt {
+            .enumerate()
+            .map(|(index, sibling)| SiblingAttempt {
                 id: sibling.id,
+                sequence: sibling
+                    .dispatch_sequence
+                    .unwrap_or_else(|| u32::try_from(index + 1).unwrap_or(u32::MAX)),
                 attempt: sibling.attempt,
                 started_at: sibling.started_at,
                 ended_at: sibling.ended_at,
                 state: sibling.outcome.unwrap_or_else(|| "active".into()),
                 failure_category: sibling.failure_category,
+                termination_reason: sibling.termination_reason,
+                decision: sibling.conclusion.map(|conclusion| conclusion.decision),
                 telemetry_completeness: sibling.telemetry_completeness,
             })
             .collect(),
@@ -375,7 +425,7 @@ pub async fn run_detail(
 
 pub fn run_metrics(
     run: &TriageRunRecord,
-    event: &EventRecord,
+    _event: &EventRecord,
     steps: &[TriageStepRecord],
     turns: &[TriageTurnRecord],
     retries: &[TriageRetryRecord],
@@ -482,8 +532,6 @@ pub fn run_metrics(
         },
         peak_context_tokens,
         peak_context_percent,
-        source_lag_ms: elapsed(&event.occurred_at, &run.started_at),
-        queue_wait_ms: elapsed(&event.observed_at, &run.started_at),
     }
 }
 
@@ -802,25 +850,87 @@ pub(crate) fn displayed_conclusion(run: &TriageRunRecord) -> TriageConclusion {
     }
 }
 
-pub(crate) fn derived_dispatch_reason(event: &EventRecord) -> String {
-    let source = context_label(&event.source, "intake source");
-    let kind = context_label(&event.kind, "item");
-    format!(
-        "Dispatched because {source} reported a {kind} event that entered the triage queue (attempt {}).",
-        event.attempt_count
-    )
-}
-
-fn context_label(value: &str, fallback: &str) -> String {
-    let value = value
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-        .take(64)
-        .collect::<String>();
-    if value.is_empty() {
-        fallback.into()
-    } else {
-        value
+fn dispatch_projection(
+    run: &TriageRunRecord,
+    event: &EventRecord,
+    siblings: &[TriageRunRecord],
+    max_attempts: Option<u32>,
+) -> DispatchProjection {
+    let preceding = siblings
+        .iter()
+        .filter(|candidate| candidate.id < run.id)
+        .max_by_key(|candidate| candidate.id);
+    let (trigger, source) = match run.dispatch_trigger {
+        Some(trigger) => (trigger, DispatchSource::Recorded),
+        None if event.source == "manual-injection" => {
+            (DispatchTrigger::ManualInjection, DispatchSource::Derived)
+        }
+        None if preceding.is_some() || run.attempt > 1 => {
+            (DispatchTrigger::BackoffRetry, DispatchSource::Derived)
+        }
+        None => (DispatchTrigger::Initial, DispatchSource::Derived),
+    };
+    let prior = run
+        .dispatch_prior_run_id
+        .and_then(|id| siblings.iter().find(|candidate| candidate.id == id))
+        .or_else(|| {
+            matches!(
+                trigger,
+                DispatchTrigger::BackoffRetry
+                    | DispatchTrigger::RecoveryRetry
+                    | DispatchTrigger::OperatorRetry
+                    | DispatchTrigger::SupersedingClaim
+            )
+            .then_some(preceding)
+            .flatten()
+        });
+    let sequence = run.dispatch_sequence.unwrap_or_else(|| {
+        u32::try_from(
+            siblings
+                .iter()
+                .filter(|candidate| candidate.id <= run.id)
+                .count(),
+        )
+        .unwrap_or(u32::MAX)
+    });
+    let scheduled_for = run.dispatch_scheduled_for.clone();
+    let claim_floor = scheduled_for
+        .as_deref()
+        .filter(|scheduled| millis(scheduled) > millis(&event.observed_at))
+        .unwrap_or(&event.observed_at);
+    DispatchProjection {
+        sequence,
+        trigger,
+        source,
+        attempt: run.attempt,
+        max_attempts,
+        final_attempt: max_attempts.is_some_and(|limit| run.attempt >= limit),
+        scheduled_for: scheduled_for.clone(),
+        claimed_at: run.started_at.clone(),
+        prior_attempt: prior.map(|prior| DispatchPriorAttempt {
+            run_id: prior.id,
+            sequence: prior.dispatch_sequence.unwrap_or_else(|| {
+                u32::try_from(
+                    siblings
+                        .iter()
+                        .filter(|candidate| candidate.id <= prior.id)
+                        .count(),
+                )
+                .unwrap_or(u32::MAX)
+            }),
+            state: prior.outcome.clone().unwrap_or_else(|| "active".into()),
+            failure_category: prior.failure_category.clone(),
+            termination_reason: prior.termination_reason.clone(),
+            decision: prior.conclusion.as_ref().map(|value| value.decision),
+            ended_at: prior.ended_at.clone(),
+        }),
+        latency: DispatchLatency {
+            source_lag_ms: elapsed(&event.occurred_at, &event.observed_at),
+            backoff_wait_ms: prior
+                .and_then(|prior| prior.ended_at.as_deref())
+                .and_then(|ended| scheduled_for.as_deref().and_then(|at| elapsed(ended, at))),
+            claim_delay_ms: elapsed(claim_floor, &run.started_at),
+        },
     }
 }
 

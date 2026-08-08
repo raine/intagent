@@ -114,15 +114,9 @@ impl TriageRunnerCore {
     }
 
     async fn start(&self, event: &EventRecord) -> Result<StartedRun, TriageError> {
-        let dispatch_reason = dispatch_reason(event);
         let run_id = self
             .database
-            .start_triage_run_with_dispatch_reason(
-                event.id,
-                event.attempt_count,
-                Some(dispatch_reason.clone()),
-                Utc::now(),
-            )
+            .start_triage_run(event.id, event.attempt_count, Utc::now())
             .await?;
         let mut log = self.logs.triage(event);
         log.start().await;
@@ -135,7 +129,6 @@ impl TriageRunnerCore {
             run_id,
             log,
             started_at: Instant::now(),
-            dispatch_reason,
             conclusion: None,
             tool_observations: Vec::new(),
         })
@@ -167,13 +160,10 @@ impl TriageRunnerCore {
         started.log.finish(outcome, category, termination).await;
         let recording_complete = !started.log.recording_failed()
             && !matches!(&result, Err(TriageError::RecordingFailure));
-        let mut conclusion = started.conclusion.take().unwrap_or_else(|| {
-            fallback_conclusion(
-                &result,
-                &started.dispatch_reason,
-                &started.tool_observations,
-            )
-        });
+        let mut conclusion = started
+            .conclusion
+            .take()
+            .unwrap_or_else(|| fallback_conclusion(&result, &started.tool_observations));
         if conclusion.actions.is_empty() {
             conclusion.actions = observed_actions(&started.tool_observations);
         }
@@ -879,7 +869,6 @@ struct StartedRun {
     run_id: RunId,
     log: TriageRunLog,
     started_at: Instant,
-    dispatch_reason: String,
     conclusion: Option<TriageConclusion>,
     tool_observations: Vec<ToolObservation>,
 }
@@ -972,15 +961,6 @@ struct ModelConclusion {
     actions: Vec<String>,
     outcome: String,
     follow_up: Option<String>,
-}
-
-fn dispatch_reason(event: &EventRecord) -> String {
-    let source = safe_context_label(&event.source, "intake source");
-    let kind = safe_context_label(&event.kind, "item");
-    format!(
-        "Dispatched because {source} reported a {kind} event that entered the triage queue (attempt {}).",
-        event.attempt_count
-    )
 }
 
 fn safe_context_label(value: &str, fallback: &str) -> String {
@@ -1103,7 +1083,6 @@ fn observed_actions(observations: &[ToolObservation]) -> Vec<String> {
 
 fn fallback_conclusion(
     result: &Result<(), TriageError>,
-    dispatch_reason: &str,
     observations: &[ToolObservation],
 ) -> TriageConclusion {
     let denied = observations
@@ -1151,10 +1130,11 @@ fn fallback_conclusion(
         ),
     };
     let actions = observed_actions(observations);
-    let mut evidence = vec![dispatch_reason.to_string()];
-    if failed {
-        evidence.push("At least one recorded tool call failed.".into());
-    }
+    let evidence = if failed {
+        vec!["At least one recorded tool call failed.".into()]
+    } else {
+        Vec::new()
+    };
     TriageConclusion {
         decision,
         summary: summary.into(),

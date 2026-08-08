@@ -49,7 +49,6 @@
       "timelineTruncated": false,
       "investigationHandle": "inspect-notifications",
       "steps": [],
-      "dispatchReason": "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
       "conclusion": {
         "summary": "A model-authored conclusion is unavailable for this run.",
         "evidence": [],
@@ -58,7 +57,9 @@
         "decision": "failed",
         "outcome": "The recorded attempt failed.",
         "followUp": "Review the failure category and timeline for available evidence."
-      }
+      },
+      "dispatchSequence": 3,
+      "dispatchTrigger": "backoff_retry"
     },
     {
       "id": 2,
@@ -81,7 +82,6 @@
       "timelineTruncated": true,
       "investigationHandle": "inspect-notifications",
       "steps": [],
-      "dispatchReason": "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
       "conclusion": {
         "summary": "A model-authored conclusion is unavailable for this run.",
         "evidence": [],
@@ -90,7 +90,9 @@
         "decision": "canceled",
         "outcome": "The recorded attempt was interrupted.",
         "followUp": "Review the timeline before deciding whether to retry."
-      }
+      },
+      "dispatchSequence": 2,
+      "dispatchTrigger": "backoff_retry"
     },
     {
       "id": 1,
@@ -113,7 +115,6 @@
       "timelineTruncated": true,
       "investigationHandle": null,
       "steps": [],
-      "dispatchReason": "Dispatched because fastmail reported a email event that entered the triage queue (attempt 1).",
       "conclusion": {
         "summary": "A model-authored conclusion is unavailable for this run.",
         "evidence": [],
@@ -122,7 +123,9 @@
         "decision": "needs_follow_up",
         "outcome": "The recorded attempt completed, but its decision was not captured.",
         "followUp": "Review the recorded effects and timeline for available evidence."
-      }
+      },
+      "dispatchSequence": 1,
+      "dispatchTrigger": "initial"
     }
   ],
   "events": [

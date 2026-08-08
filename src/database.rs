@@ -21,7 +21,7 @@ pub const DATABASE_QUEUE_CAPACITY: usize = 64;
 pub const DATABASE_READER_COUNT: usize = 2;
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
 
-pub const MIGRATIONS: [&str; 8] = [
+pub const MIGRATIONS: [&str; 9] = [
     include_str!("migrations/001-initial.sql"),
     include_str!("migrations/002-global-entity-identity.sql"),
     include_str!("migrations/003-triage-runs.sql"),
@@ -30,6 +30,7 @@ pub const MIGRATIONS: [&str; 8] = [
     include_str!("migrations/006-step-summaries.sql"),
     include_str!("migrations/007-run-prompts.sql"),
     include_str!("migrations/008-triage-conclusions.sql"),
+    include_str!("migrations/009-structured-dispatch.sql"),
 ];
 
 static MEMORY_DATABASE_ID: AtomicU64 = AtomicU64::new(1);
@@ -354,6 +355,37 @@ pub enum ConclusionSource {
     Unavailable,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DispatchTrigger {
+    Initial,
+    Revision,
+    BackoffRetry,
+    RecoveryRetry,
+    OperatorRetry,
+    ManualInjection,
+    SupersedingClaim,
+    Unknown,
+}
+
+impl DispatchTrigger {
+    fn parse(value: &str) -> Result<Self, DatabaseError> {
+        match value {
+            "initial" => Ok(Self::Initial),
+            "revision" => Ok(Self::Revision),
+            "backoff_retry" => Ok(Self::BackoffRetry),
+            "recovery_retry" => Ok(Self::RecoveryRetry),
+            "operator_retry" => Ok(Self::OperatorRetry),
+            "manual_injection" => Ok(Self::ManualInjection),
+            "superseding_claim" => Ok(Self::SupersedingClaim),
+            "unknown" => Ok(Self::Unknown),
+            _ => Err(DatabaseError::InvalidValue(format!(
+                "unknown dispatch trigger {value}"
+            ))),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TriageConclusion {
@@ -393,7 +425,10 @@ pub struct TriageRunRecord {
     pub max_tokens: Option<i64>,
     pub telemetry_version: Option<i64>,
     pub telemetry_completeness: String,
-    pub dispatch_reason: Option<String>,
+    pub dispatch_sequence: Option<u32>,
+    pub dispatch_trigger: Option<DispatchTrigger>,
+    pub dispatch_prior_run_id: Option<i64>,
+    pub dispatch_scheduled_for: Option<String>,
     pub conclusion: Option<TriageConclusion>,
     pub turn_count: u32,
     pub retry_count: u32,
@@ -616,21 +651,9 @@ impl IntakeDatabase {
         attempt: u32,
         now: DateTime<Utc>,
     ) -> Result<RunId, DatabaseError> {
-        self.start_triage_run_with_dispatch_reason(event_id, attempt, None, now)
-            .await
-    }
-
-    pub async fn start_triage_run_with_dispatch_reason(
-        &self,
-        event_id: i64,
-        attempt: u32,
-        dispatch_reason: Option<String>,
-        now: DateTime<Utc>,
-    ) -> Result<RunId, DatabaseError> {
         self.request(|reply| WriteOperation::StartRun {
             event_id,
             attempt,
-            dispatch_reason,
             now: timestamp(now),
             reply,
         })
@@ -1126,7 +1149,6 @@ enum WriteOperation {
     StartRun {
         event_id: i64,
         attempt: u32,
-        dispatch_reason: Option<String>,
         now: String,
         reply: Reply<RunId>,
     },
@@ -1452,19 +1474,9 @@ fn dispatch_write(connection: &mut Connection, operation: WriteOperation) {
         WriteOperation::StartRun {
             event_id,
             attempt,
-            dispatch_reason,
             now,
             reply: sender,
-        } => reply!(
-            sender,
-            start_run(
-                connection,
-                event_id,
-                attempt,
-                dispatch_reason.as_deref(),
-                &now
-            )
-        ),
+        } => reply!(sender, start_run(connection, event_id, attempt, &now)),
         WriteOperation::SetRunMetadata {
             run_id,
             metadata,
@@ -1744,8 +1756,14 @@ fn source_succeeded(
             |row| row.get(0),
         )?;
         inserted += transaction.execute(
-            "INSERT OR IGNORE INTO events(entity_id, source, revision_id, payload, occurred_at, observed_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR IGNORE INTO events(entity_id, source, revision_id, payload, occurred_at,
+               observed_at, updated_at, next_dispatch_trigger)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
+               CASE
+                 WHEN ?2 = 'manual-injection' THEN 'manual_injection'
+                 WHEN EXISTS (SELECT 1 FROM events WHERE entity_id = ?1) THEN 'revision'
+                 ELSE 'initial'
+               END)",
             params![
                 entity_id,
                 source,
@@ -1817,8 +1835,30 @@ fn claim_next(
     };
     interrupt_runs(&transaction, &run_ids, now, "superseded_attempt")?;
     transaction.execute(
-        "UPDATE events SET status = 'processing', attempt_count = attempt_count + 1, updated_at = ?1 WHERE id = ?2",
-        params![now, id],
+        "UPDATE events SET status = 'processing', attempt_count = attempt_count + 1,
+           next_dispatch_trigger = CASE
+             WHEN ?3 THEN 'superseding_claim'
+             WHEN next_dispatch_trigger != 'unknown' THEN next_dispatch_trigger
+             WHEN source = 'manual-injection' THEN 'manual_injection'
+             WHEN EXISTS (
+               SELECT 1 FROM triage_runs WHERE event_id = events.id
+             ) THEN 'backoff_retry'
+             WHEN EXISTS (
+               SELECT 1 FROM events prior
+               WHERE prior.entity_id = events.entity_id AND prior.id != events.id
+             ) THEN 'revision'
+             ELSE 'initial'
+           END,
+           next_dispatch_prior_run_id = CASE
+             WHEN ?3 THEN
+               (SELECT id FROM triage_runs WHERE event_id = events.id ORDER BY id DESC LIMIT 1)
+             ELSE COALESCE(
+               next_dispatch_prior_run_id,
+               (SELECT id FROM triage_runs WHERE event_id = events.id ORDER BY id DESC LIMIT 1)
+             )
+           END,
+           updated_at = ?1 WHERE id = ?2",
+        params![now, id, !run_ids.is_empty()],
     )?;
     let result = event(&transaction, id)?;
     transaction.commit()?;
@@ -1845,7 +1885,12 @@ fn recover_interrupted(
     interrupt_runs(&transaction, &run_ids, now, "process_exit")?;
     let changed = transaction.execute(
         "UPDATE events SET status = 'retryable', next_attempt_at = ?1,
-           last_error = 'triage interrupted by process exit', updated_at = ?1
+           last_error = 'triage interrupted by process exit',
+           next_dispatch_trigger = 'recovery_retry',
+           next_dispatch_prior_run_id = (
+             SELECT id FROM triage_runs WHERE event_id = events.id ORDER BY id DESC LIMIT 1
+           ),
+           updated_at = ?1
          WHERE status = 'processing' AND updated_at <= ?2",
         params![now, stale_before],
     )?;
@@ -1854,24 +1899,33 @@ fn recover_interrupted(
 }
 
 fn start_run(
-    connection: &Connection,
+    connection: &mut Connection,
     event_id: i64,
     attempt: u32,
-    dispatch_reason: Option<&str>,
     now: &str,
 ) -> Result<RunId, DatabaseError> {
-    connection.execute(
+    let transaction = connection.transaction()?;
+    let changed = transaction.execute(
         "INSERT INTO triage_runs(event_id, attempt, started_at, last_activity_at,
-           telemetry_version, telemetry_completeness, dispatch_reason)
-         VALUES (?1, ?2, ?3, ?3, 2, 'partial', ?4)",
-        params![
-            event_id,
-            attempt,
-            now,
-            dispatch_reason.map(|value| bounded_detail(value, 1000))
-        ],
+           telemetry_version, telemetry_completeness, dispatch_sequence, dispatch_trigger,
+           dispatch_prior_run_id, dispatch_scheduled_for)
+         SELECT ?1, ?2, ?3, ?3, 2, 'partial',
+           (SELECT COUNT(*) + 1 FROM triage_runs WHERE event_id = ?1),
+           next_dispatch_trigger, next_dispatch_prior_run_id, next_attempt_at
+         FROM events WHERE id = ?1",
+        params![event_id, attempt, now],
     )?;
-    Ok(RunId(connection.last_insert_rowid()))
+    if changed != 1 {
+        return Err(DatabaseError::UnknownEvent(event_id));
+    }
+    let run_id = RunId(transaction.last_insert_rowid());
+    transaction.execute(
+        "UPDATE events SET next_dispatch_trigger = 'unknown',
+           next_dispatch_prior_run_id = NULL WHERE id = ?1",
+        [event_id],
+    )?;
+    transaction.commit()?;
+    Ok(run_id)
 }
 
 fn set_run_metadata(
@@ -2303,6 +2357,11 @@ fn fail(
     let transaction = connection.transaction()?;
     transaction.execute(
         "UPDATE events SET status = ?1, next_attempt_at = ?2, last_error = ?3,
+           next_dispatch_trigger = CASE WHEN ?1 = 'retryable' THEN 'backoff_retry'
+             ELSE next_dispatch_trigger END,
+           next_dispatch_prior_run_id = CASE WHEN ?1 = 'retryable' THEN
+             (SELECT id FROM triage_runs WHERE event_id = events.id ORDER BY id DESC LIMIT 1)
+             ELSE next_dispatch_prior_run_id END,
            updated_at = ?4 WHERE id = ?5 AND status = 'processing'",
         params![status, next_attempt, bounded(error, 4096), now, event_id],
     )?;
@@ -2348,7 +2407,12 @@ fn update_event_status(
     } else {
         transaction.execute(
             "UPDATE events SET status = 'retryable', attempt_count = 0,
-             next_attempt_at = NULL, last_error = NULL, updated_at = ?1
+             next_attempt_at = NULL, last_error = NULL,
+             next_dispatch_trigger = 'operator_retry',
+             next_dispatch_prior_run_id = (
+               SELECT id FROM triage_runs WHERE event_id = events.id ORDER BY id DESC LIMIT 1
+             ),
+             updated_at = ?1
              WHERE id = ?2 AND payload IS NOT NULL AND status != 'processing'",
             params![now, event_id],
         )?
@@ -2558,7 +2622,8 @@ fn triage_run(
             "SELECT id, event_id, attempt, started_at, ended_at, last_activity_at,
                outcome, termination_reason, failure_category, model_id, model_provider,
                thinking_level, context_window, max_tokens, telemetry_version,
-               telemetry_completeness, dispatch_reason, conclusion_json,
+               telemetry_completeness, dispatch_sequence, dispatch_trigger,
+               dispatch_prior_run_id, dispatch_scheduled_for, conclusion_json,
                turn_count, retry_count, compaction_count
              FROM triage_runs WHERE id = ?1",
             [id.0],
@@ -2586,17 +2651,26 @@ fn triage_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TriageRunRec
         max_tokens: row.get(13)?,
         telemetry_version: row.get(14)?,
         telemetry_completeness: row.get(15)?,
-        dispatch_reason: row.get(16)?,
-        conclusion: row
+        dispatch_sequence: row.get(16)?,
+        dispatch_trigger: row
             .get::<_, Option<String>>(17)?
-            .map(|value| serde_json::from_str(&value))
+            .map(|value| DispatchTrigger::parse(&value))
             .transpose()
             .map_err(|error| {
                 rusqlite::Error::FromSqlConversionFailure(17, Type::Text, Box::new(error))
             })?,
-        turn_count: row.get(18)?,
-        retry_count: row.get(19)?,
-        compaction_count: row.get(20)?,
+        dispatch_prior_run_id: row.get(18)?,
+        dispatch_scheduled_for: row.get(19)?,
+        conclusion: row
+            .get::<_, Option<String>>(20)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(20, Type::Text, Box::new(error))
+            })?,
+        turn_count: row.get(21)?,
+        retry_count: row.get(22)?,
+        compaction_count: row.get(23)?,
     })
 }
 
@@ -2637,7 +2711,8 @@ fn list_triage_run_summaries(
            run.last_activity_at, run.outcome, run.termination_reason,
            run.failure_category, run.model_id, run.model_provider,
            run.thinking_level, run.context_window, run.max_tokens,
-           run.telemetry_version, run.telemetry_completeness, run.dispatch_reason,
+           run.telemetry_version, run.telemetry_completeness, run.dispatch_sequence,
+           run.dispatch_trigger, run.dispatch_prior_run_id, run.dispatch_scheduled_for,
            run.conclusion_json, run.turn_count, run.retry_count, run.compaction_count,
            (SELECT COUNT(*) FROM triage_run_steps step WHERE step.run_id = run.id)
          FROM triage_runs run ORDER BY run.started_at DESC, run.id DESC LIMIT ?1",
@@ -2646,7 +2721,7 @@ fn list_triage_run_summaries(
         .query_map([saturating_i64(limit)], |row| {
             Ok(TriageRunSummary {
                 run: triage_run_from_row(row)?,
-                step_count: usize::try_from(row.get::<_, i64>(21)?).unwrap_or(usize::MAX),
+                step_count: usize::try_from(row.get::<_, i64>(24)?).unwrap_or(usize::MAX),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?)
@@ -2683,9 +2758,10 @@ fn triage_runs_for_event(
         "SELECT id, event_id, attempt, started_at, ended_at, last_activity_at,
            outcome, termination_reason, failure_category, model_id, model_provider,
            thinking_level, context_window, max_tokens, telemetry_version,
-           telemetry_completeness, dispatch_reason, conclusion_json,
+           telemetry_completeness, dispatch_sequence, dispatch_trigger,
+           dispatch_prior_run_id, dispatch_scheduled_for, conclusion_json,
            turn_count, retry_count, compaction_count
-         FROM triage_runs WHERE event_id = ?1 ORDER BY attempt, id",
+         FROM triage_runs WHERE event_id = ?1 ORDER BY id",
     )?;
     Ok(statement
         .query_map([event_id], triage_run_from_row)?

@@ -24,6 +24,41 @@ export type ConclusionDecision =
   | "timed_out"
   | "turn_limit"
 
+export type DispatchTrigger =
+  | "initial"
+  | "revision"
+  | "backoff_retry"
+  | "recovery_retry"
+  | "operator_retry"
+  | "manual_injection"
+  | "superseding_claim"
+  | "unknown"
+
+export interface RunDispatch {
+  sequence: number
+  trigger: DispatchTrigger
+  source: "recorded" | "derived" | "unavailable"
+  attempt: number
+  maxAttempts: number | null
+  finalAttempt: boolean
+  scheduledFor: string | null
+  claimedAt: string
+  priorAttempt: {
+    runId: number
+    sequence: number
+    state: "active" | RunOutcome
+    failureCategory: SafeErrorCategory | null
+    terminationReason: string | null
+    decision: ConclusionDecision | null
+    endedAt: string | null
+  } | null
+  latency: {
+    sourceLagMs: number | null
+    backoffWaitMs: number | null
+    claimDelayMs: number | null
+  }
+}
+
 export interface TriageConclusion {
   decision: ConclusionDecision
   summary: string
@@ -61,8 +96,6 @@ export interface RunMetrics {
   }
   peakContextTokens: number | null
   peakContextPercent: number | null
-  sourceLagMs: number | null
-  queueWaitMs: number | null
 }
 
 export type RunTimelineEntry =
@@ -138,7 +171,7 @@ export interface RunDetail {
     state: "active" | RunOutcome
     terminationReason: string | null
     failureCategory: SafeErrorCategory | null
-    dispatchReason: string
+    dispatch: RunDispatch
     conclusion: TriageConclusion
     model: {
       id: string | null
@@ -167,11 +200,14 @@ export interface RunDetail {
   }
   siblingAttempts: Array<{
     id: number
+    sequence: number
     attempt: number
     startedAt: string
     endedAt: string | null
     state: "active" | RunOutcome
     failureCategory: SafeErrorCategory | null
+    terminationReason: string | null
+    decision: ConclusionDecision | null
     telemetryCompleteness: TelemetryCompleteness
   }>
   metrics: RunMetrics

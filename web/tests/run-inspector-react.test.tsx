@@ -39,8 +39,8 @@ describe("activity-first run inspector", () => {
       html.indexOf(">Tool calls</button>"),
     )
     expect(html).toContain("4 shown · 4 loaded")
-    expect(html).toContain("Source lag")
-    expect(html).toContain("Queue wait")
+    expect(html).toContain("Source observation lag")
+    expect(html).toContain("Claim delay")
     expect(html).toContain("Aven reference")
     expect(html).toContain("Investigation handle")
     expect(html).not.toContain('class="turn ')
@@ -48,12 +48,16 @@ describe("activity-first run inspector", () => {
     expect(html).not.toContain("aria-expanded")
   })
 
-  test("presents dispatch context and the operator conclusion accessibly", () => {
+  test("presents notable dispatch context and the operator conclusion accessibly", () => {
     const html = render()
 
+    expect(html).toContain('aria-label="Dispatch context"')
+    expect(html).toContain("Retry after failure")
+    expect(html).toContain("policy attempt 2 of 3")
+    expect(html).toContain(">run 1</button>")
     expect(html).toContain('aria-labelledby="conclusion-title"')
-    expect(html).toContain("Why intake dispatched the agent")
-    expect(html).toContain("Dispatch reason")
+    expect(html).not.toContain("Why intake dispatched the agent")
+    expect(html).not.toContain("Dispatch reason")
     expect(html).toContain("Triage conclusion")
     expect(html).toContain("Agent conclusion")
     expect(html).toContain("action taken")
@@ -62,6 +66,28 @@ describe("activity-first run inspector", () => {
     expect(html).toContain("Outcome")
     expect(html).toContain("Follow-up")
     expect(html).toContain("<ul>")
+  })
+
+  test("keeps routine initial dispatch context out of the content area", () => {
+    const detail = runDetailFixture()
+    detail.run.dispatch = {
+      ...detail.run.dispatch,
+      sequence: 1,
+      trigger: "initial",
+      attempt: 1,
+      finalAttempt: false,
+      priorAttempt: null,
+      latency: {
+        sourceLagMs: 500,
+        backoffWaitMs: null,
+        claimDelayMs: 500,
+      },
+    }
+    const html = render(detail)
+
+    expect(html).toContain("First attempt")
+    expect(html).not.toContain('aria-label="Dispatch context"')
+    expect(html).toContain("Triage conclusion")
   })
 
   test("labels unavailable legacy conclusions honestly", () => {

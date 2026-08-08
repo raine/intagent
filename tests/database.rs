@@ -1,8 +1,8 @@
 use chrono::{TimeZone, Utc};
 use intake::database::{
-    CompactionFinish, DATABASE_QUEUE_CAPACITY, ErrorCategory, EventStatus, IntakeDatabase,
-    MIGRATIONS, ReportedUsage, RetryStart, RunFinish, RunOutcome, SpanOutcome, TurnFinish,
-    reported_usage, timestamp,
+    CompactionFinish, DATABASE_QUEUE_CAPACITY, DispatchTrigger, ErrorCategory, EventStatus,
+    IntakeDatabase, MIGRATIONS, ReportedUsage, RetryStart, RunFinish, RunOutcome, SpanOutcome,
+    TurnFinish, reported_usage, timestamp,
 };
 use intake::protocol::{IntakeItem, IntakeItemKind};
 use rig_core::completion::Usage;
@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use serde_json::{Map, Value, json};
 use tempfile::TempDir;
 
-const SCHEMA_FIXTURES: [&str; 9] = [
+const SCHEMA_FIXTURES: [&str; 10] = [
     include_str!("fixtures/database/schema-v0.sql"),
     include_str!("fixtures/database/schema-v1.sql"),
     include_str!("fixtures/database/schema-v2.sql"),
@@ -20,6 +20,7 @@ const SCHEMA_FIXTURES: [&str; 9] = [
     include_str!("fixtures/database/schema-v6.sql"),
     include_str!("fixtures/database/schema-v7.sql"),
     include_str!("fixtures/database/schema-v8.sql"),
+    include_str!("fixtures/database/schema-v9.sql"),
 ];
 
 fn at(value: &str) -> chrono::DateTime<Utc> {
@@ -101,6 +102,21 @@ async fn commits_source_checkpoint_and_serializes_entity_queue() {
         .expect("claim second")
         .expect("second event");
     assert_eq!(second.revision_id, "message-2");
+    let revision = database
+        .start_triage_run(
+            second.id,
+            second.attempt_count,
+            at("2026-08-03T10:05:01.000Z"),
+        )
+        .await
+        .expect("revision run");
+    let revision = database
+        .readers()
+        .triage_run(revision)
+        .await
+        .expect("revision run read")
+        .expect("revision run record");
+    assert_eq!(revision.dispatch_trigger, Some(DispatchTrigger::Revision));
     assert_eq!(DATABASE_QUEUE_CAPACITY, 64);
 }
 
@@ -173,6 +189,216 @@ async fn retry_retains_payload_and_success_scrubs_it() {
             .payload
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn records_dispatch_cause_at_queue_transitions() {
+    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    database
+        .source_succeeded(
+            "mail".into(),
+            Value::Null,
+            vec![item("message-1"), item("message-2")],
+            at("2026-08-03T10:01:00.000Z"),
+        )
+        .await
+        .expect("source commit");
+
+    let event = database
+        .claim_next(at("2026-08-03T10:02:00.000Z"))
+        .await
+        .expect("initial claim")
+        .expect("initial event");
+    let first = database
+        .start_triage_run(
+            event.id,
+            event.attempt_count,
+            at("2026-08-03T10:02:01.000Z"),
+        )
+        .await
+        .expect("initial run");
+    let first_record = database
+        .readers()
+        .triage_run(first)
+        .await
+        .expect("initial run read")
+        .expect("initial run record");
+    assert_eq!(first_record.dispatch_sequence, Some(1));
+    assert_eq!(
+        first_record.dispatch_trigger,
+        Some(DispatchTrigger::Initial)
+    );
+    assert_eq!(first_record.dispatch_prior_run_id, None);
+    database
+        .finish_triage_run(
+            first,
+            RunFinish {
+                outcome: RunOutcome::Failed,
+                termination_reason: "model_error".into(),
+                failure_category: Some(ErrorCategory::ModelUnavailable),
+                recording_complete: true,
+            },
+            at("2026-08-03T10:02:10.000Z"),
+        )
+        .await
+        .expect("finish initial run");
+    database
+        .fail(
+            event.id,
+            "model unavailable".into(),
+            3,
+            1,
+            at("2026-08-03T10:02:11.000Z"),
+        )
+        .await
+        .expect("schedule retry");
+
+    let event = database
+        .claim_next(at("2026-08-03T10:02:12.000Z"))
+        .await
+        .expect("retry claim")
+        .expect("retry event");
+    let retry = database
+        .start_triage_run(
+            event.id,
+            event.attempt_count,
+            at("2026-08-03T10:02:13.000Z"),
+        )
+        .await
+        .expect("retry run");
+    let retry_record = database
+        .readers()
+        .triage_run(retry)
+        .await
+        .expect("retry run read")
+        .expect("retry run record");
+    assert_eq!(retry_record.dispatch_sequence, Some(2));
+    assert_eq!(
+        retry_record.dispatch_trigger,
+        Some(DispatchTrigger::BackoffRetry)
+    );
+    assert_eq!(retry_record.dispatch_prior_run_id, Some(first.0));
+    assert_eq!(
+        retry_record.dispatch_scheduled_for.as_deref(),
+        Some("2026-08-03T10:02:12.000Z")
+    );
+    database
+        .finish_triage_run(
+            retry,
+            RunFinish {
+                outcome: RunOutcome::Failed,
+                termination_reason: "wall_timeout".into(),
+                failure_category: Some(ErrorCategory::Timeout),
+                recording_complete: true,
+            },
+            at("2026-08-03T10:02:20.000Z"),
+        )
+        .await
+        .expect("finish retry run");
+    database
+        .fail(
+            event.id,
+            "triage timed out".into(),
+            2,
+            1,
+            at("2026-08-03T10:02:21.000Z"),
+        )
+        .await
+        .expect("exhaust retries");
+
+    assert!(
+        database
+            .retry(event.id, at("2026-08-03T10:03:00.000Z"))
+            .await
+            .expect("operator retry")
+    );
+    let event = database
+        .claim_next(at("2026-08-03T10:03:01.000Z"))
+        .await
+        .expect("operator claim")
+        .expect("operator event");
+    let operator = database
+        .start_triage_run(
+            event.id,
+            event.attempt_count,
+            at("2026-08-03T10:03:02.000Z"),
+        )
+        .await
+        .expect("operator run");
+    let operator_record = database
+        .readers()
+        .triage_run(operator)
+        .await
+        .expect("operator run read")
+        .expect("operator run record");
+    assert_eq!(operator_record.dispatch_sequence, Some(3));
+    assert_eq!(
+        operator_record.dispatch_trigger,
+        Some(DispatchTrigger::OperatorRetry)
+    );
+    assert_eq!(operator_record.dispatch_prior_run_id, Some(retry.0));
+}
+
+#[tokio::test]
+async fn records_recovery_dispatch_after_process_interruption() {
+    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    database
+        .source_succeeded(
+            "mail".into(),
+            Value::Null,
+            vec![item("message-1")],
+            at("2026-08-03T10:01:00.000Z"),
+        )
+        .await
+        .expect("source commit");
+    let event = database
+        .claim_next(at("2026-08-03T10:02:00.000Z"))
+        .await
+        .expect("claim")
+        .expect("event");
+    let interrupted = database
+        .start_triage_run(
+            event.id,
+            event.attempt_count,
+            at("2026-08-03T10:02:01.000Z"),
+        )
+        .await
+        .expect("interrupted run");
+    assert_eq!(
+        database
+            .recover_interrupted(
+                at("2026-08-03T10:02:30.000Z"),
+                at("2026-08-03T10:03:00.000Z")
+            )
+            .await
+            .expect("recover"),
+        1
+    );
+    let event = database
+        .claim_next(at("2026-08-03T10:03:00.000Z"))
+        .await
+        .expect("recovery claim")
+        .expect("recovery event");
+    let recovered = database
+        .start_triage_run(
+            event.id,
+            event.attempt_count,
+            at("2026-08-03T10:03:01.000Z"),
+        )
+        .await
+        .expect("recovery run");
+    let record = database
+        .readers()
+        .triage_run(recovered)
+        .await
+        .expect("recovery run read")
+        .expect("recovery run record");
+    assert_eq!(record.dispatch_sequence, Some(2));
+    assert_eq!(
+        record.dispatch_trigger,
+        Some(DispatchTrigger::RecoveryRetry)
+    );
+    assert_eq!(record.dispatch_prior_run_id, Some(interrupted.0));
 }
 
 #[tokio::test]
@@ -447,7 +673,7 @@ async fn every_phase_zero_schema_fixture_migrates_with_integrity() {
             .expect("version rows")
             .collect::<Result<Vec<_>, _>>()
             .expect("versions");
-        assert_eq!(versions, (1..=8).collect::<Vec<_>>(), "schema-v{version}");
+        assert_eq!(versions, (1..=9).collect::<Vec<_>>(), "schema-v{version}");
     }
 }
 
@@ -498,17 +724,17 @@ async fn migration_schema_matches_current_version() {
     rust.shutdown().await.expect("shutdown");
     let fixture = Connection::open(&fixture_path).expect("fixture database");
     fixture
-        .execute_batch(SCHEMA_FIXTURES[8])
+        .execute_batch(SCHEMA_FIXTURES[9])
         .expect("load schema fixture");
     drop(fixture);
 
     assert_eq!(schema_rows(&rust_path), schema_rows(&fixture_path));
-    assert_eq!(MIGRATIONS.len(), 8);
+    assert_eq!(MIGRATIONS.len(), 9);
 }
 
 #[tokio::test]
 async fn rejects_migration_gaps_and_future_versions() {
-    for (versions, expected) in [(&[2_i64][..], "contiguous"), (&[1_i64, 9][..], "newer")] {
+    for (versions, expected) in [(&[2_i64][..], "contiguous"), (&[1_i64, 10][..], "newer")] {
         let temporary = TempDir::new().expect("temporary directory");
         let path = temporary.path().join("invalid.sqlite");
         let raw = Connection::open(&path).expect("database");

@@ -19,7 +19,7 @@ use intake::config::{
     CommandRule, CommandsConfig, IntakeConfig, SkillsConfig, SourceConfig, StateConfig,
     TriageConfig,
 };
-use intake::database::{EventRecord, IntakeDatabase, RunId};
+use intake::database::{DispatchTrigger, EventRecord, IntakeDatabase, RunId};
 use intake::logging::DurableLogStore;
 use intake::protocol::{IntakeItem, IntakeItemKind};
 use rig_agent::agent::hook::InvalidToolCallAction;
@@ -481,10 +481,10 @@ async fn production_scenarios_preserve_tool_effect_compatibility() {
         let run = fixture.run_record().await;
         assert_eq!(run.outcome.as_deref(), Some("succeeded"), "{title}");
         assert_eq!(run.telemetry_completeness, "complete", "{title}");
-        assert!(
-            run.dispatch_reason
-                .as_deref()
-                .is_some_and(|reason| reason.contains(kind)),
+        assert_eq!(run.dispatch_sequence, Some(1), "{title}");
+        assert_eq!(
+            run.dispatch_trigger,
+            Some(DispatchTrigger::Initial),
             "{title}"
         );
         let conclusion = run.conclusion.as_ref().expect("stored conclusion");

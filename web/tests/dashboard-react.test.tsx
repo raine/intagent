@@ -21,8 +21,8 @@ const run: Parameters<typeof ActiveRunCard>[0]["run"] = {
   compactionCount: 0,
   telemetryCompleteness: "complete",
   timelineTruncated: false,
-  dispatchReason:
-    "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
+  dispatchSequence: 2,
+  dispatchTrigger: "backoff_retry",
   conclusion: {
     decision: "action_taken",
     summary:
@@ -116,7 +116,8 @@ describe("React dashboard components", () => {
     expect(html).toContain("active-run-activity is-expanded")
     expect(html).toContain('class="activity-marker"')
     expect(html).toContain('class="active-run-dispatch"')
-    expect(html).toContain("Dispatched because github reported")
+    expect(html).toContain("Retry after failure")
+    expect(html).toContain("Run 2")
     expect(html).toContain("inspect run →")
   })
 
