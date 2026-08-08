@@ -199,21 +199,21 @@ export function ThemeToggle(): JSX.Element {
   }
 
   return (
-    <div className="theme-picker" role="group" aria-label="Color theme">
-      {themeOptions.map((option) => (
-        <button
-          className="theme-option"
-          type="button"
-          aria-pressed={theme === option.value}
-          aria-label={`${option.label} theme`}
-          onClick={() => select(option.value)}
-          key={option.value}
-        >
-          <span aria-hidden="true">{option.icon}</span>
-          {option.label.toLowerCase()}
-        </button>
-      ))}
-    </div>
+    <label className="theme-picker">
+      <span className="visually-hidden">Color theme</span>
+      <select
+        className="theme-select"
+        aria-label="Color theme"
+        value={theme}
+        onChange={(event) => select(event.target.value as ThemePreference)}
+      >
+        {themeOptions.map((option) => (
+          <option value={option.value} key={option.value}>
+            {option.icon} {option.label.toLowerCase()}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 
