@@ -247,11 +247,16 @@ where
                     if observed == 1 { "" } else { "s" }
                 ),
                 Ok(_) => {}
-                Err(_) => tracing::error!(
-                    target: "intake::terminal::error",
-                    "{}: source poll failed",
-                    source.name
-                ),
+                Err(error) => {
+                    let message = crate::dashboard::public_error(Some(&error.to_string()))
+                        .unwrap_or_else(|| "Operation failed".into());
+                    tracing::error!(
+                        target: "intake::terminal::error",
+                        "{}: {}",
+                        source.name,
+                        message
+                    );
+                }
             }
         }
     }
