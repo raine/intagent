@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use serde_json::{Map, Value, json};
 use tempfile::TempDir;
 
-const SCHEMA_FIXTURES: [&str; 8] = [
+const SCHEMA_FIXTURES: [&str; 9] = [
     include_str!("fixtures/database/schema-v0.sql"),
     include_str!("fixtures/database/schema-v1.sql"),
     include_str!("fixtures/database/schema-v2.sql"),
@@ -19,6 +19,7 @@ const SCHEMA_FIXTURES: [&str; 8] = [
     include_str!("fixtures/database/schema-v5.sql"),
     include_str!("fixtures/database/schema-v6.sql"),
     include_str!("fixtures/database/schema-v7.sql"),
+    include_str!("fixtures/database/schema-v8.sql"),
 ];
 
 fn at(value: &str) -> chrono::DateTime<Utc> {
@@ -446,7 +447,7 @@ async fn every_phase_zero_schema_fixture_migrates_with_integrity() {
             .expect("version rows")
             .collect::<Result<Vec<_>, _>>()
             .expect("versions");
-        assert_eq!(versions, (1..=7).collect::<Vec<_>>(), "schema-v{version}");
+        assert_eq!(versions, (1..=8).collect::<Vec<_>>(), "schema-v{version}");
     }
 }
 
@@ -487,7 +488,7 @@ async fn migration_schema_matches_every_phase_zero_version() {
 }
 
 #[tokio::test]
-async fn migration_schema_matches_phase_zero_version_seven() {
+async fn migration_schema_matches_current_version() {
     let temporary = TempDir::new().expect("temporary directory");
     let rust_path = temporary.path().join("rust.sqlite");
     let fixture_path = temporary.path().join("fixture.sqlite");
@@ -497,17 +498,17 @@ async fn migration_schema_matches_phase_zero_version_seven() {
     rust.shutdown().await.expect("shutdown");
     let fixture = Connection::open(&fixture_path).expect("fixture database");
     fixture
-        .execute_batch(SCHEMA_FIXTURES[7])
+        .execute_batch(SCHEMA_FIXTURES[8])
         .expect("load schema fixture");
     drop(fixture);
 
     assert_eq!(schema_rows(&rust_path), schema_rows(&fixture_path));
-    assert_eq!(MIGRATIONS.len(), 7);
+    assert_eq!(MIGRATIONS.len(), 8);
 }
 
 #[tokio::test]
 async fn rejects_migration_gaps_and_future_versions() {
-    for (versions, expected) in [(&[2_i64][..], "contiguous"), (&[1_i64, 8][..], "newer")] {
+    for (versions, expected) in [(&[2_i64][..], "contiguous"), (&[1_i64, 9][..], "newer")] {
         let temporary = TempDir::new().expect("temporary directory");
         let path = temporary.path().join("invalid.sqlite");
         let raw = Connection::open(&path).expect("database");

@@ -33,6 +33,18 @@ export function runDetailFixture(options: FixtureOptions = {}): RunDetail {
     state: "succeeded" as const,
     terminationReason: null,
     failureCategory: null,
+    dispatchReason:
+      "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
+    conclusion: {
+      decision: "action_taken" as const,
+      summary:
+        "Created a task and dispatched an investigation for the reported issue.",
+      evidence: ["The issue requests an operator investigation."],
+      actions: ["Created task OPS-7KQ9.", "Dispatched triage-production-run."],
+      outcome: "The issue is queued for investigation.",
+      followUp: "Review the investigation result.",
+      source: "model" as const,
+    },
     model: {
       id: "claude-sonnet-5",
       provider: "anthropic",

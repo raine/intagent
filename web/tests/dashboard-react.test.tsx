@@ -21,6 +21,21 @@ const run: Parameters<typeof ActiveRunCard>[0]["run"] = {
   compactionCount: 0,
   telemetryCompleteness: "complete",
   timelineTruncated: false,
+  dispatchReason:
+    "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
+  conclusion: {
+    decision: "action_taken",
+    summary:
+      "Created a task and dispatched an investigation for the reported issue.",
+    evidence: ["The issue requests a dashboard timeline review."],
+    actions: [
+      "Created task OPS-7KQ9.",
+      "Dispatched investigation dashboard-timeline.",
+    ],
+    outcome: "The issue is queued for investigation.",
+    followUp: "Review the investigation result.",
+    source: "model",
+  },
   investigationHandle: "dashboard-timeline",
   steps: [
     {
@@ -100,6 +115,8 @@ describe("React dashboard components", () => {
     expect(html).toContain("active-run is-stalled")
     expect(html).toContain("active-run-activity is-expanded")
     expect(html).toContain('class="activity-marker"')
+    expect(html).toContain('class="active-run-dispatch"')
+    expect(html).toContain("Dispatched because github reported")
     expect(html).toContain("inspect run →")
   })
 
@@ -117,6 +134,9 @@ describe("React dashboard components", () => {
       "Open run inspector for Inspect the dashboard timeline",
     )
     expect(html).toContain('class="status-glyph"')
+    expect(html).toContain('class="event-conclusion"')
+    expect(html).toContain("action taken")
+    expect(html).toContain("Created a task and dispatched an investigation")
     expect(html).not.toContain("event-detail")
     expect(html).not.toContain("Open event inspector")
   })

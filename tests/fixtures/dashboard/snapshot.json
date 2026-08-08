@@ -48,7 +48,17 @@
       "telemetryCompleteness": "complete",
       "timelineTruncated": false,
       "investigationHandle": "inspect-notifications",
-      "steps": []
+      "steps": [],
+      "dispatchReason": "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
+      "conclusion": {
+        "summary": "A model-authored conclusion is unavailable for this run.",
+        "evidence": [],
+        "actions": [],
+        "source": "unavailable",
+        "decision": "failed",
+        "outcome": "The recorded attempt failed.",
+        "followUp": "Review the failure category and timeline for available evidence."
+      }
     },
     {
       "id": 2,
@@ -70,7 +80,17 @@
       "telemetryCompleteness": "legacy",
       "timelineTruncated": true,
       "investigationHandle": "inspect-notifications",
-      "steps": []
+      "steps": [],
+      "dispatchReason": "Dispatched because github reported a github-issue event that entered the triage queue (attempt 2).",
+      "conclusion": {
+        "summary": "A model-authored conclusion is unavailable for this run.",
+        "evidence": [],
+        "actions": [],
+        "source": "unavailable",
+        "decision": "canceled",
+        "outcome": "The recorded attempt was interrupted.",
+        "followUp": "Review the timeline before deciding whether to retry."
+      }
     },
     {
       "id": 1,
@@ -92,7 +112,17 @@
       "telemetryCompleteness": "complete",
       "timelineTruncated": true,
       "investigationHandle": null,
-      "steps": []
+      "steps": [],
+      "dispatchReason": "Dispatched because fastmail reported a email event that entered the triage queue (attempt 1).",
+      "conclusion": {
+        "summary": "A model-authored conclusion is unavailable for this run.",
+        "evidence": [],
+        "actions": [],
+        "source": "unavailable",
+        "decision": "needs_follow_up",
+        "outcome": "The recorded attempt completed, but its decision was not captured.",
+        "followUp": "Review the recorded effects and timeline for available evidence."
+      }
     }
   ],
   "events": [

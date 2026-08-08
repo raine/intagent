@@ -5,9 +5,9 @@ use serde::{Serialize, Serializer};
 use url::Url;
 
 use crate::database::{
-    DatabaseError, DatabaseReaders, EventRecord, EventStatus, RunId, TriageCompactionRecord,
-    TriageEffectRecord, TriageRetryRecord, TriageRunPromptRecord, TriageRunRecord,
-    TriageStepRecord, TriageTurnRecord,
+    ConclusionSource, DatabaseError, DatabaseReaders, EventRecord, EventStatus, RunId,
+    TriageCompactionRecord, TriageConclusion, TriageDecision, TriageEffectRecord,
+    TriageRetryRecord, TriageRunPromptRecord, TriageRunRecord, TriageStepRecord, TriageTurnRecord,
 };
 
 #[derive(Clone, Debug)]
@@ -57,6 +57,8 @@ pub struct RunProjection {
     pub state: String,
     pub termination_reason: Option<String>,
     pub failure_category: Option<String>,
+    pub dispatch_reason: String,
+    pub conclusion: TriageConclusion,
     pub model: ModelProjection,
     pub telemetry: TelemetryProjection,
 }
@@ -317,6 +319,11 @@ pub async fn run_detail(
             state: run.outcome.clone().unwrap_or_else(|| "active".into()),
             termination_reason: run.termination_reason.clone(),
             failure_category: run.failure_category.clone(),
+            dispatch_reason: run
+                .dispatch_reason
+                .clone()
+                .unwrap_or_else(|| derived_dispatch_reason(&event)),
+            conclusion: displayed_conclusion(&run),
             model: ModelProjection {
                 id: run.model_id.clone(),
                 provider: run.model_provider.clone(),
@@ -748,6 +755,73 @@ fn timeline_entries(
             .then_with(|| entry_id(left).cmp(&entry_id(right)))
     });
     entries
+}
+
+pub(crate) fn displayed_conclusion(run: &TriageRunRecord) -> TriageConclusion {
+    if let Some(conclusion) = &run.conclusion {
+        return conclusion.clone();
+    }
+    let (decision, summary, outcome, follow_up, source) = match run.outcome.as_deref() {
+        None => (
+            TriageDecision::NeedsFollowUp,
+            "Triage is in progress; the final decision is pending.",
+            "The attempt has not reached a terminal outcome.",
+            None,
+            ConclusionSource::Derived,
+        ),
+        Some("failed") => (
+            TriageDecision::Failed,
+            "A model-authored conclusion is unavailable for this run.",
+            "The recorded attempt failed.",
+            Some("Review the failure category and timeline for available evidence."),
+            ConclusionSource::Unavailable,
+        ),
+        Some("interrupted") => (
+            TriageDecision::Canceled,
+            "A model-authored conclusion is unavailable for this run.",
+            "The recorded attempt was interrupted.",
+            Some("Review the timeline before deciding whether to retry."),
+            ConclusionSource::Unavailable,
+        ),
+        _ => (
+            TriageDecision::NeedsFollowUp,
+            "A model-authored conclusion is unavailable for this run.",
+            "The recorded attempt completed, but its decision was not captured.",
+            Some("Review the recorded effects and timeline for available evidence."),
+            ConclusionSource::Unavailable,
+        ),
+    };
+    TriageConclusion {
+        decision,
+        summary: summary.into(),
+        evidence: Vec::new(),
+        actions: Vec::new(),
+        outcome: outcome.into(),
+        follow_up: follow_up.map(str::to_string),
+        source,
+    }
+}
+
+pub(crate) fn derived_dispatch_reason(event: &EventRecord) -> String {
+    let source = context_label(&event.source, "intake source");
+    let kind = context_label(&event.kind, "item");
+    format!(
+        "Dispatched because {source} reported a {kind} event that entered the triage queue (attempt {}).",
+        event.attempt_count
+    )
+}
+
+fn context_label(value: &str, fallback: &str) -> String {
+    let value = value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        .take(64)
+        .collect::<String>();
+    if value.is_empty() {
+        fallback.into()
+    } else {
+        value
+    }
 }
 
 fn display_run(mut run: TriageRunRecord, event: &EventRecord) -> TriageRunRecord {
