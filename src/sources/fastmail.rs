@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value, json};
 
 use crate::protocol::{IntakeItem, IntakeItemKind, PollRequest, PollResponse, ProtocolError};
@@ -36,26 +36,26 @@ struct Email {
     thread_id: String,
     #[serde(default)]
     subject: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     from: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     to: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     cc: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     bcc: Vec<Address>,
     received_at: String,
     #[serde(default)]
     sent_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     message_id: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     mailbox_ids: HashMap<String, bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     body_values: HashMap<String, BodyValue>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     text_body: Vec<BodyReference>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     html_body: Vec<BodyReference>,
     #[serde(default)]
     body_structure: Option<BodyPart>,
@@ -98,8 +98,16 @@ struct BodyPart {
     disposition: Option<String>,
     #[serde(default)]
     cid: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     sub_parts: Vec<BodyPart>,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 struct HeaderRule {
