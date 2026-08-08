@@ -7,8 +7,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use intake::cli::{
-    DashboardOptions, USAGE, WatchOptions, parse_dashboard_options, parse_global_options,
-    parse_watch_options, public_cli_error,
+    COMMAND_SPECS, DashboardOptions, USAGE, WatchOptions, parse_dashboard_options,
+    parse_global_options, parse_watch_options, public_cli_error,
 };
 use intake::dashboard::{DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT};
 use intake::database::{IntakeDatabase, QueueOwnerLock};
@@ -93,34 +93,75 @@ fn accepts_global_config_before_or_after_the_command() {
 }
 
 #[test]
+fn command_table_defines_the_supported_cli_surface() {
+    let commands = COMMAND_SPECS
+        .iter()
+        .copied()
+        .map(|spec| (spec.name(), spec.synopsis(), spec.description()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        vec![
+            (
+                "watch",
+                "watch [--dashboard] [--host HOST] [--port PORT]",
+                "Monitor sources and triage continuously.",
+            ),
+            (
+                "check",
+                "check",
+                "Poll every source once and drain ready triage events.",
+            ),
+            ("status", "status", "Show source and queue state."),
+            (
+                "dashboard",
+                "dashboard [--host HOST] [--port PORT]",
+                "Serve the local monitoring dashboard.",
+            ),
+            (
+                "inject",
+                "inject FILE",
+                "Queue one IntakeItem JSON fixture.",
+            ),
+            ("show", "show ID", "Show one intake event."),
+            (
+                "retry",
+                "retry ID",
+                "Queue a retained event for another attempt.",
+            ),
+            (
+                "ignore",
+                "ignore ID",
+                "Mark an event handled without action.",
+            ),
+            (
+                "login",
+                "login",
+                "Authenticate the ChatGPT subscription provider.",
+            ),
+            (
+                "init",
+                "init",
+                "Create private configuration directories and config.",
+            ),
+            (
+                "validate-config",
+                "validate-config",
+                "Validate YAML, command boundaries, and skill links.",
+            ),
+        ]
+    );
+}
+
+#[test]
 fn every_subcommand_help_is_focused_and_does_not_load_config_or_create_state() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("invalid.yaml");
     fs::write(&config, "this is not: [valid YAML").unwrap();
-    let commands = [
-        ("watch", "Monitor sources and triage continuously."),
-        (
-            "check",
-            "Poll every source once and drain ready triage events.",
-        ),
-        ("status", "Show source and queue state."),
-        ("dashboard", "Serve the local monitoring dashboard."),
-        ("inject", "Queue one IntakeItem JSON fixture."),
-        ("show", "Show one intake event."),
-        ("retry", "Queue a retained event for another attempt."),
-        ("ignore", "Mark an event handled without action."),
-        ("login", "Authenticate the ChatGPT subscription provider."),
-        (
-            "init",
-            "Create private configuration directories and config.",
-        ),
-        (
-            "validate-config",
-            "Validate YAML, command boundaries, and skill links.",
-        ),
-    ];
 
-    for (index, (name, description)) in commands.into_iter().enumerate() {
+    for (index, spec) in COMMAND_SPECS.iter().copied().enumerate() {
+        let name = spec.name();
+        let description = spec.description();
         let config = config.display().to_string();
         let args = if index % 2 == 0 {
             vec!["--config".into(), config, name.into(), "--help".into()]

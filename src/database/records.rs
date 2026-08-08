@@ -45,6 +45,17 @@ pub enum EventStatus {
 }
 
 impl EventStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Processing => "processing",
+            Self::Retryable => "retryable",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Ignored => "ignored",
+        }
+    }
+
     pub(super) fn parse(value: String) -> Result<Self, DatabaseError> {
         match value.as_str() {
             "pending" => Ok(Self::Pending),

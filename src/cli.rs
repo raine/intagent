@@ -28,39 +28,241 @@ use crate::monitor::IntakeMonitor;
 use crate::project_registry::ensure_project_registry;
 use crate::protocol::IntakeItem;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Command {
+    Watch,
+    Check,
+    Status,
+    Dashboard,
+    Inject,
+    Show,
+    Retry,
+    Ignore,
+    Login,
+    Init,
+    ValidateConfig,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Arguments {
+    None,
+    One,
+    Watch,
+    Dashboard,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Runtime {
+    Login,
+    Init,
+    ValidateConfig,
+    Database {
+        queue_owner: bool,
+        validate_config: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommandSpec {
+    command: Command,
+    name: &'static str,
+    synopsis: &'static str,
+    description: &'static str,
+    arguments: Arguments,
+    runtime: Runtime,
+}
+
+impl CommandSpec {
+    pub fn name(self) -> &'static str {
+        self.name
+    }
+
+    pub fn synopsis(self) -> &'static str {
+        self.synopsis
+    }
+
+    pub fn description(self) -> &'static str {
+        self.description
+    }
+}
+
+pub const COMMAND_SPECS: &[CommandSpec] = &[
+    CommandSpec {
+        command: Command::Watch,
+        name: "watch",
+        synopsis: "watch [--dashboard] [--host HOST] [--port PORT]",
+        description: "Monitor sources and triage continuously.",
+        arguments: Arguments::Watch,
+        runtime: Runtime::Database {
+            queue_owner: true,
+            validate_config: true,
+        },
+    },
+    CommandSpec {
+        command: Command::Check,
+        name: "check",
+        synopsis: "check",
+        description: "Poll every source once and drain ready triage events.",
+        arguments: Arguments::None,
+        runtime: Runtime::Database {
+            queue_owner: true,
+            validate_config: true,
+        },
+    },
+    CommandSpec {
+        command: Command::Status,
+        name: "status",
+        synopsis: "status",
+        description: "Show source and queue state.",
+        arguments: Arguments::None,
+        runtime: Runtime::Database {
+            queue_owner: false,
+            validate_config: false,
+        },
+    },
+    CommandSpec {
+        command: Command::Dashboard,
+        name: "dashboard",
+        synopsis: "dashboard [--host HOST] [--port PORT]",
+        description: "Serve the local monitoring dashboard.",
+        arguments: Arguments::Dashboard,
+        runtime: Runtime::Database {
+            queue_owner: false,
+            validate_config: false,
+        },
+    },
+    CommandSpec {
+        command: Command::Inject,
+        name: "inject",
+        synopsis: "inject FILE",
+        description: "Queue one IntakeItem JSON fixture.",
+        arguments: Arguments::One,
+        runtime: Runtime::Database {
+            queue_owner: false,
+            validate_config: false,
+        },
+    },
+    CommandSpec {
+        command: Command::Show,
+        name: "show",
+        synopsis: "show ID",
+        description: "Show one intake event.",
+        arguments: Arguments::One,
+        runtime: Runtime::Database {
+            queue_owner: false,
+            validate_config: false,
+        },
+    },
+    CommandSpec {
+        command: Command::Retry,
+        name: "retry",
+        synopsis: "retry ID",
+        description: "Queue a retained event for another attempt.",
+        arguments: Arguments::One,
+        runtime: Runtime::Database {
+            queue_owner: false,
+            validate_config: false,
+        },
+    },
+    CommandSpec {
+        command: Command::Ignore,
+        name: "ignore",
+        synopsis: "ignore ID",
+        description: "Mark an event handled without action.",
+        arguments: Arguments::One,
+        runtime: Runtime::Database {
+            queue_owner: false,
+            validate_config: false,
+        },
+    },
+    CommandSpec {
+        command: Command::Login,
+        name: "login",
+        synopsis: "login",
+        description: "Authenticate the ChatGPT subscription provider.",
+        arguments: Arguments::None,
+        runtime: Runtime::Login,
+    },
+    CommandSpec {
+        command: Command::Init,
+        name: "init",
+        synopsis: "init",
+        description: "Create private configuration directories and config.",
+        arguments: Arguments::None,
+        runtime: Runtime::Init,
+    },
+    CommandSpec {
+        command: Command::ValidateConfig,
+        name: "validate-config",
+        synopsis: "validate-config",
+        description: "Validate YAML, command boundaries, and skill links.",
+        arguments: Arguments::None,
+        runtime: Runtime::ValidateConfig,
+    },
+];
+
 pub static USAGE: LazyLock<String> = LazyLock::new(|| {
+    let mut commands = String::new();
+    for spec in COMMAND_SPECS {
+        let description = lowercase_first(spec.description.trim_end_matches('.'));
+        if spec.synopsis.len() > 22 {
+            commands.push_str(&format!(
+                "  {}\n                        {description}\n",
+                spec.synopsis
+            ));
+        } else {
+            commands.push_str(&format!("  {:<22}{description}\n", spec.synopsis));
+        }
+    }
     format!(
-        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n{commands}\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
     )
 });
 
+fn lowercase_first(value: &str) -> String {
+    let mut characters = value.chars();
+    characters
+        .next()
+        .map(|first| first.to_lowercase().chain(characters).collect())
+        .unwrap_or_default()
+}
+
+fn command_spec(name: &str) -> Option<&'static CommandSpec> {
+    COMMAND_SPECS.iter().find(|spec| spec.name == name)
+}
+
 fn command_help(command: &str) -> Option<String> {
-    let dashboard_options = || {
-        format!(
-            "  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n"
-        )
+    let spec = command_spec(command)?;
+    let config = if spec.command == Command::Login {
+        ""
+    } else {
+        " [--config PATH]"
     };
-    let help = match command {
-        "watch" => format!(
-            "Usage: intake [--config PATH] watch [--dashboard] [--host HOST] [--port PORT] [--allow-non-loopback]\n\nMonitor sources and triage continuously.\n\nOptions:\n  --dashboard           serve the dashboard with watch\n{}",
-            dashboard_options()
-        ),
-        "check" => "Usage: intake [--config PATH] check\n\nPoll every source once and drain ready triage events.\n".into(),
-        "status" => "Usage: intake [--config PATH] status\n\nShow source and queue state.\n".into(),
-        "dashboard" => format!(
-            "Usage: intake [--config PATH] dashboard [--host HOST] [--port PORT] [--allow-non-loopback]\n\nServe the local monitoring dashboard.\n\nOptions:\n{}",
-            dashboard_options()
-        ),
-        "inject" => "Usage: intake [--config PATH] inject FILE\n\nQueue one IntakeItem JSON fixture.\n".into(),
-        "show" => "Usage: intake [--config PATH] show ID\n\nShow one intake event.\n".into(),
-        "retry" => "Usage: intake [--config PATH] retry ID\n\nQueue a retained event for another attempt.\n".into(),
-        "ignore" => "Usage: intake [--config PATH] ignore ID\n\nMark an event handled without action.\n".into(),
-        "login" => "Usage: intake login\n\nAuthenticate the ChatGPT subscription provider.\n".into(),
-        "init" => "Usage: intake [--config PATH] init\n\nCreate private configuration directories and config.\n".into(),
-        "validate-config" => "Usage: intake [--config PATH] validate-config\n\nValidate YAML, command boundaries, and skill links.\n".into(),
-        _ => return None,
+    let synopsis = match spec.arguments {
+        Arguments::Watch => {
+            "watch [--dashboard] [--host HOST] [--port PORT] [--allow-non-loopback]"
+        }
+        Arguments::Dashboard => "dashboard [--host HOST] [--port PORT] [--allow-non-loopback]",
+        Arguments::None | Arguments::One => spec.synopsis,
     };
-    Some(help)
+    let options = match spec.arguments {
+        Arguments::Watch => format!(
+            "\nOptions:\n  --dashboard           serve the dashboard with watch\n{}",
+            dashboard_options_help()
+        ),
+        Arguments::Dashboard => format!("\nOptions:\n{}", dashboard_options_help()),
+        Arguments::None | Arguments::One => String::new(),
+    };
+    Some(format!(
+        "Usage: intake{config} {synopsis}\n\n{}\n{options}",
+        spec.description
+    ))
+}
+
+fn dashboard_options_help() -> String {
+    format!(
+        "  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n"
+    )
 }
 
 fn requested_command_help(args: &[String]) -> Option<String> {
@@ -81,8 +283,11 @@ pub fn tracing_log_path(argv: &[String]) -> Option<PathBuf> {
         return None;
     }
     let command = parsed.args.first().map(String::as_str);
-    if command.is_none_or(|command| matches!(command, "help" | "--help" | "-h" | "login" | "init"))
-    {
+    if command.is_none_or(|command| {
+        matches!(command, "help" | "--help" | "-h")
+            || command_spec(command)
+                .is_some_and(|spec| matches!(spec.runtime, Runtime::Login | Runtime::Init))
+    }) {
         return default;
     }
     let config_path = parsed
@@ -114,21 +319,24 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         print!("{help}");
         return Ok(0);
     }
-    let command = args.remove(0);
-    let watch_options = (command == "watch")
+    let command_name = args.remove(0);
+    let spec = command_spec(&command_name).copied();
+    let watch_options = spec
+        .is_some_and(|spec| spec.arguments == Arguments::Watch)
         .then(|| parse_watch_options(&args))
         .transpose()?;
-    let dashboard_options = (command == "dashboard")
+    let dashboard_options = spec
+        .is_some_and(|spec| spec.arguments == Arguments::Dashboard)
         .then(|| parse_dashboard_options(&args))
         .transpose()?;
-    validate_other_command_options(&command, &args)?;
+    validate_other_command_options(spec.as_ref(), &command_name, &args)?;
     tracing::info!(
         target: "intake::cli",
-        command = safe_cli_command(&command),
+        command = spec.map_or("unknown", |spec| spec.name),
         "command started"
     );
 
-    if command == "login" {
+    if spec.is_some_and(|spec| spec.runtime == Runtime::Login) {
         let auth = auth_paths()?;
         authorize(&auth, true).await?;
         return Ok(0);
@@ -138,7 +346,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         Some(path) => expand_path(path)?,
         None => default_config_path()?,
     };
-    if command == "init" {
+    if spec.is_some_and(|spec| spec.runtime == Runtime::Init) {
         let environment = std::env::vars().collect();
         let result = initialize_private_config(&config_path, &environment)?;
         if result.created.is_empty() {
@@ -156,7 +364,7 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
     }
 
     let config = load_config(&config_path)?;
-    if command == "validate-config" {
+    if spec.is_some_and(|spec| spec.runtime == Runtime::ValidateConfig) {
         let diagnostics = validate_configuration(&config)?;
         if !diagnostics.is_empty() {
             bail!(diagnostics.join("\n"));
@@ -166,17 +374,37 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
     }
 
     let database_path = expand_path(&config.state.database)?;
-    let queue_lock = if matches!(command.as_str(), "watch" | "check") {
-        Some(QueueOwnerLock::acquire(&database_path)?)
-    } else {
-        None
-    };
+    let queue_lock = spec
+        .and_then(|spec| match spec.runtime {
+            Runtime::Database {
+                queue_owner: true, ..
+            } => Some(QueueOwnerLock::acquire(&database_path)),
+            _ => None,
+        })
+        .transpose()?;
     let database = IntakeDatabase::open(&database_path).await?;
 
     let operation = async {
-        match command.as_str() {
-            "status" => print_status(&database).await?,
-            "dashboard" => {
+        if spec.is_some_and(|spec| {
+            matches!(
+                spec.runtime,
+                Runtime::Database {
+                    validate_config: true,
+                    ..
+                }
+            )
+        }) {
+            let diagnostics = validate_configuration(&config)?;
+            if !diagnostics.is_empty() {
+                bail!(
+                    "Configuration validation failed:\n{}",
+                    diagnostics.join("\n")
+                );
+            }
+        }
+        match spec.map(|spec| spec.command) {
+            Some(Command::Status) => print_status(&database).await?,
+            Some(Command::Dashboard) => {
                 dashboard(
                     &database,
                     &config,
@@ -184,34 +412,27 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
                 )
                 .await?
             }
-            "inject" => inject(&database, args.first()).await?,
-            "show" => show(&database, args.first()).await?,
-            "retry" => retry(&database, args.first()).await?,
-            "ignore" => ignore(&database, args.first()).await?,
-            "check" | "watch" => {
-                let diagnostics = validate_configuration(&config)?;
-                if !diagnostics.is_empty() {
-                    bail!(
-                        "Configuration validation failed:\n{}",
-                        diagnostics.join("\n")
-                    );
-                }
-                let succeeded = if command == "watch" {
-                    run_watch(
-                        config,
-                        database.clone(),
-                        watch_options.expect("watch options parsed").dashboard,
-                    )
-                    .await?;
-                    true
-                } else {
-                    run_check(config, database.clone()).await?
-                };
-                if !succeeded {
+            Some(Command::Inject) => inject(&database, args.first()).await?,
+            Some(Command::Show) => show(&database, args.first()).await?,
+            Some(Command::Retry) => retry(&database, args.first()).await?,
+            Some(Command::Ignore) => ignore(&database, args.first()).await?,
+            Some(Command::Check) => {
+                if !run_check(config, database.clone()).await? {
                     return Ok(1);
                 }
             }
-            _ => bail!("Unknown command: {command}"),
+            Some(Command::Watch) => {
+                run_watch(
+                    config,
+                    database.clone(),
+                    watch_options.expect("watch options parsed").dashboard,
+                )
+                .await?;
+            }
+            Some(Command::Login | Command::Init | Command::ValidateConfig) => {
+                unreachable!("non-database command handled before database startup")
+            }
+            None => bail!("Unknown command: {command_name}"),
         }
         Ok(0)
     }
@@ -457,7 +678,7 @@ async fn print_status(database: &IntakeDatabase) -> Result<()> {
             println!(
                 "  {} {} {}: {}",
                 event.id,
-                event_status_name(event.status),
+                event.status.as_str(),
                 event.source,
                 event.title
             );
@@ -535,12 +756,15 @@ pub fn parse_global_options(mut args: Vec<String>) -> Result<GlobalOptions> {
     Ok(GlobalOptions { config_path, args })
 }
 
-fn validate_other_command_options(command: &str, args: &[String]) -> Result<()> {
-    let positional_count = match command {
-        "check" | "status" | "login" | "init" | "validate-config" => 0,
-        "inject" | "show" | "retry" | "ignore" => 1,
-        "watch" | "dashboard" => return Ok(()),
-        _ => return Ok(()),
+fn validate_other_command_options(
+    spec: Option<&CommandSpec>,
+    command: &str,
+    args: &[String],
+) -> Result<()> {
+    let positional_count = match spec.map(|spec| spec.arguments) {
+        Some(Arguments::None) => 0,
+        Some(Arguments::One) => 1,
+        Some(Arguments::Watch | Arguments::Dashboard) | None => return Ok(()),
     };
     for (index, argument) in args.iter().enumerate() {
         if argument.starts_with('-') {
@@ -692,34 +916,6 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
-    }
-}
-
-fn safe_cli_command(command: &str) -> &'static str {
-    match command {
-        "watch" => "watch",
-        "check" => "check",
-        "status" => "status",
-        "dashboard" => "dashboard",
-        "inject" => "inject",
-        "show" => "show",
-        "retry" => "retry",
-        "ignore" => "ignore",
-        "login" => "login",
-        "init" => "init",
-        "validate-config" => "validate-config",
-        _ => "unknown",
-    }
-}
-
-fn event_status_name(status: crate::database::EventStatus) -> &'static str {
-    match status {
-        crate::database::EventStatus::Pending => "pending",
-        crate::database::EventStatus::Processing => "processing",
-        crate::database::EventStatus::Retryable => "retryable",
-        crate::database::EventStatus::Succeeded => "succeeded",
-        crate::database::EventStatus::Failed => "failed",
-        crate::database::EventStatus::Ignored => "ignored",
     }
 }
 
