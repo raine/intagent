@@ -11,16 +11,65 @@ prefix="$temporary_dir/prefix"
 bin_directory="$prefix/bin"
 skills_directory="$prefix/share/intake/skills"
 config_directory="$temporary_dir/config"
-mkdir -p "$bin_directory" "$skills_directory"
-cp -R skills/. "$skills_directory/"
+web_directory="$temporary_dir/web"
+mkdir -p "$web_directory"
+tar -C web --exclude='./node_modules' --exclude='./generated' -cf - . | \
+  tar -C "$web_directory" -xf -
 
-bun pm pack --dry-run >/dev/null
-bun build --compile src/cli.ts --outfile "$bin_directory/intake" >/dev/null
-bun build --compile src/sources/fastmail.ts \
-  --outfile "$bin_directory/intake-fastmail-source" >/dev/null
-bun build --compile src/sources/github.ts \
-  --outfile "$bin_directory/intake-github-source" >/dev/null
-"$bin_directory/intake" --help >/dev/null
+INTAKE_INSTALL_PREFIX="$prefix" INTAKE_WEB_DIR="$web_directory" \
+  scripts/install >/dev/null
+
+expected_executables=(intake intake-fastmail-source intake-github-source)
+for executable in "${expected_executables[@]}"; do
+  executable_path="$bin_directory/$executable"
+  if [[ ! -x "$executable_path" ]]; then
+    printf 'scripts/package-check: missing executable: %s\n' "$executable_path" >&2
+    exit 1
+  fi
+
+  file_description="$(file "$executable_path")"
+  if [[ "$file_description" != *"Mach-O"* && "$file_description" != *"ELF"* ]]; then
+    printf 'scripts/package-check: %s is not a native executable\n' \
+      "$executable_path" >&2
+    printf '%s\n' "$file_description" >&2
+    exit 1
+  fi
+
+  "$executable_path" --help >/dev/null
+
+  if command -v otool >/dev/null 2>&1; then
+    dependencies="$(otool -L "$executable_path")"
+  elif command -v ldd >/dev/null 2>&1; then
+    dependencies="$(ldd "$executable_path" 2>&1 || true)"
+  else
+    printf '%s\n' 'scripts/package-check: otool or ldd is required' >&2
+    exit 1
+  fi
+  if grep -Eiq '(^|[/[:space:]])(bun|libnode|node)([./[:space:]]|$)' \
+    <<<"$dependencies"; then
+    printf 'scripts/package-check: %s has a Bun or Node dependency\n' \
+      "$executable_path" >&2
+    printf '%s\n' "$dependencies" >&2
+    exit 1
+  fi
+done
+
+if grep -R -E 'Command::new\("(bun|node)"' src \
+  --include='*.rs' >/dev/null; then
+  printf '%s\n' 'scripts/package-check: Rust source launches Bun or Node directly' >&2
+  exit 1
+fi
+
+if [[ ! -d "$skills_directory" ]]; then
+  printf 'scripts/package-check: missing skill tree: %s\n' "$skills_directory" >&2
+  exit 1
+fi
+if find "$skills_directory" -type l -print -quit | grep -q .; then
+  printf '%s\n' 'scripts/package-check: installed skill tree contains a symlink' >&2
+  exit 1
+fi
+diff -r skills "$skills_directory" >/dev/null
+
 XDG_CONFIG_HOME="$config_directory" "$bin_directory/intake" init >/dev/null
 XDG_CONFIG_HOME="$config_directory" \
   "$bin_directory/intake" validate-config >/dev/null

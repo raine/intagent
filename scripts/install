@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install [--prefix PATH]
 
-Compile and install standalone intake executables and application skills.
+Build and install intake executables and application skills.
 The default prefix is ~/.local. INTAKE_INSTALL_PREFIX provides another default.
 EOF
 }
@@ -34,14 +34,18 @@ while (($# > 0)); do
 done
 
 case "$prefix" in
-  '~') prefix="$HOME" ;;
-  '~/'*) prefix="$HOME/${prefix#\~/}" ;;
+  \~) prefix="$HOME" ;;
+  \~/*) prefix="$HOME/${prefix#\~/}" ;;
 esac
 if [[ "$prefix" != /* ]]; then
   prefix="$PWD/$prefix"
 fi
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+web_directory="${INTAKE_WEB_DIR:-$repository_root/web}"
+if [[ "$web_directory" != /* ]]; then
+  web_directory="$repository_root/$web_directory"
+fi
 bin_directory="$prefix/bin"
 skills_directory="$prefix/share/intake/skills"
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/intake-install.XXXXXX")"
@@ -51,20 +55,20 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$repository_root"
-printf 'Compiling standalone executables with %s...\n' "$(bun --version)"
-bun build --compile src/cli.ts \
-  --outfile "$temporary_directory/intake" >/dev/null
-bun build --compile src/sources/fastmail.ts \
-  --outfile "$temporary_directory/intake-fastmail-source" >/dev/null
-bun build --compile src/sources/github.ts \
-  --outfile "$temporary_directory/intake-github-source" >/dev/null
+printf 'Installing browser dependencies with npm %s...\n' "$(npm --version)"
+npm ci --prefix "$web_directory"
+npm run build --prefix "$web_directory"
+
+printf 'Compiling release executables with %s...\n' "$(rustc --version)"
+CARGO_TARGET_DIR="$temporary_directory/target" \
+  INTAKE_DASHBOARD_DIR="$web_directory/generated" \
+  cargo build --release --locked --bins
 
 install -d -m 755 "$bin_directory" "$(dirname "$skills_directory")"
-install -m 755 "$temporary_directory/intake" "$bin_directory/intake"
-install -m 755 "$temporary_directory/intake-fastmail-source" \
-  "$bin_directory/intake-fastmail-source"
-install -m 755 "$temporary_directory/intake-github-source" \
-  "$bin_directory/intake-github-source"
+for executable in intake intake-fastmail-source intake-github-source; do
+  install -m 755 "$temporary_directory/target/release/$executable" \
+    "$bin_directory/$executable"
+done
 
 rm -rf "$skills_directory"
 install -d -m 755 "$skills_directory"

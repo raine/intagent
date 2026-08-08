@@ -1,22 +1,32 @@
 [[check]]
-name = "format"
+name = "bun-format"
 command = ["bun", "run", "format:check"]
 
 [[check]]
-name = "lint"
+name = "bun-lint"
 command = ["bun", "run", "lint"]
 
 [[check]]
-name = "types"
+name = "bun-types"
 command = ["bun", "run", "typecheck"]
 
 [[check]]
-name = "test"
+name = "bun-test"
 command = ["bun", "test"]
 
 [[check]]
-name = "build"
-command = ["bun", "run", "build"]
+name = "bun-build"
+command = [
+  "bun",
+  "build",
+  "src/cli.ts",
+  "src/sources/fastmail.ts",
+  "src/sources/github.ts",
+  "--outdir",
+  "dist",
+  "--target",
+  "bun",
+]
 
 [[check]]
 name = "rust-format"
@@ -37,14 +47,22 @@ command = [
 ]
 
 [[check]]
-name = "rust-build"
-mode = "cargo"
-command = ["cargo", "build", "--all-targets", "--message-format=json"]
-
-[[check]]
 name = "rust-test"
 mode = "cargo"
 command = ["cargo", "test", "--all-targets", "--message-format=json"]
+
+[[check]]
+name = "rust-release"
+mode = "cargo"
+command = ["cargo", "build", "--release", "--locked", "--message-format=json"]
+
+[[check]]
+name = "browser"
+command = [
+  "bash",
+  "-c",
+  "npm ci --prefix web && npm run format:check --prefix web && npm run lint --prefix web && npm run typecheck --prefix web && npm test --prefix web && npm run build --prefix web && git diff --exit-code -- web/generated",
+]
 
 [[check]]
 name = "package"
@@ -55,21 +73,22 @@ name = "scripts"
 command = [
   "bash",
   "-c",
-  "bash -n hooks/pre-commit scripts/install scripts/install-checkle scripts/install-git-hook-shims scripts/package-check && if command -v shellcheck >/dev/null 2>&1; then shellcheck hooks/pre-commit scripts/install-checkle scripts/install-git-hook-shims scripts/package-check; else printf '%s\\n' 'shellcheck unavailable, bash syntax validation completed'; fi",
+  "bash -n hooks/pre-commit scripts/install scripts/install-checkle scripts/install-git-hook-shims scripts/package-check && shellcheck hooks/pre-commit scripts/install scripts/install-checkle scripts/install-git-hook-shims scripts/package-check",
 ]
 
 [[group]]
 name = "project"
 checks = [
-  "format",
-  "lint",
-  "types",
-  "test",
-  "build",
+  "bun-format",
+  "bun-lint",
+  "bun-types",
+  "bun-test",
+  "bun-build",
   "rust-format",
   "rust-clippy",
-  "rust-build",
   "rust-test",
+  "rust-release",
+  "browser",
   "package",
   "scripts",
 ]
