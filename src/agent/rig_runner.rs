@@ -35,9 +35,9 @@ use super::read_policy::ReadPolicy;
 use super::skills::{format_skill_catalog, validate_skills};
 use super::telemetry::{CancellationTelemetry, PrototypeObserver, PrototypeTelemetry};
 use super::tools::{ProductionTools, ToolCallResult};
-use crate::config::{IntakeConfig, ThinkingLevel as ConfigThinkingLevel, expand_path};
+use crate::config::{IntagentConfig, ThinkingLevel as ConfigThinkingLevel, expand_path};
 use crate::database::{
-    CompactionFinish, CompactionId, ErrorCategory, EventRecord, IntakeDatabase, RetryId,
+    CompactionFinish, CompactionId, ErrorCategory, EventRecord, IntagentDatabase, RetryId,
     RetryStart, RunFinish, RunId, RunMetadata, RunOutcome, SpanOutcome, ToolId, TriageConclusion,
     TurnFinish, TurnId, reported_usage,
 };
@@ -54,8 +54,8 @@ pub trait TriageRunner: Send + Sync {
 
 #[derive(Clone)]
 pub struct TriageRunnerCore {
-    config: Arc<IntakeConfig>,
-    database: IntakeDatabase,
+    config: Arc<IntagentConfig>,
+    database: IntagentDatabase,
     command_policy: Arc<CommandPolicy>,
     logs: DurableLogStore,
     output: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -66,8 +66,8 @@ pub struct TriageRunnerCore {
 
 impl TriageRunnerCore {
     pub fn new(
-        config: IntakeConfig,
-        database: IntakeDatabase,
+        config: IntagentConfig,
+        database: IntagentDatabase,
         command_policy: Arc<CommandPolicy>,
         logs: DurableLogStore,
         output: impl Write + Send + 'static,

@@ -1,4 +1,4 @@
-use intake::terminal::terminal_line;
+use intagent::terminal::terminal_line;
 
 #[test]
 fn dims_timestamps_only_on_color_terminals() {

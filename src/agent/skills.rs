@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::agent::read_policy::open_absolute_no_follow;
-use crate::config::{IntakeConfig, canonical_roots, expand_path, is_within, parse_yaml_value};
+use crate::config::{IntagentConfig, canonical_roots, expand_path, is_within, parse_yaml_value};
 
 const MAX_SKILL_FILE_BYTES: usize = 1_000_000;
 
@@ -35,7 +35,7 @@ struct SkillFrontmatter {
     disable_model_invocation: bool,
 }
 
-pub fn validate_skills(config: &IntakeConfig) -> Result<SkillValidation> {
+pub fn validate_skills(config: &IntagentConfig) -> Result<SkillValidation> {
     let approved_roots = canonical_roots(&config.skills.approved_roots)?;
     let mut skill_paths = Vec::new();
     let mut skills = Vec::new();

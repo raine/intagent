@@ -10,4 +10,4 @@ pub use crate::errors::ErrorCategory;
 pub use reader::DatabaseReaders;
 pub use records::*;
 pub use schema::{MIGRATIONS, QueueOwnerLock, SCHEMA_VERSION};
-pub use writer::IntakeDatabase;
+pub use writer::IntagentDatabase;

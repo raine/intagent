@@ -2,7 +2,7 @@ version: 1
 project_roots:
   - ~/code
 state:
-  database: ~/.config/intake/state/intake.sqlite
+  database: ~/.config/intagent/state/intagent.sqlite
 skills:
   directories:
     - ./skills
@@ -11,7 +11,7 @@ skills:
     - ~/.claude/skills
 sources:
   - name: fastmail
-    command: intake-fastmail-source
+    command: intagent-fastmail-source
     interval_seconds: 60
     timeout_seconds: 45
     item_limit: 100
@@ -24,7 +24,7 @@ sources:
           - comment
           - subscribed
   - name: github
-    command: intake-github-source
+    command: intagent-github-source
     environment:
       - GITHUB_TOKEN
     options: {}

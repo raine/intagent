@@ -29,13 +29,13 @@ pub enum ConfigError {
     Emit(String),
     #[error("HOME is not set")]
     MissingHome,
-    #[error("Cannot locate the intake executable")]
+    #[error("Cannot locate the intagent executable")]
     MissingExecutableDirectory,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct IntakeConfig {
+pub struct IntagentConfig {
     pub version: u8,
     #[serde(default = "default_project_roots")]
     pub project_roots: Vec<String>,
@@ -58,8 +58,8 @@ pub struct StateConfig {
 impl Default for StateConfig {
     fn default() -> Self {
         Self {
-            database: "~/.local/state/intake/intake.sqlite".into(),
-            logs: "~/.local/state/intake/logs".into(),
+            database: "~/.local/state/intagent/intagent.sqlite".into(),
+            logs: "~/.local/state/intagent/logs".into(),
         }
     }
 }
@@ -156,7 +156,7 @@ pub struct InitializeResult {
     pub created: Vec<PathBuf>,
 }
 
-impl IntakeConfig {
+impl IntagentConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != 1 {
             return Err("version: expected 1".into());
@@ -264,7 +264,7 @@ impl IntakeConfig {
     }
 }
 
-pub fn load_config(path: impl AsRef<Path>) -> Result<IntakeConfig, ConfigError> {
+pub fn load_config(path: impl AsRef<Path>) -> Result<IntagentConfig, ConfigError> {
     let path = path.as_ref();
     let raw = fs::read_to_string(path).map_err(|source| ConfigError::Read {
         path: path.to_path_buf(),
@@ -300,9 +300,9 @@ pub fn parse_yaml_value(raw: &str) -> Result<Value, String> {
     serde_saphyr::from_str_with_options(raw, options).map_err(|error| error.to_string())
 }
 
-fn parse_config(raw: &str) -> Result<IntakeConfig, ParseConfigError> {
+fn parse_config(raw: &str) -> Result<IntagentConfig, ParseConfigError> {
     let value = parse_yaml_value(raw).map_err(ParseConfigError::Yaml)?;
-    let config: IntakeConfig = serde_json::from_value(value)
+    let config: IntagentConfig = serde_json::from_value(value)
         .map_err(|error| ParseConfigError::Validation(error.to_string()))?;
     config.validate().map_err(ParseConfigError::Validation)?;
     Ok(config)
@@ -319,7 +319,7 @@ pub fn config_directory() -> Result<PathBuf, ConfigError> {
 pub fn config_directory_with_env(
     environment: &HashMap<String, String>,
 ) -> Result<PathBuf, ConfigError> {
-    application_directory(environment, "XDG_CONFIG_HOME", &[".config", "intake"])
+    application_directory(environment, "XDG_CONFIG_HOME", &[".config", "intagent"])
 }
 
 pub fn project_registry_path() -> Result<PathBuf, ConfigError> {
@@ -336,7 +336,7 @@ pub fn state_directory_with_env(
     application_directory(
         environment,
         "XDG_STATE_HOME",
-        &[".local", "state", "intake"],
+        &[".local", "state", "intagent"],
     )
 }
 
@@ -397,11 +397,11 @@ pub fn initialize_private_config(
     create_private_directory(&state)?;
 
     let home = home_directory(environment)?;
-    let config = IntakeConfig {
+    let config = IntagentConfig {
         version: 1,
         project_roots: default_project_roots(),
         state: StateConfig {
-            database: state.join("intake.sqlite").to_string_lossy().into_owned(),
+            database: state.join("intagent.sqlite").to_string_lossy().into_owned(),
             logs: state.join("logs").to_string_lossy().into_owned(),
         },
         skills: SkillsConfig {
@@ -460,7 +460,7 @@ fn application_directory(
     home_components: &[&str],
 ) -> Result<PathBuf, ConfigError> {
     let base = if let Some(value) = environment.get(xdg_name) {
-        PathBuf::from(value).join("intake")
+        PathBuf::from(value).join("intagent")
     } else {
         let mut path = home_directory(environment)?;
         for component in home_components {

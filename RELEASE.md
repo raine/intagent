@@ -18,10 +18,10 @@
 The release workflow builds Rust 1.94.0 executables for macOS arm64 and Linux
 x86-64 musl. Each archive contains:
 
-- `bin/intake`
-- `bin/intake-fastmail-source`
-- `bin/intake-github-source`
-- `share/doc/intake/examples/skills`
+- `bin/intagent`
+- `bin/intagent-fastmail-source`
+- `bin/intagent-github-source`
+- `share/doc/intagent/examples/skills`
 - `LICENSE`
 
 Every archive has a SHA-256 checksum file. The Linux musl executables use

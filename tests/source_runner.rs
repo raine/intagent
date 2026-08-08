@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use intake::config::{
-    CommandRule, CommandsConfig, IntakeConfig, SkillsConfig, SourceConfig, StateConfig,
+use intagent::config::{
+    CommandRule, CommandsConfig, IntagentConfig, SkillsConfig, SourceConfig, StateConfig,
     TriageConfig,
 };
-use intake::database::IntakeDatabase;
-use intake::protocol::{PollRequest, PollResponse};
-use intake::source_runner::{SOURCE_OUTPUT_LIMIT, poll_source};
+use intagent::database::IntagentDatabase;
+use intagent::protocol::{PollRequest, PollResponse};
+use intagent::source_runner::{SOURCE_OUTPUT_LIMIT, poll_source};
 use serde_json::{Map, json};
 use tempfile::TempDir;
 
@@ -20,8 +20,8 @@ fn at(value: &str) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-fn config(root: &Path, source: SourceConfig) -> IntakeConfig {
-    IntakeConfig {
+fn config(root: &Path, source: SourceConfig) -> IntagentConfig {
+    IntagentConfig {
         version: 1,
         project_roots: vec![root.display().to_string()],
         state: StateConfig::default(),
@@ -86,7 +86,7 @@ fn item(entity: &str) -> serde_json::Value {
     })
 }
 
-async fn checkpoint(database: &IntakeDatabase) -> serde_json::Value {
+async fn checkpoint(database: &IntagentDatabase) -> serde_json::Value {
     database
         .readers()
         .source_checkpoint("fixture".into())
@@ -94,7 +94,7 @@ async fn checkpoint(database: &IntakeDatabase) -> serde_json::Value {
         .expect("checkpoint")
 }
 
-async fn last_error(database: &IntakeDatabase) -> String {
+async fn last_error(database: &IntagentDatabase) -> String {
     database
         .readers()
         .source_statuses()
@@ -121,7 +121,7 @@ async fn queues_valid_response_with_versioned_bounded_request() {
         .options
         .insert("project_roots".into(), json!(["override"]));
     let config = config(root.path(), source.clone());
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
 
     let queued = poll_source(&source, &config, &database, at("2026-08-03T10:01:00.000Z"))
         .await
@@ -130,7 +130,7 @@ async fn queues_valid_response_with_versioned_bounded_request() {
     assert_eq!(queued, 1);
     assert_eq!(checkpoint(&database).await, json!({"cursor": "next"}));
     let request_bytes = fs::read(request_path).expect("captured request");
-    assert!(request_bytes.len() < intake::protocol::MAX_STANDARD_INPUT_BYTES as usize);
+    assert!(request_bytes.len() < intagent::protocol::MAX_STANDARD_INPUT_BYTES as usize);
     let request: PollRequest = serde_json::from_slice(&request_bytes).expect("poll request");
     request.validate().expect("valid poll request");
     assert_eq!(request.protocol_version, 1);
@@ -149,7 +149,7 @@ async fn records_startup_failure_without_checkpoint_advance() {
     let root = tempfile::tempdir().expect("temporary directory");
     let source = source(root.path().join("missing-source"));
     let config = config(root.path(), source.clone());
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
 
     let error = poll_source(&source, &config, &database, Utc::now())
         .await
@@ -189,7 +189,7 @@ async fn records_exit_utf8_json_schema_and_item_limit_failures() {
         let mut source = source(command);
         source.item_limit = 1;
         let config = config(root.path(), source.clone());
-        let database = IntakeDatabase::open(":memory:").await.expect("database");
+        let database = IntagentDatabase::open(":memory:").await.expect("database");
         let error = poll_source(&source, &config, &database, Utc::now())
             .await
             .expect_err("invalid source output")
@@ -222,7 +222,7 @@ async fn bounds_stdout_and_stderr_without_pipe_deadlock() {
         let command = executable(&root, body);
         let source = source(command);
         let config = config(root.path(), source.clone());
-        let database = IntakeDatabase::open(":memory:").await.expect("database");
+        let database = IntagentDatabase::open(":memory:").await.expect("database");
         let error = tokio::time::timeout(
             Duration::from_secs(10),
             poll_source(&source, &config, &database, Utc::now()),
@@ -239,8 +239,8 @@ async fn bounds_stdout_and_stderr_without_pipe_deadlock() {
 
 #[tokio::test]
 async fn clears_environment_and_redacts_every_allowlisted_secret_value() {
-    const SECRET_NAME: &str = "INTAKE_SOURCE_TEST_SECRET";
-    const BLOCKED_NAME: &str = "INTAKE_SOURCE_TEST_BLOCKED";
+    const SECRET_NAME: &str = "INTAGENT_SOURCE_TEST_SECRET";
+    const BLOCKED_NAME: &str = "INTAGENT_SOURCE_TEST_BLOCKED";
     let secret = "tiny";
     unsafe {
         std::env::set_var(SECRET_NAME, secret);
@@ -254,7 +254,7 @@ async fn clears_environment_and_redacts_every_allowlisted_secret_value() {
     let mut source = source(command);
     source.environment.push(SECRET_NAME.into());
     let config = config(root.path(), source.clone());
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
 
     let error = poll_source(&source, &config, &database, Utc::now())
         .await
@@ -286,7 +286,7 @@ async fn times_out_and_kills_descendants() {
     let mut source = source(command);
     source.timeout_seconds = 1;
     let config = config(root.path(), source.clone());
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
 
     let error = poll_source(&source, &config, &database, Utc::now())
         .await
@@ -311,10 +311,10 @@ async fn rejects_oversized_request_before_starting_source() {
     let mut source = source(command);
     source.options.insert(
         "oversized".into(),
-        json!("x".repeat(intake::protocol::MAX_STANDARD_INPUT_BYTES as usize)),
+        json!("x".repeat(intagent::protocol::MAX_STANDARD_INPUT_BYTES as usize)),
     );
     let config = config(root.path(), source.clone());
-    let database = IntakeDatabase::open(":memory:").await.expect("database");
+    let database = IntagentDatabase::open(":memory:").await.expect("database");
 
     let error = poll_source(&source, &config, &database, Utc::now())
         .await
@@ -339,8 +339,8 @@ async fn rolls_back_events_and_checkpoint_when_commit_fails() {
     );
     let source = source(command);
     let config = config(root.path(), source.clone());
-    let database_path = root.path().join("intake.sqlite");
-    let database = IntakeDatabase::open(&database_path)
+    let database_path = root.path().join("intagent.sqlite");
+    let database = IntagentDatabase::open(&database_path)
         .await
         .expect("database");
     rusqlite::Connection::open(&database_path)

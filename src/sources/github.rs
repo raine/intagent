@@ -384,7 +384,7 @@ async fn github_get_value(url: &str, token: &str, client: &Client) -> Result<Val
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "personal-intake-source")
+        .header("User-Agent", "intagent-source")
         .send()
         .await
         .map_err(|_| source_error("GitHub API request failed"))?;

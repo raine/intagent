@@ -12,8 +12,8 @@ use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 
 use crate::application_log::{APPLICATION_LOG_PATH_ENV, application_log_path, redact_log_text};
-use crate::config::{IntakeConfig, SourceConfig, expand_path};
-use crate::database::{DatabaseError, IntakeDatabase};
+use crate::config::{IntagentConfig, SourceConfig, expand_path};
+use crate::database::{DatabaseError, IntagentDatabase};
 use crate::protocol::{
     MAX_STANDARD_INPUT_BYTES, PROTOCOL_VERSION, PollRequest, parse_poll_response,
 };
@@ -54,8 +54,8 @@ pub enum SourceRunnerError {
 
 pub async fn poll_source(
     source: &SourceConfig,
-    config: &IntakeConfig,
-    database: &IntakeDatabase,
+    config: &IntagentConfig,
+    database: &IntagentDatabase,
     now: DateTime<Utc>,
 ) -> Result<usize, SourceRunnerError> {
     let environment = source_environment(source, config);
@@ -85,8 +85,8 @@ pub async fn poll_source(
 
 async fn run_source_process(
     source: &SourceConfig,
-    config: &IntakeConfig,
-    database: &IntakeDatabase,
+    config: &IntagentConfig,
+    database: &IntagentDatabase,
     now: DateTime<Utc>,
     environment: HashMap<String, String>,
 ) -> Result<usize, SourceRunnerError> {
@@ -128,7 +128,7 @@ async fn run_source_process(
         .ok_or_else(|| SourceRunnerError::Spawn("source process has no process ID".into()))?
         as i32;
     tracing::debug!(
-        target: "intake::source_runner",
+        target: "intagent::source_runner",
         source = source.name,
         pid,
         "source process started"
@@ -293,7 +293,7 @@ where
     Ok(bytes)
 }
 
-fn request_options(source: &SourceConfig, config: &IntakeConfig) -> Map<String, Value> {
+fn request_options(source: &SourceConfig, config: &IntagentConfig) -> Map<String, Value> {
     let mut options = Map::from_iter([(
         "project_roots".into(),
         Value::Array(
@@ -309,7 +309,7 @@ fn request_options(source: &SourceConfig, config: &IntakeConfig) -> Map<String, 
     options
 }
 
-fn source_environment(source: &SourceConfig, config: &IntakeConfig) -> HashMap<String, String> {
+fn source_environment(source: &SourceConfig, config: &IntagentConfig) -> HashMap<String, String> {
     let mut environment = HashMap::new();
     for name in &source.environment {
         if let Ok(value) = env::var(name) {

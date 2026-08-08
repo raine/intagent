@@ -1,12 +1,12 @@
 { buildNpmPackage, importNpmLock, lib, rustPlatform, rustc, ... }:
 assert lib.assertMsg (rustc.version == "1.94.0")
-  "personal-intake requires Rust 1.94.0, but nixpkgs provides ${rustc.version}";
+  "Intagent requires Rust 1.94.0, but nixpkgs provides ${rustc.version}";
 let
   cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
   version = cargoToml.package.version;
 
   browser = buildNpmPackage {
-    pname = "personal-intake-dashboard";
+    pname = "intagent-dashboard";
     inherit version;
     src = ./web;
     npmDeps = importNpmLock {
@@ -16,8 +16,8 @@ let
     npmBuildScript = "build";
     installPhase = ''
       runHook preInstall
-      mkdir -p "$out/share/intake/dashboard"
-      cp generated/app.js generated/app.css "$out/share/intake/dashboard/"
+      mkdir -p "$out/share/intagent/dashboard"
+      cp generated/app.js generated/app.css "$out/share/intagent/dashboard/"
       runHook postInstall
     '';
   };
@@ -38,16 +38,16 @@ let
       lockFile = ./Cargo.lock;
       outputHashes = { };
     };
-    INTAKE_DASHBOARD_DIR = "${browser}/share/intake/dashboard";
+    INTAGENT_DASHBOARD_DIR = "${browser}/share/intagent/dashboard";
     doCheck = false;
     postInstall = ''
-      mkdir -p "$out/share/doc/intake/examples"
-      cp -R ${./examples/skills} "$out/share/doc/intake/examples/skills"
+      mkdir -p "$out/share/doc/intagent/examples"
+      cp -R ${./examples/skills} "$out/share/doc/intagent/examples/skills"
     '';
     meta = {
       inherit (cargoToml.package) description;
       license = lib.licenses.mit;
-      mainProgram = "intake";
+      mainProgram = "intagent";
     };
   };
 in

@@ -3,7 +3,7 @@ use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use intake::config::{
+use intagent::config::{
     canonical_roots, emit_yaml, expand_path_with_env, initialize_private_config, is_within,
     load_config, parse_yaml_value,
 };
@@ -40,7 +40,7 @@ fn loads_version_one_fixture_with_defaults() {
     assert_eq!(config.version, 1);
     assert_eq!(config.sources[0].name, "fastmail");
     assert_eq!(config.sources[1].item_limit, 100);
-    assert_eq!(config.state.logs, "~/.local/state/intake/logs");
+    assert_eq!(config.state.logs, "~/.local/state/intagent/logs");
     assert_eq!(config.triage.compaction_trigger_tokens, 100_000);
     assert_eq!(config.triage.compaction_keep_recent_messages, 12);
 }
@@ -145,7 +145,7 @@ fn rejects_unknown_keys_at_every_configuration_object_level() {
 
     let source = original.replace(
         "sources: []",
-        "sources:\n  - name: fastmail\n    command: intake-fastmail-source\n    unknown: true",
+        "sources:\n  - name: fastmail\n    command: intagent-fastmail-source\n    unknown: true",
     );
     fs::write(&path, source).unwrap();
     assert!(
@@ -266,7 +266,7 @@ fn initializes_private_files_and_directories_idempotently() {
         0o700
     );
     assert_eq!(
-        fs::metadata(root.path().join("state/intake"))
+        fs::metadata(root.path().join("state/intagent"))
             .unwrap()
             .mode()
             & 0o777,

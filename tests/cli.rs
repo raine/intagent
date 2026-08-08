@@ -6,12 +6,12 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use intake::cli::{
+use intagent::cli::{
     COMMAND_SPECS, DashboardOptions, USAGE, WatchOptions, parse_dashboard_options,
     parse_global_options, parse_watch_options, public_cli_error,
 };
-use intake::dashboard::{DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT};
-use intake::database::{IntakeDatabase, QueueOwnerLock};
+use intagent::dashboard::{DEFAULT_DASHBOARD_HOST, DEFAULT_DASHBOARD_PORT};
+use intagent::database::{IntagentDatabase, QueueOwnerLock};
 use tempfile::TempDir;
 
 #[test]
@@ -19,7 +19,7 @@ fn snapshots_usage_and_direct_argument_errors() {
     assert_eq!(
         USAGE.as_str(),
         format!(
-            "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+            "Usage: intagent [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: {DEFAULT_DASHBOARD_HOST})\n  --port PORT           bind port (default: {DEFAULT_DASHBOARD_PORT})\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAGENT_LOG to off, error, warn, info, debug, or trace.\n"
         )
     );
     let error = parse_global_options(vec!["status".into(), "--config".into()]).unwrap_err();
@@ -168,14 +168,14 @@ fn every_subcommand_help_is_focused_and_does_not_load_config_or_create_state() {
         } else {
             vec![name.into(), "--help".into(), "--config".into(), config]
         };
-        let output = intake(&root, args);
+        let output = intagent(&root, args);
         assert!(
             output.status.success(),
             "{name}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.starts_with("Usage: intake "), "{name}: {stdout}");
+        assert!(stdout.starts_with("Usage: intagent "), "{name}: {stdout}");
         assert!(stdout.contains(name), "{name}: {stdout}");
         assert!(stdout.contains(description), "{name}: {stdout}");
         assert!(!stdout.contains("\nCommands:\n"), "{name}: {stdout}");
@@ -212,7 +212,7 @@ fn watch_help_has_no_runtime_side_effects() {
     .unwrap();
     fs::remove_dir_all(root.path().join("state")).unwrap();
 
-    let output = intake(
+    let output = intagent(
         &root,
         [
             "watch".to_string(),
@@ -223,7 +223,7 @@ fn watch_help_has_no_runtime_side_effects() {
     );
 
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Usage: intake "));
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Usage: intagent "));
     assert!(!marker.exists());
     assert!(!root.path().join("state").exists());
 }
@@ -231,11 +231,11 @@ fn watch_help_has_no_runtime_side_effects() {
 #[test]
 fn unknown_subcommand_options_still_fail() {
     let root = tempfile::tempdir().unwrap();
-    let output = intake(&root, ["watch".to_string(), "--bogus".to_string()]);
+    let output = intagent(&root, ["watch".to_string(), "--bogus".to_string()]);
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "intake: Unknown watch option: --bogus\n"
+        "intagent: Unknown watch option: --bogus\n"
     );
 }
 
@@ -244,7 +244,7 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("config/config.yaml");
     let state = root.path().join("state");
-    let first = intake(
+    let first = intagent(
         &root,
         [
             "init".to_string(),
@@ -273,7 +273,7 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
         0o700
     );
 
-    let second = intake(
+    let second = intagent(
         &root,
         [
             "--config".to_string(),
@@ -300,13 +300,13 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
         .join("\n");
     fs::write(&config, format!("{configured}\n")).unwrap();
 
-    let database_path = state.join("intake/intake.sqlite");
+    let database_path = state.join("intagent/intagent.sqlite");
     let owner = QueueOwnerLock::acquire(&database_path).unwrap();
     let overlapping = command(&root, &config, "check", None);
     assert_eq!(overlapping.status.code(), Some(1));
     assert!(
         String::from_utf8_lossy(&overlapping.stderr)
-            .contains("another intake watch or check owns the queue")
+            .contains("another Intagent watch or check owns the queue")
     );
     let readable = command(&root, &config, "status", None);
     assert!(readable.status.success());
@@ -368,10 +368,10 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
     assert_eq!(unavailable.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&unavailable.stderr),
-        "intake: Event 1 has no retained content to retry\n"
+        "intagent: Event 1 has no retained content to retry\n"
     );
 
-    assert!(state.join("intake/intake.sqlite").exists());
+    assert!(state.join("intagent/intagent.sqlite").exists());
     let application_log = configured_logs.join("application.log");
     assert_eq!(
         fs::metadata(&configured_logs).unwrap().permissions().mode() & 0o777,
@@ -382,7 +382,7 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
         0o600
     );
     let application_log = fs::read_to_string(application_log).unwrap();
-    assert!(application_log.contains("intake::lifecycle"));
+    assert!(application_log.contains("intagent::lifecycle"));
     assert!(!application_log.contains("rusqlite"));
 }
 
@@ -390,7 +390,7 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
 fn watch_without_dashboard_handles_graceful_and_forced_signals() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("config/config.yaml");
-    let initialized = intake(
+    let initialized = intagent(
         &root,
         [
             "init".to_string(),
@@ -400,7 +400,7 @@ fn watch_without_dashboard_handles_graceful_and_forced_signals() {
     );
     assert!(initialized.status.success());
 
-    let mut graceful = spawn_intake(&root, &config, "watch");
+    let mut graceful = spawn_intagent(&root, &config, "watch");
     wait_for_watch_start(&mut graceful);
     send_signal(&graceful, libc::SIGINT);
     assert_eq!(
@@ -430,7 +430,7 @@ fn watch_without_dashboard_handles_graceful_and_forced_signals() {
         ),
     )
     .unwrap();
-    let mut forced = spawn_intake(&root, &config, "watch");
+    let mut forced = spawn_intagent(&root, &config, "watch");
     wait_for_watch_start(&mut forced);
     wait_for_path(&marker, Duration::from_secs(3));
     send_signal(&forced, libc::SIGTERM);
@@ -447,7 +447,7 @@ fn watch_with_dashboard_serves_and_shuts_down_gracefully() {
     let root = tempfile::tempdir().unwrap();
     let config = initialize_test_config(&root);
     let port = available_port();
-    let mut child = spawn_intake_args(
+    let mut child = spawn_intagent_args(
         &root,
         [
             "--config".to_string(),
@@ -460,11 +460,11 @@ fn watch_with_dashboard_serves_and_shuts_down_gracefully() {
             port.to_string(),
         ],
     );
-    wait_for_output(&mut child, &["Intake dashboard:", "Watching"]);
+    wait_for_output(&mut child, &["Intagent dashboard:", "Watching"]);
 
     let response = dashboard_request(port, "/api/snapshot");
     assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
-    let database_path = root.path().join("state/intake/intake.sqlite");
+    let database_path = root.path().join("state/intagent/intagent.sqlite");
     assert!(QueueOwnerLock::acquire(&database_path).is_err());
 
     send_signal(&child, libc::SIGTERM);
@@ -479,7 +479,7 @@ fn watch_dashboard_bind_conflict_releases_queue_ownership() {
     let conflict = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = conflict.local_addr().unwrap().port();
 
-    let output = intake(
+    let output = intagent(
         &root,
         [
             "watch".to_string(),
@@ -497,7 +497,7 @@ fn watch_dashboard_bind_conflict_releases_queue_ownership() {
         stderr.contains(&format!("failed to bind dashboard at 127.0.0.1:{port}")),
         "{stderr}"
     );
-    QueueOwnerLock::acquire(root.path().join("state/intake/intake.sqlite")).unwrap();
+    QueueOwnerLock::acquire(root.path().join("state/intagent/intagent.sqlite")).unwrap();
 }
 
 #[test]
@@ -505,7 +505,7 @@ fn explicit_dashboard_command_remains_available() {
     let root = tempfile::tempdir().unwrap();
     let config = initialize_test_config(&root);
     let port = available_port();
-    let mut child = spawn_intake_args(
+    let mut child = spawn_intagent_args(
         &root,
         [
             "dashboard".to_string(),
@@ -515,7 +515,7 @@ fn explicit_dashboard_command_remains_available() {
             config.display().to_string(),
         ],
     );
-    wait_for_output(&mut child, &["Intake dashboard:"]);
+    wait_for_output(&mut child, &["Intagent dashboard:"]);
 
     let response = dashboard_request(port, "/");
     assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
@@ -526,13 +526,13 @@ fn explicit_dashboard_command_remains_available() {
 #[test]
 fn help_survives_unavailable_application_logging() {
     let root = tempfile::tempdir().unwrap();
-    let blocked = root.path().join("state/intake/logs/application.log");
+    let blocked = root.path().join("state/intagent/logs/application.log");
     fs::create_dir_all(&blocked).unwrap();
 
-    let output = intake(&root, ["--help".to_string()]);
+    let output = intagent(&root, ["--help".to_string()]);
 
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Usage: intake"));
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Usage: intagent"));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Warning: application logging is unavailable"));
     assert!(!stderr.contains("not a directory"));
@@ -541,15 +541,15 @@ fn help_survives_unavailable_application_logging() {
 #[test]
 fn log_filter_suppresses_lower_priority_and_dependency_events() {
     let root = tempfile::tempdir().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_intake"))
+    let output = Command::new(env!("CARGO_BIN_EXE_intagent"))
         .arg("--help")
         .env("HOME", root.path())
         .env("XDG_STATE_HOME", root.path().join("state"))
-        .env("INTAKE_LOG", "error")
+        .env("INTAGENT_LOG", "error")
         .output()
         .unwrap();
     assert!(output.status.success());
-    let log = root.path().join("state/intake/logs/application.log");
+    let log = root.path().join("state/intagent/logs/application.log");
     assert!(fs::read_to_string(log).unwrap().is_empty());
 }
 
@@ -557,11 +557,11 @@ fn log_filter_suppresses_lower_priority_and_dependency_events() {
 fn separate_invocations_append_to_one_application_log() {
     let root = tempfile::tempdir().unwrap();
     for _ in 0..2 {
-        let output = intake(&root, ["--help".to_string()]);
+        let output = intagent(&root, ["--help".to_string()]);
         assert!(output.status.success());
     }
 
-    let directory = root.path().join("state/intake/logs");
+    let directory = root.path().join("state/intagent/logs");
     let entries = fs::read_dir(&directory)
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
@@ -577,8 +577,8 @@ fn separate_invocations_append_to_one_application_log() {
 fn source_help_uses_default_application_log_path() {
     let root = tempfile::tempdir().unwrap();
     for executable in [
-        env!("CARGO_BIN_EXE_intake-fastmail-source"),
-        env!("CARGO_BIN_EXE_intake-github-source"),
+        env!("CARGO_BIN_EXE_intagent-fastmail-source"),
+        env!("CARGO_BIN_EXE_intagent-github-source"),
     ] {
         let output = Command::new(executable)
             .arg("--help")
@@ -587,7 +587,7 @@ fn source_help_uses_default_application_log_path() {
             .output()
             .unwrap();
         assert!(output.status.success());
-        let directory = root.path().join("state/intake/logs");
+        let directory = root.path().join("state/intagent/logs");
         let log = directory.join("application.log");
         assert_eq!(
             fs::metadata(directory).unwrap().permissions().mode() & 0o777,
@@ -604,7 +604,7 @@ fn source_help_uses_default_application_log_path() {
             .unwrap();
         assert_eq!(output.status.code(), Some(1));
     }
-    let directory = root.path().join("state/intake/logs");
+    let directory = root.path().join("state/intagent/logs");
     assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
     let contents = fs::read_to_string(directory.join("application.log")).unwrap();
     assert_eq!(contents.matches("source poll started").count(), 2);
@@ -614,20 +614,20 @@ fn source_help_uses_default_application_log_path() {
 #[tokio::test]
 async fn queue_owner_lock_uses_the_canonical_database_identity() {
     let root = tempfile::tempdir().unwrap();
-    let database_path = root.path().join("intake.sqlite");
-    let database = IntakeDatabase::open(&database_path).await.unwrap();
+    let database_path = root.path().join("intagent.sqlite");
+    let database = IntagentDatabase::open(&database_path).await.unwrap();
     database.shutdown().await.unwrap();
     let alias = root.path().join("database-alias.sqlite");
     std::os::unix::fs::symlink(&database_path, &alias).unwrap();
 
     let owner = QueueOwnerLock::acquire(&database_path).unwrap();
-    let observer = IntakeDatabase::open(&alias).await.unwrap();
+    let observer = IntagentDatabase::open(&alias).await.unwrap();
     assert!(observer.readers().status().await.unwrap().is_empty());
     let error = QueueOwnerLock::acquire(&alias).unwrap_err();
     assert!(
         error
             .to_string()
-            .starts_with("another intake watch or check owns the queue for ")
+            .starts_with("another Intagent watch or check owns the queue for ")
     );
     observer.shutdown().await.unwrap();
     drop(observer);
@@ -647,11 +647,11 @@ fn command(
     }
     args.push("--config".into());
     args.push(config.display().to_string());
-    intake(root, args)
+    intagent(root, args)
 }
 
-fn intake(root: &TempDir, args: impl IntoIterator<Item = String>) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_intake"))
+fn intagent(root: &TempDir, args: impl IntoIterator<Item = String>) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_intagent"))
         .args(args)
         .env("HOME", root.path())
         .env("XDG_STATE_HOME", root.path().join("state"))
@@ -659,8 +659,8 @@ fn intake(root: &TempDir, args: impl IntoIterator<Item = String>) -> std::proces
         .unwrap()
 }
 
-fn spawn_intake(root: &TempDir, config: &std::path::Path, command: &str) -> Child {
-    spawn_intake_args(
+fn spawn_intagent(root: &TempDir, config: &std::path::Path, command: &str) -> Child {
+    spawn_intagent_args(
         root,
         [
             command.to_string(),
@@ -670,8 +670,8 @@ fn spawn_intake(root: &TempDir, config: &std::path::Path, command: &str) -> Chil
     )
 }
 
-fn spawn_intake_args(root: &TempDir, args: impl IntoIterator<Item = String>) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_intake"))
+fn spawn_intagent_args(root: &TempDir, args: impl IntoIterator<Item = String>) -> Child {
+    Command::new(env!("CARGO_BIN_EXE_intagent"))
         .args(args)
         .env("HOME", root.path())
         .env("XDG_STATE_HOME", root.path().join("state"))
@@ -683,7 +683,7 @@ fn spawn_intake_args(root: &TempDir, args: impl IntoIterator<Item = String>) -> 
 
 fn initialize_test_config(root: &TempDir) -> std::path::PathBuf {
     let config = root.path().join("config/config.yaml");
-    let initialized = intake(
+    let initialized = intagent(
         root,
         [
             "init".to_string(),
@@ -729,15 +729,15 @@ fn dashboard_request(port: u16, path: &str) -> String {
 }
 
 fn wait_for_output(child: &mut Child, expected: &[&str]) {
-    let output = child.stdout.take().expect("intake stdout");
+    let output = child.stdout.take().expect("intagent stdout");
     let mut reader = BufReader::new(output);
     let mut found = vec![false; expected.len()];
     let deadline = Instant::now() + Duration::from_secs(3);
     while found.iter().any(|value| !value) {
         assert!(Instant::now() < deadline, "timed out waiting for output");
         let mut line = String::new();
-        let count = reader.read_line(&mut line).expect("read intake output");
-        assert_ne!(count, 0, "intake exited before expected output: {line}");
+        let count = reader.read_line(&mut line).expect("read intagent output");
+        assert_ne!(count, 0, "intagent exited before expected output: {line}");
         for (index, value) in expected.iter().enumerate() {
             found[index] |= line.contains(value);
         }

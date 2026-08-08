@@ -1,7 +1,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use intake::application_log::{TracingInitError, initialize_tracing, redact_log_text};
+use intagent::application_log::{TracingInitError, initialize_tracing, redact_log_text};
 
 #[test]
 fn redacts_sensitive_fields_and_bearer_credentials() {
@@ -21,25 +21,25 @@ fn initializes_once_with_private_filtered_durable_log() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("application.log");
     unsafe {
-        std::env::set_var("INTAKE_LOG", "warn");
+        std::env::set_var("INTAGENT_LOG", "warn");
     }
     let initialized = initialize_tracing(Some(&path)).unwrap();
     unsafe {
-        std::env::remove_var("INTAKE_LOG");
+        std::env::remove_var("INTAGENT_LOG");
     }
     assert_eq!(initialized.path.as_deref(), Some(path.as_path()));
     assert!(initialized.warning.is_none());
 
-    tracing::info!(target: "intake::test", "filtered information");
+    tracing::info!(target: "intagent::test", "filtered information");
     tracing::error!(
-        target: "intake::test",
+        target: "intagent::test",
         token = "visible-token",
         payload = "private payload",
         safe = "durable",
         "recorded failure"
     );
     tracing::error!(target: "dependency::test", "dependency failure");
-    tracing::error!(target: "intake::terminal::error", "private terminal title");
+    tracing::error!(target: "intagent::terminal::error", "private terminal title");
 
     let duplicate = initialize_tracing(Some(&path)).unwrap_err();
     assert!(matches!(duplicate, TracingInitError::AlreadyInitialized));

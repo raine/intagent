@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
-use intake::database::{EventRecord, EventStatus, IntakeDatabase, RunId};
-use intake::run_detail::{RunDetailOptions, TimelineEntry, run_detail, safe_event_url};
+use intagent::database::{EventRecord, EventStatus, IntagentDatabase, RunId};
+use intagent::run_detail::{RunDetailOptions, TimelineEntry, run_detail, safe_event_url};
 use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -172,7 +172,7 @@ fn event_with_metadata(operational_metadata: &str) -> EventRecord {
     }
 }
 
-async fn fixture_database() -> (TempDir, IntakeDatabase) {
+async fn fixture_database() -> (TempDir, IntagentDatabase) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("dashboard.sqlite");
     let connection = Connection::open(&path).unwrap();
@@ -180,6 +180,6 @@ async fn fixture_database() -> (TempDir, IntakeDatabase) {
         .execute_batch(include_str!("fixtures/database/schema-v7.sql"))
         .unwrap();
     drop(connection);
-    let database = IntakeDatabase::open(&path).await.unwrap();
+    let database = IntagentDatabase::open(&path).await.unwrap();
     (directory, database)
 }

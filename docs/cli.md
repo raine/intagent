@@ -1,52 +1,52 @@
-# Intake CLI
+# Intagent CLI
 
 ## Continuous monitoring
 
 Run the monitor until it receives SIGINT or SIGTERM:
 
 ```sh
-intake watch
+intagent watch
 ```
 
 Add `--dashboard` to serve the read-only monitoring dashboard from the same
 process and database:
 
 ```sh
-intake watch --dashboard
+intagent watch --dashboard
 ```
 
 The dashboard listens on `127.0.0.1:4545` by default. Its bind options follow
 the flag:
 
 ```sh
-intake watch --dashboard --host 127.0.0.1 --port 8080
+intagent watch --dashboard --host 127.0.0.1 --port 8080
 ```
 
 A non-loopback host exposes an unauthenticated title and entity API. It requires
 an explicit acknowledgement:
 
 ```sh
-intake watch --dashboard --host 0.0.0.0 --allow-non-loopback
+intagent watch --dashboard --host 0.0.0.0 --allow-non-loopback
 ```
 
 `--config` remains a global option and works before or after the command:
 
 ```sh
-intake --config ~/intake/config.yaml watch --dashboard
-intake watch --dashboard --config ~/intake/config.yaml
+intagent --config ~/intagent/config.yaml watch --dashboard
+intagent watch --dashboard --config ~/intagent/config.yaml
 ```
 
 ## Skills
 
-`intake init` creates a private skill directory beside the generated
-configuration, normally `~/.config/intake/skills`. Intake discovers only skills
+`intagent init` creates a private skill directory beside the generated
+configuration, normally `~/.config/intagent/skills`. Intagent discovers only skills
 listed in `skills.directories`; installed examples are templates and are not
 active by default.
 
 The default installer places templates under:
 
 ```text
-~/.local/share/doc/intake/examples/skills
+~/.local/share/doc/intagent/examples/skills
 ```
 
 Copy a template into the private skill directory and customize its task manager
@@ -65,5 +65,5 @@ The explicit dashboard command serves the same read-only interface without
 running the monitor or owning the triage queue:
 
 ```sh
-intake dashboard --host 127.0.0.1 --port 4545
+intagent dashboard --host 127.0.0.1 --port 4545
 ```

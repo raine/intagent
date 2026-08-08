@@ -1,5 +1,5 @@
 {
-  description = "Local personal intake monitor";
+  description = "Local personal intagent monitor";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -26,7 +26,7 @@
       apps = eachSystem (system: {
         default = {
           type = "app";
-          program = "${inputs.self.packages.${system}.default}/bin/intake";
+          program = "${inputs.self.packages.${system}.default}/bin/intagent";
         };
       });
 

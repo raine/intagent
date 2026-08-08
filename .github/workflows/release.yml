@@ -15,10 +15,10 @@ jobs:
         include:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            archive: personal-intake-linux-x64
+            archive: intagent-linux-x64
           - runner: macos-14
             target: aarch64-apple-darwin
-            archive: personal-intake-darwin-arm64
+            archive: intagent-darwin-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -45,13 +45,13 @@ jobs:
           ARCHIVE: ${{ matrix.archive }}
         run: |
           cargo build --release --locked --bins --target "$TARGET"
-          mkdir -p "$ARCHIVE/bin" "$ARCHIVE/share/doc/intake/examples"
-          cp "target/$TARGET/release/intake" "$ARCHIVE/bin/"
-          cp "target/$TARGET/release/intake-fastmail-source" "$ARCHIVE/bin/"
-          cp "target/$TARGET/release/intake-github-source" "$ARCHIVE/bin/"
-          cp -R examples/skills "$ARCHIVE/share/doc/intake/examples/skills"
+          mkdir -p "$ARCHIVE/bin" "$ARCHIVE/share/doc/intagent/examples"
+          cp "target/$TARGET/release/intagent" "$ARCHIVE/bin/"
+          cp "target/$TARGET/release/intagent-fastmail-source" "$ARCHIVE/bin/"
+          cp "target/$TARGET/release/intagent-github-source" "$ARCHIVE/bin/"
+          cp -R examples/skills "$ARCHIVE/share/doc/intagent/examples/skills"
           cp LICENSE "$ARCHIVE/"
-          for executable in intake intake-fastmail-source intake-github-source; do
+          for executable in intagent intagent-fastmail-source intagent-github-source; do
             "$ARCHIVE/bin/$executable" --help >/dev/null
             file "$ARCHIVE/bin/$executable"
             if [[ "$TARGET" == *-linux-* ]]; then

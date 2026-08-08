@@ -55,12 +55,12 @@ impl DurableLogStore {
     ) -> Self {
         Self::with_warning_sink(directory, redact, |_| {
             tracing::warn!(
-                target: "intake::logging",
+                target: "intagent::logging",
                 log_kind = "attempt",
                 "structured log write failed"
             );
             tracing::warn!(
-                target: "intake::terminal::error",
+                target: "intagent::terminal::error",
                 "Warning: structured attempt logging is unavailable."
             );
         })
@@ -76,7 +76,7 @@ impl DurableLogStore {
         let _ = fs::set_permissions(&directory, fs::Permissions::from_mode(0o700));
         let (sender, receiver) = mpsc::channel(LOG_QUEUE_CAPACITY);
         let _ = thread::Builder::new()
-            .name("intake-jsonl-log".into())
+            .name("intagent-jsonl-log".into())
             .spawn(move || log_actor(receiver));
         Self {
             directory: Arc::new(directory),
@@ -161,7 +161,7 @@ impl DurableLogStore {
         }
         let message = (self.redact)(error);
         (self.warnings)(&format!(
-            "warning: intake logging failed for {}: {message}\n",
+            "warning: intagent logging failed for {}: {message}\n",
             path.display()
         ));
     }

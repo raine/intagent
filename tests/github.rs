@@ -3,9 +3,9 @@ mod support;
 use std::fs;
 use std::process::Stdio;
 
-use intake::protocol::{PollRequest, PollResponse};
-use intake::sources::github::{discover_github_repositories, github_identity, poll_github};
-use intake::sources::http_client;
+use intagent::protocol::{PollRequest, PollResponse};
+use intagent::sources::github::{discover_github_repositories, github_identity, poll_github};
+use intagent::sources::http_client;
 use serde_json::{Map, Value, json};
 use support::FixtureServer;
 use tempfile::TempDir;
@@ -237,7 +237,7 @@ async fn source_binary_writes_one_bounded_response_without_stdout_diagnostics() 
     .await;
     let mut request = request(&root, &server.base_url, Value::Null);
     request.item_limit = 1;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_intake-github-source"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_intagent-github-source"))
         .env_clear()
         .env("GITHUB_TOKEN", "binary-token")
         .stdin(Stdio::piped())

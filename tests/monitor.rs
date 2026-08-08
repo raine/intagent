@@ -2,13 +2,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::{Duration, Utc};
-use intake::agent::rig_runner::{TriageError, TriageRunner};
-use intake::config::{
-    CommandRule, CommandsConfig, IntakeConfig, SkillsConfig, StateConfig, TriageConfig,
+use intagent::agent::rig_runner::{TriageError, TriageRunner};
+use intagent::config::{
+    CommandRule, CommandsConfig, IntagentConfig, SkillsConfig, StateConfig, TriageConfig,
 };
-use intake::database::{EventRecord, EventStatus, IntakeDatabase};
-use intake::monitor::IntakeMonitor;
-use intake::protocol::{IntakeItem, IntakeItemKind};
+use intagent::database::{EventRecord, EventStatus, IntagentDatabase};
+use intagent::monitor::IntagentMonitor;
+use intagent::protocol::{IntakeItem, IntakeItemKind};
 use serde_json::Map;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -53,12 +53,12 @@ impl TriageRunner for FakeRunner {
     }
 }
 
-fn config(root: &TempDir) -> IntakeConfig {
-    IntakeConfig {
+fn config(root: &TempDir) -> IntagentConfig {
+    IntagentConfig {
         version: 1,
         project_roots: vec![root.path().display().to_string()],
         state: StateConfig {
-            database: root.path().join("intake.sqlite").display().to_string(),
+            database: root.path().join("intagent.sqlite").display().to_string(),
             logs: root.path().join("logs").display().to_string(),
         },
         skills: SkillsConfig {
@@ -90,7 +90,7 @@ fn item(entity: &str, revision: &str) -> IntakeItem {
         title: entity.into(),
         body: "untrusted content".into(),
         url: None,
-        occurred_at: intake::database::timestamp(Utc::now()),
+        occurred_at: intagent::database::timestamp(Utc::now()),
         metadata: Map::new(),
     }
 }
@@ -99,7 +99,7 @@ fn item(entity: &str, revision: &str) -> IntakeItem {
 async fn drains_events_serially_with_one_fresh_run_per_event() {
     let root = tempfile::tempdir().unwrap();
     let config = config(&root);
-    let database = IntakeDatabase::open(":memory:").await.unwrap();
+    let database = IntagentDatabase::open(":memory:").await.unwrap();
     database
         .source_succeeded(
             "fixture".into(),
@@ -114,7 +114,7 @@ async fn drains_events_serially_with_one_fresh_run_per_event() {
         .unwrap();
     let runner = FakeRunner::successful();
     let observed_runner = runner.clone();
-    let monitor = IntakeMonitor::new(config, database.clone(), runner);
+    let monitor = IntagentMonitor::new(config, database.clone(), runner);
 
     let result = monitor.check().await.unwrap();
 
@@ -136,7 +136,7 @@ async fn drains_events_serially_with_one_fresh_run_per_event() {
 async fn applies_event_retries() {
     let root = tempfile::tempdir().unwrap();
     let config = config(&root);
-    let database = IntakeDatabase::open(":memory:").await.unwrap();
+    let database = IntagentDatabase::open(":memory:").await.unwrap();
     database
         .source_succeeded(
             "fixture".into(),
@@ -150,7 +150,7 @@ async fn applies_event_retries() {
         failure: Some("timeout reading /private/project/file".into()),
         ..FakeRunner::successful()
     };
-    let monitor = IntakeMonitor::new(config, database.clone(), runner);
+    let monitor = IntagentMonitor::new(config, database.clone(), runner);
 
     let result = monitor.check().await.unwrap();
 
@@ -165,7 +165,7 @@ async fn applies_event_retries() {
 async fn recovers_stale_processing_events_before_claiming() {
     let root = tempfile::tempdir().unwrap();
     let config = config(&root);
-    let database = IntakeDatabase::open(":memory:").await.unwrap();
+    let database = IntagentDatabase::open(":memory:").await.unwrap();
     let old = Utc::now() - Duration::minutes(40);
     database
         .source_succeeded(
@@ -179,7 +179,7 @@ async fn recovers_stale_processing_events_before_claiming() {
     database.claim_next(old).await.unwrap().unwrap();
     let runner = FakeRunner::successful();
     let observed_runner = runner.clone();
-    let monitor = IntakeMonitor::new(config, database.clone(), runner);
+    let monitor = IntagentMonitor::new(config, database.clone(), runner);
 
     let result = monitor.check().await.unwrap();
 

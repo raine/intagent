@@ -1,12 +1,12 @@
 [package]
-name = "personal-intake"
+name = "intagent"
 version = "0.1.0"
 edition = "2024"
-description = "Local intake monitor with restricted agent triage"
+description = "Your agent for incoming work."
 license = "MIT"
 
 [lib]
-name = "intake"
+name = "intagent"
 path = "src/lib.rs"
 
 [[example]]

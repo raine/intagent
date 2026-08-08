@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use intake::protocol::{
+use intagent::protocol::{
     IntakeItem, IntakeItemKind, MAX_STANDARD_INPUT_BYTES, PROTOCOL_VERSION, PollRequest,
     PollResponse, ProtocolError, parse_poll_request, parse_poll_response, read_poll_request,
     run_source, write_poll_response,
@@ -178,8 +178,8 @@ async fn validates_handler_responses_before_writing() {
 #[test]
 fn source_binary_shells_parse_one_request_without_stdout_diagnostics() {
     for executable in [
-        env!("CARGO_BIN_EXE_intake-fastmail-source"),
-        env!("CARGO_BIN_EXE_intake-github-source"),
+        env!("CARGO_BIN_EXE_intagent-fastmail-source"),
+        env!("CARGO_BIN_EXE_intagent-github-source"),
     ] {
         let mut child = Command::new(executable)
             .env_remove("FASTMAIL_API_TOKEN")

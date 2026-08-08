@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::config::{IntakeConfig, expand_path};
+use crate::config::{IntagentConfig, expand_path};
 use crate::database::EventRecord;
 use crate::project_registry::{ProjectInventory, ProjectInventoryEntry};
 
@@ -9,7 +9,7 @@ use super::errors::TriageError;
 const SYSTEM_PROMPT: &str = include_str!("system-prompt.md");
 
 pub(crate) fn system_prompt(
-    config: &IntakeConfig,
+    config: &IntagentConfig,
     inventory: &ProjectInventory,
     likely: Option<&ProjectInventoryEntry>,
     registry_path: &Path,

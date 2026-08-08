@@ -16,7 +16,7 @@ pub struct AuthPaths {
 
 impl AuthPaths {
     pub fn under_config_home(config_home: impl AsRef<Path>) -> Self {
-        let directory = config_home.as_ref().join("intake").join("agent");
+        let directory = config_home.as_ref().join("intagent").join("agent");
         let cache = directory.join("rig-auth.json");
         Self { directory, cache }
     }
@@ -51,8 +51,8 @@ pub fn chatgpt_client(auth_file: &Path, interactive: bool) -> Result<chatgpt::Cl
     Ok(chatgpt::Client::builder()
         .oauth()
         .auth_file(auth_file)
-        .originator("intake")
-        .user_agent(concat!("intake/", env!("CARGO_PKG_VERSION")))
+        .originator("intagent")
+        .user_agent(concat!("intagent/", env!("CARGO_PKG_VERSION")))
         .default_instructions("")
         .allow_device_flow(interactive)
         .build()?)
@@ -64,7 +64,9 @@ pub async fn authorize(paths: &AuthPaths, interactive: bool) -> Result<()> {
     client.authorize().await.map_err(|error| {
         let message = error.to_string();
         if !interactive && message.contains("sign-in required") {
-            anyhow::anyhow!("ChatGPT subscription authentication is required. Run `intake login`.")
+            anyhow::anyhow!(
+                "ChatGPT subscription authentication is required. Run `intagent login`."
+            )
         } else {
             anyhow::anyhow!(message)
         }

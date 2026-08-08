@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use intake::project_registry::{
+use intagent::project_registry::{
     MAX_PROJECT_REGISTRY_BYTES, MAX_PROJECTS, ensure_project_registry, find_likely_project,
     load_project_inventory, replace_project_registry, validate_project_registry_content,
     validate_project_registry_write,

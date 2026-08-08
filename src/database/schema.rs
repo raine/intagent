@@ -108,7 +108,7 @@ impl OpenTarget {
         if path == Path::new(":memory:") {
             let id = MEMORY_DATABASE_ID.fetch_add(1, Ordering::Relaxed);
             return Self {
-                value: format!("file:intake-memory-{id}?mode=memory&cache=shared"),
+                value: format!("file:intagent-memory-{id}?mode=memory&cache=shared"),
                 flags: OpenFlags::SQLITE_OPEN_READ_WRITE
                     | OpenFlags::SQLITE_OPEN_CREATE
                     | OpenFlags::SQLITE_OPEN_URI

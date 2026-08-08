@@ -1,5 +1,5 @@
-use intake::dashboard::DashboardSnapshot;
-use intake::run_detail::RunDetail;
+use intagent::dashboard::DashboardSnapshot;
+use intagent::run_detail::RunDetail;
 use schemars::{JsonSchema, schema_for};
 use serde_json::Value;
 

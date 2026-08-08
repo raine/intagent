@@ -3,11 +3,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use intake::agent::context::CompactionConfig;
-use intake::agent::model::ThinkingLevel;
-use intake::agent::rig_runner::{ExplicitDriver, ProviderRetryPolicy};
-use intake::agent::telemetry::{CancellationTelemetry, PrototypeTelemetry};
-use intake::agent::tools::{CountingTools, RecordingExecutableTools};
+use intagent::agent::context::CompactionConfig;
+use intagent::agent::model::ThinkingLevel;
+use intagent::agent::rig_runner::{ExplicitDriver, ProviderRetryPolicy};
+use intagent::agent::telemetry::{CancellationTelemetry, PrototypeTelemetry};
+use intagent::agent::tools::{CountingTools, RecordingExecutableTools};
 use rig_agent::agent::hook::{AgentHook, CompletionCallAction, HookContext, RequestPatch};
 use rig_agent::agent::{AgentBuilder, CompletionCallEvent};
 use rig_core::OneOrMany;

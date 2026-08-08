@@ -3,9 +3,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use intake::agent::command_policy::{CommandPolicy, MAX_COMMAND_STDIN_BYTES};
-use intake::agent::process::ProcessFailure;
-use intake::config::{CommandRule, load_config};
+use intagent::agent::command_policy::{CommandPolicy, MAX_COMMAND_STDIN_BYTES};
+use intagent::agent::process::ProcessFailure;
+use intagent::config::{CommandRule, load_config};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 

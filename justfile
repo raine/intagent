@@ -64,7 +64,7 @@ install-hooks:
     scripts/install-git-hook-shims
 
 run *ARGS:
-    cargo run --bin intake -- "$@"
+    cargo run --bin intagent -- "$@"
 
 install:
     scripts/install
