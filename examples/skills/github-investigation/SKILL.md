@@ -10,18 +10,19 @@ disable-model-invocation: true
 
 ## Template setup
 
-Before enabling this skill, replace `TASK_MANAGER_SKILL` and
-`INVESTIGATION_SKILL` with the names or paths of the command skills that define
-your local workflow. Remove `disable-model-invocation` from the frontmatter when
-the template is ready.
+Before enabling this skill, install Aven's agent skill so its command syntax is
+available. Replace `INVESTIGATION_SKILL` with the name or path of the command
+skill that defines your investigation workflow. Replace Aven with another task
+manager if preferred. Remove `disable-model-invocation` from the frontmatter
+when the template is ready.
 
-1. Read `TASK_MANAGER_SKILL` and `INVESTIGATION_SKILL` for command syntax.
+1. Follow Aven's installed skill and `INVESTIGATION_SKILL` for command syntax.
 2. Match `owner/repository` against the verified project inventory. Use a
    verified unregistered candidate without rediscovery and add its canonical
    path to the registry. Otherwise verify a likely repository-name path beneath
    the project roots. Keep an unmatched repository unassigned.
-3. Reuse the task for the repository and issue or pull request identity. For a
-   new task, prefer `Issue #<number>: <concise issue title>` or
+3. Reuse the Aven task for the repository and issue or pull request identity. For
+   a new task, prefer `Issue #<number>: <concise issue title>` or
    `PR #<number>: <concise pull request title>`. Put the URL, request, and
    inferred priority in its description.
 4. When the prior handling data identifies an available investigation, send the
