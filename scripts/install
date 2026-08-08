@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install [--prefix PATH]
 
-Build and install intake executables and application skills.
+Build and install intake executables and example skill templates.
 The default prefix is ~/.local. INTAKE_INSTALL_PREFIX provides another default.
 EOF
 }
@@ -47,7 +47,7 @@ if [[ "$web_directory" != /* ]]; then
   web_directory="$repository_root/$web_directory"
 fi
 bin_directory="$prefix/bin"
-skills_directory="$prefix/share/intake/skills"
+skill_templates_directory="$prefix/share/doc/intake/examples/skills"
 target_directory="${CARGO_TARGET_DIR:-$repository_root/target}"
 if [[ "$target_directory" != /* ]]; then
   target_directory="$repository_root/$target_directory"
@@ -82,21 +82,21 @@ CARGO_TARGET_DIR="$target_directory" \
   INTAKE_DASHBOARD_DIR="$web_directory/generated" \
   cargo build --release --locked --bins
 
-install -d -m 755 "$bin_directory" "$(dirname "$skills_directory")"
+install -d -m 755 "$bin_directory" "$(dirname "$skill_templates_directory")"
 for executable in intake intake-fastmail-source intake-github-source; do
   install -m 755 "$target_directory/release/$executable" \
     "$bin_directory/$executable"
 done
 
-rm -rf "$skills_directory"
-install -d -m 755 "$skills_directory"
-cp -R skills/. "$skills_directory/"
-find "$skills_directory" -type d -exec chmod 755 {} +
-find "$skills_directory" -type f -exec chmod 644 {} +
+rm -rf "$skill_templates_directory"
+install -d -m 755 "$skill_templates_directory"
+cp -R examples/skills/. "$skill_templates_directory/"
+find "$skill_templates_directory" -type d -exec chmod 755 {} +
+find "$skill_templates_directory" -type f -exec chmod 644 {} +
 
 XDG_STATE_HOME="$temporary_directory/state" "$bin_directory/intake" --help >/dev/null
 printf 'Installed intake to %s\n' "$bin_directory"
-printf 'Installed application skills to %s\n' "$skills_directory"
+printf 'Installed example skill templates to %s\n' "$skill_templates_directory"
 if [[ ":$PATH:" != *":$bin_directory:"* ]]; then
   printf 'Add %s to PATH to run intake by name.\n' "$bin_directory"
 fi

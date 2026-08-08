@@ -4,8 +4,8 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use intake::config::{
-    application_skills_directory_with_env, canonical_roots, emit_yaml, expand_path_with_env,
-    initialize_private_config, is_within, load_config, parse_yaml_value,
+    canonical_roots, emit_yaml, expand_path_with_env, initialize_private_config, is_within,
+    load_config, parse_yaml_value,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -22,10 +22,6 @@ fn environment(root: &Path) -> HashMap<String, String> {
         (
             "XDG_STATE_HOME".into(),
             root.join("state").display().to_string(),
-        ),
-        (
-            "INTAKE_SKILLS_DIR".into(),
-            root.join("application-skills").display().to_string(),
         ),
     ])
 }
@@ -160,8 +156,8 @@ fn rejects_unknown_keys_at_every_configuration_object_level() {
     );
 
     let rule = original.replace(
-        "- executable: aven",
-        "- executable: aven\n      unknown: true",
+        "- executable: git",
+        "- executable: git\n      unknown: true",
     );
     fs::write(&path, rule).unwrap();
     assert!(
@@ -216,12 +212,12 @@ fn validates_names_uniqueness_lists_and_numeric_bounds() {
             "max_output_bytes",
         ),
         (
-            "- executable: workmux".to_string(),
-            "- executable: aven".to_string(),
+            "- executable: rg".to_string(),
+            "- executable: git".to_string(),
             "duplicate command",
         ),
         (
-            "- executable: aven".to_string(),
+            "- executable: git".to_string(),
             "- executable: bad/name".to_string(),
             "executable",
         ),
@@ -282,7 +278,21 @@ fn initializes_private_files_and_directories_idempotently() {
             .created
             .is_empty()
     );
-    load_config(path).unwrap();
+    let config = load_config(path).unwrap();
+    assert_eq!(
+        config.skills.directories,
+        [root.path().join("private/skills").display().to_string()]
+    );
+    assert_eq!(
+        config.skills.approved_roots,
+        [
+            root.path().join("private/skills").display().to_string(),
+            root.path()
+                .join("home/.claude/skills")
+                .display()
+                .to_string(),
+        ]
+    );
 }
 
 #[test]
@@ -293,11 +303,6 @@ fn expands_paths_and_checks_component_containment() {
         expand_path_with_env("~/code/../work", &environment).unwrap(),
         root.path().join("home/work")
     );
-    assert_eq!(
-        application_skills_directory_with_env(&environment).unwrap(),
-        root.path().join("application-skills")
-    );
-
     let approved = root.path().join("approved");
     fs::create_dir_all(&approved).unwrap();
     let roots = canonical_roots(&[approved.display().to_string()]).unwrap();

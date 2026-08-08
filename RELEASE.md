@@ -22,7 +22,7 @@ x86-64 musl. Each archive contains:
 - `bin/intake`
 - `bin/intake-fastmail-source`
 - `bin/intake-github-source`
-- `share/intake/skills`
+- `share/doc/intake/examples/skills`
 - `LICENSE`
 
 Every archive has a SHA-256 checksum file. The Linux musl executables use

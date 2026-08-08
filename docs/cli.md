@@ -36,6 +36,23 @@ intake --config ~/intake/config.yaml watch --dashboard
 intake watch --dashboard --config ~/intake/config.yaml
 ```
 
+## Skills
+
+`intake init` creates a private skill directory beside the generated
+configuration, normally `~/.config/intake/skills`. Intake discovers only skills
+listed in `skills.directories`; installed examples are templates and are not
+active by default.
+
+The default installer places templates under:
+
+```text
+~/.local/share/doc/intake/examples/skills
+```
+
+Copy a template into the private skill directory, replace its integration
+placeholders, and remove `disable-model-invocation` from its frontmatter. Add any
+commands required by that skill to `commands.rules` in the configuration.
+
 The first SIGINT or SIGTERM stops source schedules, dashboard serving, and idle
 queue waits. Active triage can finish before the process exits. A second signal
 forces exit status 130.
