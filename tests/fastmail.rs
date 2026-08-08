@@ -41,6 +41,7 @@ fn email(id: &str, received_at: &str, value: &str) -> Value {
         "subject": "Question",
         "from": [{ "name": "Sender", "email": "sender@example.test" }],
         "to": [{ "email": "recipient@example.test" }],
+        "bcc": null,
         "receivedAt": received_at,
         "mailboxIds": { "inbox": true },
         "textBody": [{ "partId": "body", "type": "text/plain" }],
