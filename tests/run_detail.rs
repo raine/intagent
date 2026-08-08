@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use intake::database::{EventRecord, EventStatus, IntakeDatabase, RunId};
-use intake::run_detail::{RunDetailOptions, run_detail, safe_event_url};
+use intake::run_detail::{RunDetailOptions, TimelineEntry, run_detail, safe_event_url};
 use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -78,6 +78,63 @@ async fn clamps_pagination_and_resolves_legacy_siblings() {
     assert_eq!(legacy.metrics.duration_ms.setup, None);
 }
 
+#[tokio::test]
+async fn sorts_mixed_timestamp_forms_and_calculates_duration_chronologically() {
+    let (directory, database) = fixture_database().await;
+    let raw = Connection::open(directory.path().join("dashboard.sqlite")).unwrap();
+    raw.execute(
+        "UPDATE triage_runs SET started_at = '2026-08-07T12:00:00+02:00' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    raw.execute(
+        "UPDATE triage_run_turns SET started_at = '2026-08-07T10:00:10.010Z' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    raw.execute(
+        "UPDATE triage_run_steps SET started_at = CASE id
+           WHEN 1 THEN '2026-08-07T11:00:00+02:00'
+           WHEN 3 THEN '2026-08-07T10:00:10.1Z'
+           ELSE started_at END
+         WHERE id IN (1, 3)",
+        [],
+    )
+    .unwrap();
+    drop(raw);
+
+    let detail = run_detail(
+        &database.readers(),
+        RunId(1),
+        RunDetailOptions {
+            now: Utc.with_ymd_and_hms(2026, 8, 7, 10, 5, 0).unwrap(),
+            ..RunDetailOptions::default()
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(detail.metrics.duration_ms.wall, 180_000);
+    assert_eq!(detail.run.started_at.as_str(), "2026-08-07T12:00:00+02:00");
+    assert!(matches!(
+        &detail.timeline.entries[0],
+        TimelineEntry::Span { id: 1, started_at, .. }
+            if started_at.as_str() == "2026-08-07T11:00:00+02:00"
+    ));
+    assert!(matches!(
+        (&detail.timeline.entries[1], &detail.timeline.entries[2]),
+        (
+            TimelineEntry::Turn { id: 1, .. },
+            TimelineEntry::Span { id: 3, .. }
+        )
+    ));
+    assert_eq!(
+        serde_json::to_value(&detail).unwrap()["run"]["startedAt"],
+        "2026-08-07T12:00:00+02:00"
+    );
+}
+
 #[test]
 fn strips_url_secrets_and_rejects_embedded_credentials() {
     let mut event = event_with_metadata(
@@ -104,8 +161,8 @@ fn event_with_metadata(operational_metadata: &str) -> EventRecord {
         title: "Fixture".into(),
         payload: Some("private".into()),
         operational_metadata: operational_metadata.into(),
-        occurred_at: "2026-08-07T10:00:00.000Z".into(),
-        observed_at: "2026-08-07T10:00:00.000Z".into(),
+        occurred_at: "2026-08-07T10:00:00.000Z".parse().unwrap(),
+        observed_at: "2026-08-07T10:00:00.000Z".parse().unwrap(),
         status: EventStatus::Pending,
         attempt_count: 0,
         next_attempt_at: None,

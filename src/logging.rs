@@ -13,7 +13,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::database::{ErrorCategory, EventRecord, RunMetadata, RunOutcome, timestamp};
+use crate::database::{ErrorCategory, EventRecord, RunMetadata, RunOutcome, Timestamp, timestamp};
 
 pub const LOG_QUEUE_CAPACITY: usize = 64;
 pub const MAX_LOG_STRING_BYTES: usize = 256 * 1024;
@@ -173,8 +173,8 @@ pub struct TriageRunLog {
     attempt: u32,
     source: String,
     kind: String,
-    occurred_at: String,
-    observed_at: String,
+    occurred_at: Timestamp,
+    observed_at: Timestamp,
     started_at: Instant,
     store: DurableLogStore,
     recording_failed: bool,

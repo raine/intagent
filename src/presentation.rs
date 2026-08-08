@@ -1,8 +1,8 @@
 use url::Url;
 
 use crate::database::{
-    ConclusionSource, DispatchTrigger, EventRecord, EventStatus, TriageConclusion, TriageDecision,
-    TriageRunRecord,
+    ConclusionSource, DispatchTrigger, EventRecord, EventStatus, Timestamp, TriageConclusion,
+    TriageDecision, TriageRunRecord,
 };
 
 pub(crate) struct PresentedRun {
@@ -44,8 +44,8 @@ pub(crate) struct EventPresentation {
     pub kind: String,
     pub title: String,
     pub url: Option<String>,
-    pub occurred_at: String,
-    pub observed_at: String,
+    pub occurred_at: Timestamp,
+    pub observed_at: Timestamp,
     pub status: EventStatus,
     pub aven_ref: Option<String>,
     pub investigation_handle: Option<String>,
