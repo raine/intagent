@@ -13,7 +13,7 @@ use crate::agent::auth::{AuthPaths, authorize};
 use crate::agent::command_policy::CommandPolicy;
 use crate::agent::rig_runner::{ChatGptTriageRunner, TriageRunnerCore};
 use crate::agent::skills::validate_skills;
-use crate::application_log::{application_log_path, redact_log_text};
+use crate::application_log::application_log_path;
 use crate::config::{
     IntakeConfig, canonical_roots, config_directory, default_config_path, expand_path,
     initialize_private_config, load_config, project_registry_path, state_directory,
@@ -23,6 +23,8 @@ use crate::dashboard::{
     dashboard_router,
 };
 use crate::database::{IntakeDatabase, QueueOwnerLock};
+pub use crate::errors::public_cli_error;
+use crate::errors::public_error;
 use crate::logging::DurableLogStore;
 use crate::monitor::IntakeMonitor;
 use crate::project_registry::ensure_project_registry;
@@ -495,8 +497,7 @@ async fn run_check(config: IntakeConfig, database: IntakeDatabase) -> Result<boo
         for error in &result.errors {
             eprintln!(
                 "{}",
-                crate::dashboard::public_error(Some(error))
-                    .unwrap_or_else(|| "Operation failed".into())
+                public_error(Some(error)).unwrap_or_else(|| "Operation failed".into())
             );
         }
         return Ok(false);
@@ -916,29 +917,6 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
-    }
-}
-
-pub fn public_cli_error(error: &str) -> String {
-    let message = redact_log_text(error);
-    let lowercase = message.to_ascii_lowercase();
-    if [
-        "auth",
-        "bearer",
-        "credential",
-        "oauth",
-        "password",
-        "payload",
-        "prompt",
-        "secret",
-        "token",
-    ]
-    .iter()
-    .any(|keyword| lowercase.contains(keyword))
-    {
-        crate::dashboard::public_error(Some(&message)).unwrap_or_else(|| "Operation failed".into())
-    } else {
-        message
     }
 }
 

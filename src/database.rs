@@ -6,6 +6,7 @@ mod writer;
 pub const DATABASE_QUEUE_CAPACITY: usize = 64;
 pub const DATABASE_READER_COUNT: usize = 2;
 
+pub use crate::errors::ErrorCategory;
 pub use reader::DatabaseReaders;
 pub use records::*;
 pub use schema::{MIGRATIONS, QueueOwnerLock, SCHEMA_VERSION};
