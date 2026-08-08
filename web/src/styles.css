@@ -502,10 +502,16 @@
     display: grid;
     font-size: 12px;
     gap: 10px;
-    grid-template-columns: 62px 46px 100px 100px minmax(60px, 1fr);
+    grid-template-columns:
+      62px 46px minmax(220px, 0.8fr) 84px
+      minmax(160px, 2fr);
     min-height: 24px;
     padding: 3px 8px;
     position: relative;
+  }
+
+  .activity-row > * {
+    min-width: 0;
   }
 
   .activity-row:nth-child(even) {
@@ -525,6 +531,9 @@
   .activity-label {
     color: var(--ink-3);
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .activity-state {
@@ -532,6 +541,7 @@
     color: var(--green);
     display: inline-flex;
     gap: 5px;
+    white-space: nowrap;
   }
 
   .activity-thinking .activity-label,
@@ -570,6 +580,7 @@
   .activity-track {
     background: var(--edge-soft);
     height: 5px;
+    overflow: hidden;
   }
 
   .activity-track i {
@@ -1131,7 +1142,9 @@
   }
 
   .inspector-activity .activity-row {
-    grid-template-columns: 62px 50px 100px 90px minmax(80px, 1fr);
+    grid-template-columns:
+      62px 50px minmax(220px, 0.8fr) 84px
+      minmax(160px, 2fr);
     min-height: 30px;
   }
 
@@ -1321,17 +1334,18 @@
     }
 
     .active-run-activity {
-      overflow-x: auto;
+      overflow: hidden;
       padding-inline: 8px;
     }
 
     .activity-row {
       gap: 7px;
-      grid-template-columns: 56px 74px 76px minmax(48px, 1fr);
-      min-width: 340px;
+      grid-template-columns: 56px minmax(0, 1fr) 70px;
+      min-width: 0;
     }
 
-    .activity-turn {
+    .activity-turn,
+    .activity-track {
       display: none;
     }
 
