@@ -1,9 +1,16 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use rig_agent::agent::run::AgentRun;
-use rig_core::completion::Usage;
+use rig_core::completion::{CompletionError, CompletionResponse, Usage};
+use rig_core::message::ToolCall;
 use rusqlite::{Connection, params};
+
+use super::driver::{
+    AgentObserver, CompletionScope, SpanFinish, ToolOutcome, duration_millis, retry_reason,
+};
+use super::tools::ToolCallResult;
 
 #[derive(Clone, Debug, Default)]
 pub struct CancellationTelemetry {
@@ -26,6 +33,124 @@ impl CancellationTelemetry {
             Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
+}
+
+#[derive(Clone)]
+pub struct PrototypeObserver {
+    telemetry: PrototypeTelemetry,
+    cancellation: CancellationTelemetry,
+}
+
+impl PrototypeObserver {
+    pub fn new(telemetry: PrototypeTelemetry, cancellation: CancellationTelemetry) -> Self {
+        Self {
+            telemetry,
+            cancellation,
+        }
+    }
+}
+
+impl AgentObserver for PrototypeObserver {
+    type Error = PrototypeObserverError;
+    type Retry = TelemetrySpan;
+    type Compaction = TelemetrySpan;
+    type Tool = ();
+
+    async fn checkpoint(&mut self, run: &AgentRun) -> Result<(), Self::Error> {
+        self.cancellation.checkpoint(run)?;
+        Ok(())
+    }
+
+    async fn turn_started(&mut self, _ordinal: u32) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn turn_completed(
+        &mut self,
+        _ordinal: u32,
+        _response: &CompletionResponse,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn turn_failed(&mut self, _ordinal: u32, _reason: &str) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn retry_started(
+        &mut self,
+        scope: CompletionScope,
+        attempt: usize,
+        _max_retries: usize,
+        error: &CompletionError,
+        delay: Duration,
+    ) -> Result<Self::Retry, Self::Error> {
+        Ok(self.telemetry.start_retry(
+            scope.as_str(),
+            attempt,
+            retry_reason(error),
+            duration_millis(delay),
+        )?)
+    }
+
+    async fn retry_finished(
+        &mut self,
+        retry: Self::Retry,
+        finish: SpanFinish,
+    ) -> Result<(), Self::Error> {
+        match finish {
+            SpanFinish::Completed => retry.complete(None),
+            SpanFinish::Failed => retry.fail(None),
+            SpanFinish::Interrupted => drop(retry),
+        }
+        Ok(())
+    }
+
+    async fn compaction_started(
+        &mut self,
+        reason: &str,
+        source_message_count: usize,
+    ) -> Result<Self::Compaction, Self::Error> {
+        Ok(self
+            .telemetry
+            .start_compaction(reason, source_message_count)?)
+    }
+
+    async fn compaction_finished(
+        &mut self,
+        compaction: Self::Compaction,
+        finish: SpanFinish,
+        usage: Option<Usage>,
+    ) -> Result<(), Self::Error> {
+        match finish {
+            SpanFinish::Completed => compaction.complete(usage),
+            SpanFinish::Failed => compaction.fail(usage),
+            SpanFinish::Interrupted => drop(compaction),
+        }
+        Ok(())
+    }
+
+    async fn tool_started(&mut self, _call: &ToolCall) -> Result<Self::Tool, Self::Error> {
+        Ok(())
+    }
+
+    async fn tool_finished(
+        &mut self,
+        _tool: Self::Tool,
+        _call: &ToolCall,
+        _result: &ToolCallResult,
+        _outcome: ToolOutcome,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PrototypeObserverError {
+    #[error("telemetry database failed: {0}")]
+    Telemetry(#[from] rusqlite::Error),
+    #[error("agent state serialization failed: {0}")]
+    Serialization(#[from] serde_json::Error),
 }
 
 #[derive(Clone)]
