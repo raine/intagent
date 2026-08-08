@@ -4,9 +4,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::Utc;
 use serde_json::json;
+use tokio_util::sync::CancellationToken;
 
 use crate::agent::auth::{AuthPaths, authorize};
 use crate::agent::command_policy::CommandPolicy;
@@ -24,7 +25,7 @@ use crate::monitor::IntakeMonitor;
 use crate::project_registry::ensure_project_registry;
 use crate::protocol::IntakeItem;
 
-pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n";
+pub const USAGE: &str = "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch [--dashboard] [--host HOST] [--port PORT]\n                        monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nWatch option:\n  --dashboard           serve the dashboard with watch\n\nDashboard options for watch --dashboard and dashboard:\n  --host HOST           bind host (default: 127.0.0.1)\n  --port PORT           bind port (default: 7331)\n  --allow-non-loopback  acknowledge unauthenticated non-loopback access\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n";
 
 pub fn tracing_log_path(argv: &[String]) -> Option<PathBuf> {
     let default = state_directory()
@@ -108,6 +109,12 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
         return Ok(0);
     }
 
+    let watch_options = (command == "watch")
+        .then(|| parse_watch_options(&args))
+        .transpose()?;
+    let dashboard_options = (command == "dashboard")
+        .then(|| parse_dashboard_options(&args))
+        .transpose()?;
     let database_path = expand_path(&config.state.database)?;
     let queue_lock = if matches!(command.as_str(), "watch" | "check") {
         Some(QueueOwnerLock::acquire(&database_path)?)
@@ -116,36 +123,74 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
     };
     let database = IntakeDatabase::open(&database_path).await?;
 
-    match command.as_str() {
-        "status" => print_status(&database).await?,
-        "dashboard" => dashboard(&database, &config, &args).await?,
-        "inject" => inject(&database, args.first()).await?,
-        "show" => show(&database, args.first()).await?,
-        "retry" => retry(&database, args.first()).await?,
-        "ignore" => ignore(&database, args.first()).await?,
-        "check" | "watch" => {
-            let diagnostics = validate_configuration(&config)?;
-            if !diagnostics.is_empty() {
-                bail!(
-                    "Configuration validation failed:\n{}",
-                    diagnostics.join("\n")
-                );
+    let operation = async {
+        match command.as_str() {
+            "status" => print_status(&database).await?,
+            "dashboard" => {
+                dashboard(
+                    &database,
+                    &config,
+                    dashboard_options.expect("dashboard options parsed"),
+                )
+                .await?
             }
-            if !run_monitor(command == "watch", config, database.clone()).await? {
-                drop(queue_lock);
-                database.shutdown().await?;
-                return Ok(1);
+            "inject" => inject(&database, args.first()).await?,
+            "show" => show(&database, args.first()).await?,
+            "retry" => retry(&database, args.first()).await?,
+            "ignore" => ignore(&database, args.first()).await?,
+            "check" | "watch" => {
+                let diagnostics = validate_configuration(&config)?;
+                if !diagnostics.is_empty() {
+                    bail!(
+                        "Configuration validation failed:\n{}",
+                        diagnostics.join("\n")
+                    );
+                }
+                let succeeded = if command == "watch" {
+                    run_watch(
+                        config,
+                        database.clone(),
+                        watch_options.expect("watch options parsed").dashboard,
+                    )
+                    .await?;
+                    true
+                } else {
+                    run_check(config, database.clone()).await?
+                };
+                if !succeeded {
+                    return Ok(1);
+                }
             }
+            _ => bail!("Unknown command: {command}"),
         }
-        _ => bail!("Unknown command: {command}"),
+        Ok(0)
     }
+    .await;
 
     drop(queue_lock);
-    database.shutdown().await?;
-    Ok(0)
+    let shutdown = database.shutdown().await;
+    match operation {
+        Ok(code) => {
+            shutdown?;
+            Ok(code)
+        }
+        Err(error) => {
+            if let Err(shutdown_error) = shutdown {
+                tracing::error!(
+                    target: "intake::database",
+                    error = %shutdown_error,
+                    "database shutdown failed"
+                );
+            }
+            Err(error)
+        }
+    }
 }
 
-async fn run_monitor(watch: bool, config: IntakeConfig, database: IntakeDatabase) -> Result<bool> {
+fn build_monitor(
+    config: IntakeConfig,
+    database: IntakeDatabase,
+) -> Result<IntakeMonitor<ChatGptTriageRunner>> {
     let roots = canonical_roots(&config.project_roots)?;
     let policy = Arc::new(CommandPolicy::new(&config, roots)?);
     let filter = policy.clone();
@@ -163,41 +208,82 @@ async fn run_monitor(watch: bool, config: IntakeConfig, database: IntakeDatabase
         registry,
     );
     let runner = ChatGptTriageRunner::new(core, auth_paths()?);
-    let monitor = IntakeMonitor::new(config, database, runner);
+    Ok(IntakeMonitor::new(config, database, runner))
+}
 
-    if !watch {
-        let result = monitor.check().await?;
-        println!(
-            "Observed {}; handled {}; errors {}.",
-            result.observed,
-            result.handled,
-            result.errors.len()
-        );
-        if !result.errors.is_empty() {
-            for error in &result.errors {
-                eprintln!(
-                    "{}",
-                    crate::dashboard::public_error(Some(error))
-                        .unwrap_or_else(|| "Operation failed".into())
-                );
-            }
-            return Ok(false);
+async fn run_check(config: IntakeConfig, database: IntakeDatabase) -> Result<bool> {
+    let monitor = build_monitor(config, database)?;
+    let result = monitor.check().await?;
+    println!(
+        "Observed {}; handled {}; errors {}.",
+        result.observed,
+        result.handled,
+        result.errors.len()
+    );
+    if !result.errors.is_empty() {
+        for error in &result.errors {
+            eprintln!(
+                "{}",
+                crate::dashboard::public_error(Some(error))
+                    .unwrap_or_else(|| "Operation failed".into())
+            );
         }
-        return Ok(true);
+        return Ok(false);
     }
+    Ok(true)
+}
 
-    let signal_task = spawn_monitor_signals(monitor.clone())?;
-    let result = monitor.watch().await;
+async fn run_watch(
+    config: IntakeConfig,
+    database: IntakeDatabase,
+    dashboard_options: Option<DashboardOptions>,
+) -> Result<()> {
+    let monitor = build_monitor(config.clone(), database.clone())?;
+    let Some(options) = dashboard_options else {
+        let signal_task = spawn_monitor_signals(monitor.clone(), None)?;
+        let result = monitor.watch().await;
+        signal_task.abort();
+        return result;
+    };
+
+    let listener = bind_dashboard(&options).await?;
+    let dashboard_shutdown = CancellationToken::new();
+    let signal_task = spawn_monitor_signals(monitor.clone(), Some(dashboard_shutdown.clone()))?;
+    if let Err(error) = announce_dashboard(&listener) {
+        signal_task.abort();
+        return Err(error);
+    }
+    let dashboard = axum::serve(
+        listener,
+        dashboard_router(database.readers(), dashboard_limits(&config)),
+    )
+    .with_graceful_shutdown(dashboard_shutdown.cancelled_owned());
+    let result = tokio::try_join!(monitor.watch(), async {
+        dashboard.await.context("dashboard server failed")
+    });
     signal_task.abort();
-    result.map(|()| true)
+    result.map(|_| ())
 }
 
 async fn dashboard(
     database: &IntakeDatabase,
     config: &IntakeConfig,
-    args: &[String],
+    options: DashboardOptions,
 ) -> Result<()> {
-    let options = parse_dashboard_options(args)?;
+    let listener = bind_dashboard(&options).await?;
+    announce_dashboard(&listener)?;
+    axum::serve(
+        listener,
+        dashboard_router(database.readers(), dashboard_limits(config)),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .context("dashboard server failed")?;
+    tracing::info!(target: "intake::dashboard", "dashboard stopped");
+    Ok(())
+}
+
+async fn bind_dashboard(options: &DashboardOptions) -> Result<tokio::net::TcpListener> {
     let bind = dashboard_bind(
         options.host.as_deref(),
         options.port,
@@ -206,29 +292,34 @@ async fn dashboard(
     if let Some(warning) = bind.warning() {
         eprintln!("{warning}");
     }
-    let listener = tokio::net::TcpListener::bind((bind.host(), bind.port())).await?;
+    tokio::net::TcpListener::bind((bind.host(), bind.port()))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to bind dashboard at {}:{}",
+                bind.host(),
+                bind.port()
+            )
+        })
+}
+
+fn announce_dashboard(listener: &tokio::net::TcpListener) -> Result<()> {
     let address = listener.local_addr()?;
     tracing::info!(
         target: "intake::dashboard",
-        host = bind.host(),
+        host = %address.ip(),
         port = address.port(),
         "dashboard started"
     );
     println!("Intake dashboard: http://{address}/");
-    axum::serve(
-        listener,
-        dashboard_router(
-            database.readers(),
-            DashboardRunLimits {
-                max_turns: Some(config.triage.max_turns as u32),
-                wall_timeout_ms: Some(config.triage.timeout_minutes.saturating_mul(60_000)),
-            },
-        ),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
-    tracing::info!(target: "intake::dashboard", "dashboard stopped");
     Ok(())
+}
+
+fn dashboard_limits(config: &IntakeConfig) -> DashboardRunLimits {
+    DashboardRunLimits {
+        max_turns: Some(config.triage.max_turns as u32),
+        wall_timeout_ms: Some(config.triage.timeout_minutes.saturating_mul(60_000)),
+    }
 }
 
 async fn inject(database: &IntakeDatabase, path: Option<&String>) -> Result<()> {
@@ -394,6 +485,37 @@ pub fn parse_global_options(mut args: Vec<String>) -> Result<GlobalOptions> {
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
+pub struct WatchOptions {
+    pub dashboard: Option<DashboardOptions>,
+}
+
+pub fn parse_watch_options(args: &[String]) -> Result<WatchOptions> {
+    let dashboard_enabled = args.iter().any(|argument| argument == "--dashboard");
+    let dashboard_args = args
+        .iter()
+        .filter(|argument| argument.as_str() != "--dashboard")
+        .cloned()
+        .collect::<Vec<_>>();
+    if !dashboard_enabled {
+        if let Some(option) = dashboard_args.first() {
+            bail!("Unknown watch option: {option}");
+        }
+        return Ok(WatchOptions::default());
+    }
+    if args
+        .iter()
+        .filter(|argument| argument.as_str() == "--dashboard")
+        .count()
+        > 1
+    {
+        bail!("--dashboard may only be specified once");
+    }
+    Ok(WatchOptions {
+        dashboard: Some(parse_dashboard_options(&dashboard_args)?),
+    })
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct DashboardOptions {
     pub host: Option<String>,
     pub port: Option<u32>,
@@ -430,7 +552,10 @@ pub fn parse_dashboard_options(args: &[String]) -> Result<DashboardOptions> {
 }
 
 #[cfg(unix)]
-fn spawn_monitor_signals<R>(monitor: IntakeMonitor<R>) -> Result<tokio::task::JoinHandle<()>>
+fn spawn_monitor_signals<R>(
+    monitor: IntakeMonitor<R>,
+    dashboard_shutdown: Option<CancellationToken>,
+) -> Result<tokio::task::JoinHandle<()>>
 where
     R: crate::agent::rig_runner::TriageRunner + Send + Sync + 'static,
 {
@@ -448,6 +573,9 @@ where
             "Stopping schedules and waiting for active triage."
         );
         monitor.stop();
+        if let Some(shutdown) = dashboard_shutdown {
+            shutdown.cancel();
+        }
         tokio::select! {
             _ = interrupt.recv() => {}
             _ = terminate.recv() => {}
@@ -458,7 +586,10 @@ where
 }
 
 #[cfg(not(unix))]
-fn spawn_monitor_signals<R>(monitor: IntakeMonitor<R>) -> Result<tokio::task::JoinHandle<()>>
+fn spawn_monitor_signals<R>(
+    monitor: IntakeMonitor<R>,
+    dashboard_shutdown: Option<CancellationToken>,
+) -> Result<tokio::task::JoinHandle<()>>
 where
     R: crate::agent::rig_runner::TriageRunner + Send + Sync + 'static,
 {
@@ -469,6 +600,9 @@ where
             "Stopping schedules and waiting for active triage."
         );
         monitor.stop();
+        if let Some(shutdown) = dashboard_shutdown {
+            shutdown.cancel();
+        }
         let _ = tokio::signal::ctrl_c().await;
         tracing::warn!(target: "intake::terminal::error", "Forced shutdown requested.");
         std::process::exit(130);
