@@ -10,8 +10,7 @@
    and commit `web/package-lock.json`.
 4. Review the npm integrity hashes in `web/package-lock.json`. Nix imports that
    lockfile directly for the fixed browser dependency derivation.
-5. Run `just check-ci`, `nix flake check --print-build-logs`, and
-   `scripts/package-check`.
+5. Run `just check-ci` and `scripts/package-check`.
 6. Commit the version and reviewed lockfile changes.
 
 ## Build Artifacts
