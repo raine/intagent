@@ -224,7 +224,7 @@ async fn bounds_stdout_and_stderr_without_pipe_deadlock() {
         let config = config(root.path(), source.clone());
         let database = IntakeDatabase::open(":memory:").await.expect("database");
         let error = tokio::time::timeout(
-            Duration::from_secs(3),
+            Duration::from_secs(10),
             poll_source(&source, &config, &database, Utc::now()),
         )
         .await

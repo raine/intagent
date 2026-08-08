@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": ["generated/**", "node_modules/**"],
+  "printWidth": 80,
+  "semi": false,
+  "proseWrap": "always",
+  "sortPackageJson": false
+}

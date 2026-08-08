@@ -17,28 +17,24 @@ check-ci: check
     fi
 
 format:
-    bun run format
     npm run format --prefix web
     cargo fmt --all
 
 format-check:
-    checkle run bun-format browser rust-format
+    checkle run browser rust-format
 
 lint:
-    checkle run bun-lint rust-clippy
     npm run lint --prefix web
+    checkle run rust-clippy
 
 typecheck:
-    bun run typecheck
     npm run typecheck --prefix web
 
 test:
-    bun test
     npm test --prefix web
     cargo test --all-targets
 
 build:
-    bun run build
     npm run build --prefix web
     cargo build --release --locked
 
@@ -68,16 +64,7 @@ install-hooks:
     scripts/install-git-hook-shims
 
 run *ARGS:
-    bun run src/cli.ts -- "$@"
-
-run-rust *ARGS:
     cargo run --bin intake -- "$@"
 
 install:
     scripts/install
-
-install-dev:
-    mkdir -p "${HOME}/.local/bin"
-    ln -sf "$(pwd)/src/cli.ts" "${HOME}/.local/bin/intake"
-    ln -sf "$(pwd)/src/sources/fastmail.ts" "${HOME}/.local/bin/intake-fastmail-source"
-    ln -sf "$(pwd)/src/sources/github.ts" "${HOME}/.local/bin/intake-github-source"

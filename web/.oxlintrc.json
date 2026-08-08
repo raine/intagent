@@ -1,11 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": [
-    "dist/**",
-    "history/**",
-    "node_modules/**",
-    "web/generated/**"
-  ],
+  "ignorePatterns": ["generated/**", "node_modules/**"],
   "options": {
     "typeAware": true
   },
@@ -25,7 +20,7 @@
   },
   "overrides": [
     {
-      "files": ["tests/**/*.ts", "web/tests/**/*.ts", "web/tests/**/*.tsx"],
+      "files": ["tests/**/*.ts", "tests/**/*.tsx"],
       "rules": {
         "typescript/await-thenable": "off"
       }

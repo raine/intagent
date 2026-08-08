@@ -1,34 +1,4 @@
 [[check]]
-name = "bun-format"
-command = ["bun", "run", "format:check"]
-
-[[check]]
-name = "bun-lint"
-command = ["bun", "run", "lint"]
-
-[[check]]
-name = "bun-types"
-command = ["bun", "run", "typecheck"]
-
-[[check]]
-name = "bun-test"
-command = ["bun", "test"]
-
-[[check]]
-name = "bun-build"
-command = [
-  "bun",
-  "build",
-  "src/cli.ts",
-  "src/sources/fastmail.ts",
-  "src/sources/github.ts",
-  "--outdir",
-  "dist",
-  "--target",
-  "bun",
-]
-
-[[check]]
 name = "rust-format"
 mode = "rustfmt"
 command = ["cargo", "fmt", "--all", "--", "--check"]
@@ -79,11 +49,6 @@ command = [
 [[group]]
 name = "project"
 checks = [
-  "bun-format",
-  "bun-lint",
-  "bun-types",
-  "bun-test",
-  "bun-build",
   "rust-format",
   "rust-clippy",
   "rust-test",
