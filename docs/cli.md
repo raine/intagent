@@ -49,11 +49,11 @@ The default installer places templates under:
 ~/.local/share/doc/intake/examples/skills
 ```
 
-Copy a template into the private skill directory, replace its integration
-placeholders, and remove `disable-model-invocation` from its frontmatter. The
-included routing templates demonstrate Aven as the task manager while allowing a
-different task manager to be substituted. Add commands required by the skill to
-`commands.rules` in the configuration.
+Copy a template into the private skill directory and customize its task manager
+or investigation workflow as needed. The included routing templates demonstrate
+Aven as the task manager while allowing a different task manager to be
+substituted. Add commands required by the skill to `commands.rules` in the
+configuration.
 
 The first SIGINT or SIGTERM stops source schedules, dashboard serving, and idle
 queue waits. Active triage can finish before the process exits. A second signal
