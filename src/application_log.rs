@@ -1,12 +1,11 @@
 use std::env;
 use std::fmt;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, IsTerminal, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use tracing::level_filters::LevelFilter;
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::Layer;
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt::format::Writer;
@@ -15,14 +14,13 @@ use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-pub const APPLICATION_LOG_DIRECTORY: &str = "application";
-pub const APPLICATION_LOG_DIRECTORY_ENV: &str = "INTAKE_LOG_DIRECTORY";
-pub const APPLICATION_LOG_RETENTION_DAYS: usize = 8;
+pub const APPLICATION_LOG_FILE: &str = "application.log";
+pub const APPLICATION_LOG_PATH_ENV: &str = "INTAKE_LOG_PATH";
 pub const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::INFO;
 
 #[derive(Debug)]
 pub struct TracingInit {
-    pub directory: Option<PathBuf>,
+    pub path: Option<PathBuf>,
     pub warning: Option<String>,
 }
 
@@ -32,10 +30,7 @@ pub enum TracingInitError {
     AlreadyInitialized,
 }
 
-pub fn initialize_tracing(
-    executable: &str,
-    directory: Option<&Path>,
-) -> Result<TracingInit, TracingInitError> {
+pub fn initialize_tracing(path: Option<&Path>) -> Result<TracingInit, TracingInitError> {
     set_private_umask();
     let (level, level_warning) = configured_level();
     let stdout_color = std::io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none();
@@ -62,16 +57,16 @@ pub fn initialize_tracing(
         }));
 
     let mut warning = level_warning;
-    let mut installed_directory = None;
-    let appender = directory.and_then(|directory| match private_appender(executable, directory) {
+    let mut installed_path = None;
+    let appender = path.and_then(|path| match private_appender(path) {
         Ok(appender) => {
-            installed_directory = Some(directory.to_path_buf());
+            installed_path = Some(path.to_path_buf());
             Some(appender)
         }
         Err(error) => {
             warning = Some(format!(
                 "application logging is unavailable for {}: {}",
-                directory.display(),
+                path.display(),
                 safe_io_error(&error)
             ));
             None
@@ -97,22 +92,22 @@ pub fn initialize_tracing(
         .map_err(|_| TracingInitError::AlreadyInitialized)?;
 
     Ok(TracingInit {
-        directory: installed_directory,
+        path: installed_path,
         warning,
     })
 }
 
-pub fn application_log_directory(logs: impl AsRef<Path>) -> PathBuf {
-    logs.as_ref().join(APPLICATION_LOG_DIRECTORY)
+pub fn application_log_path(logs: impl AsRef<Path>) -> PathBuf {
+    logs.as_ref().join(APPLICATION_LOG_FILE)
 }
 
-pub fn source_application_log_directory() -> Option<PathBuf> {
-    if let Some(path) = env::var_os(APPLICATION_LOG_DIRECTORY_ENV) {
+pub fn source_application_log_path() -> Option<PathBuf> {
+    if let Some(path) = env::var_os(APPLICATION_LOG_PATH_ENV) {
         return Some(PathBuf::from(path));
     }
     crate::config::state_directory()
         .ok()
-        .map(|state| application_log_directory(state.join("logs")))
+        .map(|state| application_log_path(state.join("logs")))
 }
 
 pub fn redact_log_text(value: &str) -> String {
@@ -133,25 +128,19 @@ pub fn redact_log_text(value: &str) -> String {
     output
 }
 
-fn private_appender(executable: &str, directory: &Path) -> Result<RollingFileAppender, io::Error> {
+fn private_appender(path: &Path) -> Result<File, io::Error> {
+    let directory = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "log path has no parent"))?;
     fs::create_dir_all(directory)?;
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
-    let appender = RollingFileAppender::builder()
-        .rotation(Rotation::DAILY)
-        .filename_prefix(executable)
-        .filename_suffix("log")
-        .max_log_files(APPLICATION_LOG_RETENTION_DAYS)
-        .build(directory)
-        .map_err(io::Error::other)?;
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with(&format!("{executable}.")) && name.ends_with(".log") {
-            fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o600))?;
-        }
-    }
-    Ok(appender)
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)?;
+    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    Ok(file)
 }
 
 fn configured_level() -> (LevelFilter, Option<String>) {

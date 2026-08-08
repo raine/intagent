@@ -17,16 +17,17 @@ fn redacts_sensitive_fields_and_bearer_credentials() {
 }
 
 #[test]
-fn initializes_once_with_private_filtered_durable_logs() {
+fn initializes_once_with_private_filtered_durable_log() {
     let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("application.log");
     unsafe {
         std::env::set_var("INTAKE_LOG", "warn");
     }
-    let initialized = initialize_tracing("test-intake", Some(root.path())).unwrap();
+    let initialized = initialize_tracing(Some(&path)).unwrap();
     unsafe {
         std::env::remove_var("INTAKE_LOG");
     }
-    assert_eq!(initialized.directory.as_deref(), Some(root.path()));
+    assert_eq!(initialized.path.as_deref(), Some(path.as_path()));
     assert!(initialized.warning.is_none());
 
     tracing::info!(target: "intake::test", "filtered information");
@@ -40,22 +41,17 @@ fn initializes_once_with_private_filtered_durable_logs() {
     tracing::error!(target: "dependency::test", "dependency failure");
     tracing::error!(target: "intake::terminal::error", "private terminal title");
 
-    let duplicate = initialize_tracing("test-intake", Some(root.path())).unwrap_err();
+    let duplicate = initialize_tracing(Some(&path)).unwrap_err();
     assert!(matches!(duplicate, TracingInitError::AlreadyInitialized));
     assert_eq!(
         fs::metadata(root.path()).unwrap().permissions().mode() & 0o777,
         0o700
     );
-    let log = fs::read_dir(root.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .find(|path| path.extension().is_some_and(|extension| extension == "log"))
-        .expect("application log");
     assert_eq!(
-        fs::metadata(&log).unwrap().permissions().mode() & 0o777,
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    let contents = fs::read_to_string(log).unwrap();
+    let contents = fs::read_to_string(path).unwrap();
     assert!(contents.contains("recorded failure"));
     assert!(contents.contains("safe=\"durable\""));
     assert!(contents.contains("[REDACTED]"));

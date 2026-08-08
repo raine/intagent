@@ -3,11 +3,8 @@ use intake::sources::{github::poll_github, http_client};
 
 #[tokio::main]
 async fn main() {
-    let directory = intake::application_log::source_application_log_directory();
-    let tracing = match intake::application_log::initialize_tracing(
-        "intake-github-source",
-        directory.as_deref(),
-    ) {
+    let path = intake::application_log::source_application_log_path();
+    let tracing = match intake::application_log::initialize_tracing(path.as_deref()) {
         Ok(tracing) => tracing,
         Err(error) => {
             eprintln!("intake-github-source: {error}");

@@ -15,7 +15,7 @@ use tempfile::TempDir;
 fn snapshots_usage_and_direct_argument_errors() {
     assert_eq!(
         USAGE,
-        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs use state.logs/application and retain eight daily files.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
+        "Usage: intake [--config PATH] COMMAND\n\nCommands:\n  watch                 monitor sources and triage continuously\n  check                 poll every source once and drain ready triage events\n  status                show source and queue state\n  dashboard [--host HOST] [--port PORT]\n                        serve the local monitoring dashboard\n  inject FILE           queue one IntakeItem JSON fixture\n  show ID               show one intake event\n  retry ID              queue a retained event for another attempt\n  ignore ID             mark an event handled without action\n  login                 authenticate the ChatGPT subscription provider\n  init                  create private configuration directories and config\n  validate-config       validate YAML, command boundaries, and skill links\n\nLogging:\n  Application logs append to state.logs/application.log.\n  Set INTAKE_LOG to off, error, warn, info, debug, or trace.\n"
     );
     let error = parse_global_options(vec!["status".into(), "--config".into()]).unwrap_err();
     assert_eq!(error.to_string(), "--config requires a path");
@@ -199,23 +199,11 @@ fn init_is_idempotent_and_queue_commands_preserve_exit_behavior() {
     );
 
     assert!(state.join("intake/intake.sqlite").exists());
-    let application_logs = configured_logs.join("application");
+    let application_log = configured_logs.join("application.log");
     assert_eq!(
-        fs::metadata(&application_logs)
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777,
+        fs::metadata(&configured_logs).unwrap().permissions().mode() & 0o777,
         0o700
     );
-    let application_log = fs::read_dir(&application_logs)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .find(|path| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with("intake."))
-        })
-        .expect("application log");
     assert_eq!(
         fs::metadata(&application_log).unwrap().permissions().mode() & 0o777,
         0o600
@@ -285,9 +273,8 @@ fn watch_handles_graceful_and_forced_signals() {
 #[test]
 fn help_survives_unavailable_application_logging() {
     let root = tempfile::tempdir().unwrap();
-    let blocked = root.path().join("state/intake/logs/application");
-    fs::create_dir_all(blocked.parent().unwrap()).unwrap();
-    fs::write(&blocked, "not a directory").unwrap();
+    let blocked = root.path().join("state/intake/logs/application.log");
+    fs::create_dir_all(&blocked).unwrap();
 
     let output = intake(&root, ["--help".to_string()]);
 
@@ -309,29 +296,37 @@ fn log_filter_suppresses_lower_priority_and_dependency_events() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let directory = root.path().join("state/intake/logs/application");
-    let log = fs::read_dir(directory)
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let log = root.path().join("state/intake/logs/application.log");
     assert!(fs::read_to_string(log).unwrap().is_empty());
 }
 
 #[test]
-fn source_help_uses_default_application_log_directory() {
-    for (executable, prefix) in [
-        (
-            env!("CARGO_BIN_EXE_intake-fastmail-source"),
-            "intake-fastmail-source.",
-        ),
-        (
-            env!("CARGO_BIN_EXE_intake-github-source"),
-            "intake-github-source.",
-        ),
+fn separate_invocations_append_to_one_application_log() {
+    let root = tempfile::tempdir().unwrap();
+    for _ in 0..2 {
+        let output = intake(&root, ["--help".to_string()]);
+        assert!(output.status.success());
+    }
+
+    let directory = root.path().join("state/intake/logs");
+    let entries = fs::read_dir(&directory)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].file_name(), "application.log");
+    let contents = fs::read_to_string(directory.join("application.log")).unwrap();
+    assert_eq!(contents.matches("process started").count(), 2);
+    assert_eq!(contents.matches("process stopped").count(), 2);
+}
+
+#[test]
+fn source_help_uses_default_application_log_path() {
+    let root = tempfile::tempdir().unwrap();
+    for executable in [
+        env!("CARGO_BIN_EXE_intake-fastmail-source"),
+        env!("CARGO_BIN_EXE_intake-github-source"),
     ] {
-        let root = tempfile::tempdir().unwrap();
         let output = Command::new(executable)
             .arg("--help")
             .env("HOME", root.path())
@@ -339,15 +334,8 @@ fn source_help_uses_default_application_log_directory() {
             .output()
             .unwrap();
         assert!(output.status.success());
-        let directory = root.path().join("state/intake/logs/application");
-        let log = fs::read_dir(&directory)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| {
-                path.file_name()
-                    .is_some_and(|name| name.to_string_lossy().starts_with(prefix))
-            })
-            .expect("source application log");
+        let directory = root.path().join("state/intake/logs");
+        let log = directory.join("application.log");
         assert_eq!(
             fs::metadata(directory).unwrap().permissions().mode() & 0o777,
             0o700
@@ -356,7 +344,18 @@ fn source_help_uses_default_application_log_directory() {
             fs::metadata(log).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        let output = Command::new(executable)
+            .env("HOME", root.path())
+            .env("XDG_STATE_HOME", root.path().join("state"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
     }
+    let directory = root.path().join("state/intake/logs");
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+    let contents = fs::read_to_string(directory.join("application.log")).unwrap();
+    assert_eq!(contents.matches("source poll started").count(), 2);
+    assert_eq!(contents.matches("source poll failed").count(), 2);
 }
 
 #[tokio::test]
