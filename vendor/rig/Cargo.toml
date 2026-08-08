@@ -48,7 +48,7 @@ syn = "2.0.104"
 thiserror = "2.0.12"
 tokio = "1.52.3"
 tokio-test = "0.4.4"
-tokio-tungstenite = { version = "0.28.0", default-features = false }
+tokio-tungstenite = { version = "0.30.0", default-features = false }
 tracing = "0.1.41"
 tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.33.0"
