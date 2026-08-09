@@ -10,8 +10,12 @@ name = "intagent"
 path = "src/lib.rs"
 
 [[example]]
+name = "generate-web-schema"
+path = "tools/generate-web-schema.rs"
+
+[[example]]
 name = "rig-compat"
-path = "examples/rig-compat.rs"
+path = "tools/rig-compat.rs"
 
 [dependencies]
 anyhow = "1"
