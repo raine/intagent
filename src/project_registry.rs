@@ -124,7 +124,9 @@ pub async fn find_likely_project(
     }
     let roots = canonical_roots(project_roots)?;
     for root in &roots {
-        let candidate = root.join(name).to_string_lossy().into_owned();
+        let candidate = likely_project_path(root, name)
+            .to_string_lossy()
+            .into_owned();
         if let Ok(project) = inspect_project(&candidate, &roots).await
             && project
                 .github_repositories
@@ -135,6 +137,25 @@ pub async fn find_likely_project(
         }
     }
     Ok(None)
+}
+
+fn likely_project_path(root: &Path, name: &str) -> PathBuf {
+    let exact = root.join(name);
+    if exact.exists() {
+        return exact;
+    }
+    fs::read_dir(root)
+        .ok()
+        .and_then(|entries| {
+            entries.filter_map(Result::ok).find(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|value| value.eq_ignore_ascii_case(name))
+            })
+        })
+        .map(|entry| entry.path())
+        .unwrap_or(exact)
 }
 
 pub async fn validate_project_registry_write(

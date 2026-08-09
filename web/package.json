@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "npm run generate:api && vite build",
+    "build:bundle": "vite build",
     "dev": "vite",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

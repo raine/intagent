@@ -409,22 +409,14 @@ fn watch_without_dashboard_handles_graceful_and_forced_signals() {
     );
 
     let marker = root.path().join("source-started");
-    let source = root.path().join("source");
-    fs::write(
-        &source,
-        format!("#!/bin/sh\ntouch '{}'\nsleep 2\n", marker.display()),
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&source).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&source, permissions).unwrap();
+    let source = std::env::current_exe().unwrap();
     let contents = fs::read_to_string(&config).unwrap();
     fs::write(
         &config,
         contents.replace(
             "sources: []",
             &format!(
-                "sources:\n- name: sleeper\n  command: {}\n  interval_seconds: 10\n  timeout_seconds: 60\n  item_limit: 1",
+                "sources:\n- name: sleeper\n  command: {}\n  args:\n    - --exact\n    - source_process_fixture\n    - --ignored\n    - --nocapture\n  interval_seconds: 10\n  timeout_seconds: 60\n  item_limit: 1",
                 source.display()
             ),
         ),
@@ -440,6 +432,14 @@ fn watch_without_dashboard_handles_graceful_and_forced_signals() {
         wait_for_exit(&mut forced, Duration::from_secs(3)),
         Some(130)
     );
+}
+
+#[test]
+#[ignore = "source process fixture"]
+fn source_process_fixture() {
+    let marker = std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join("source-started");
+    fs::write(marker, []).unwrap();
+    thread::sleep(Duration::from_secs(2));
 }
 
 #[test]

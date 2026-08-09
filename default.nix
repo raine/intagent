@@ -1,6 +1,4 @@
-{ buildNpmPackage, importNpmLock, lib, rustPlatform, rustc, ... }:
-assert lib.assertMsg (rustc.version == "1.94.0")
-  "Intagent requires Rust 1.94.0, but nixpkgs provides ${rustc.version}";
+{ buildNpmPackage, importNpmLock, lib, rustPlatform, ... }:
 let
   cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
   version = cargoToml.package.version;
@@ -13,7 +11,7 @@ let
       npmRoot = ./web;
     };
     npmConfigHook = importNpmLock.npmConfigHook;
-    npmBuildScript = "build";
+    npmBuildScript = "build:bundle";
     installPhase = ''
       runHook preInstall
       mkdir -p "$out/share/intagent/dashboard"
@@ -36,7 +34,9 @@ let
     };
     cargoLock = {
       lockFile = ./Cargo.lock;
-      outputHashes = { };
+      outputHashes = {
+        "rig-agent-0.41.0" = "sha256-5LwLeMHNhNGWnXGISLp1/L9iZoh910ru8zxD9rMEngg=";
+      };
     };
     INTAGENT_DASHBOARD_DIR = "${browser}/share/intagent/dashboard";
     doCheck = false;
