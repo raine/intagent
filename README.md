@@ -12,11 +12,13 @@ pieces are replaceable. Sources communicate through a small JSON protocol, and r
 lives in agent skills. Supporting another mail provider, task manager, or agent runner mostly means
 providing a source command and adapting those skills.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="meta/dashboard-dark-60ccd653.webp">
-  <source media="(prefers-color-scheme: light)" srcset="meta/dashboard-light-d62a6923.webp">
-  <img alt="Intagent dashboard showing queue status, recent events, and source health" src="meta/dashboard-light-d62a6923.webp">
-</picture>
+<a href="meta/dashboard-light-d62a6923.webp">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="meta/dashboard-dark-60ccd653.webp">
+    <source media="(prefers-color-scheme: light)" srcset="meta/dashboard-light-d62a6923.webp">
+    <img alt="Intagent dashboard showing queue status, recent events, and source health" src="meta/dashboard-light-d62a6923.webp">
+  </picture>
+</a>
 
 ## How it works
 
@@ -32,11 +34,13 @@ Informational messages are recorded without creating unnecessary work. Incoming 
 as untrusted data, and outward actions such as sending email, posting comments, pushing code, or
 merging changes remain under my control.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="meta/run-details-dark-9d8e0a2b.webp">
-  <source media="(prefers-color-scheme: light)" srcset="meta/run-details-light-1baef83f.webp">
-  <img alt="Intagent run details showing the triage conclusion and activity timeline" src="meta/run-details-light-1baef83f.webp">
-</picture>
+<a href="meta/run-details-light-1baef83f.webp">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="meta/run-details-dark-9d8e0a2b.webp">
+    <source media="(prefers-color-scheme: light)" srcset="meta/run-details-light-1baef83f.webp">
+    <img alt="Intagent run details showing the triage conclusion and activity timeline" src="meta/run-details-light-1baef83f.webp">
+  </picture>
+</a>
 
 ## Why investigations run locally
 
