@@ -279,6 +279,13 @@ fn initializes_private_files_and_directories_idempotently() {
             .is_empty()
     );
     let config = load_config(path).unwrap();
+    assert!(
+        config
+            .commands
+            .path
+            .iter()
+            .all(|path| Path::new(path).is_dir())
+    );
     assert_eq!(
         config.skills.directories,
         [root.path().join("private/skills").display().to_string()]

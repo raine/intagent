@@ -1,15 +1,15 @@
-name: checks
+name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  push:
 
 permissions:
   contents: read
 
 jobs:
-  project:
+  checks:
+    name: Full checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -24,10 +24,3 @@ jobs:
         run: cargo install just --locked --version 1.45.0
       - run: npm ci --prefix web
       - run: just check-ci
-
-  nix:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
-      - run: nix flake check --print-build-logs

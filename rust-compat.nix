@@ -7,7 +7,12 @@ rustPlatform.buildRustPackage {
   inherit (cargoToml.package) version;
 
   src = lib.cleanSource ./.;
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "rig-agent-0.41.0" = "sha256-5LwLeMHNhNGWnXGISLp1/L9iZoh910ru8zxD9rMEngg=";
+    };
+  };
 
   cargoBuildFlags = [ "--lib" "--examples" ];
   cargoTestFlags = [ "--all-targets" ];

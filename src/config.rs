@@ -414,12 +414,7 @@ pub fn initialize_private_config(
         sources: Vec::new(),
         triage: TriageConfig::default(),
         commands: CommandsConfig {
-            path: vec![
-                "/opt/homebrew/bin".into(),
-                "/usr/local/bin".into(),
-                "/usr/bin".into(),
-                "/bin".into(),
-            ],
+            path: default_command_path(),
             timeout_seconds: default_command_timeout(),
             max_output_bytes: default_max_output_bytes(),
             sensitive_patterns: Vec::new(),
@@ -439,6 +434,14 @@ pub fn initialize_private_config(
         config_path: path,
         created,
     })
+}
+
+fn default_command_path() -> Vec<String> {
+    ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        .into_iter()
+        .filter(|path| Path::new(path).is_dir())
+        .map(str::to_string)
+        .collect()
 }
 
 pub fn default_command_rules() -> Vec<CommandRule> {
