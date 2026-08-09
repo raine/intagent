@@ -10,7 +10,7 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
-      "rig-agent-0.41.0" = "sha256-5LwLeMHNhNGWnXGISLp1/L9iZoh910ru8zxD9rMEngg=";
+      "rig-agent-0.41.0" = "sha256-DnMWea4uaRZzozIvpbsfJGrlWsAhkqJrsAA+cm4mbsU=";
     };
   };
 

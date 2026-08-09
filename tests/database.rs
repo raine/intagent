@@ -728,7 +728,7 @@ async fn migration_schema_matches_every_phase_zero_version() {
             transaction
                 .execute(
                     "INSERT INTO schema_migrations VALUES (?1, '2026-08-07T00:00:00.000Z')",
-                    [index + 1],
+                    [(index + 1) as i64],
                 )
                 .expect("migration row");
             transaction.commit().expect("migration commit");

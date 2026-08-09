@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use rig_core::message::{AssistantContent, Message, UserContent};
+use rig_core::message::{AssistantContent, Message, ToolCallId, UserContent};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
@@ -205,7 +205,7 @@ fn canonical_groups(history: &[Message]) -> Vec<CanonicalGroup<'_>> {
     groups
 }
 
-fn tool_call_ids(message: &Message) -> BTreeSet<String> {
+fn tool_call_ids(message: &Message) -> BTreeSet<ToolCallId> {
     let Message::Assistant { content, .. } = message else {
         return BTreeSet::new();
     };
@@ -218,13 +218,13 @@ fn tool_call_ids(message: &Message) -> BTreeSet<String> {
         .collect()
 }
 
-fn remove_tool_result_ids(message: &Message, pending: &mut BTreeSet<String>) {
+fn remove_tool_result_ids(message: &Message, pending: &mut BTreeSet<ToolCallId>) {
     let Message::User { content } = message else {
         return;
     };
     for item in content.iter() {
         if let UserContent::ToolResult(result) = item {
-            pending.remove(&result.id);
+            pending.remove(&result.call);
         }
     }
 }

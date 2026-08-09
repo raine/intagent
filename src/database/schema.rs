@@ -188,7 +188,7 @@ pub(super) fn migrate(connection: &Connection) -> Result<(), DatabaseError> {
         transaction.execute_batch(sql)?;
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-            params![index + 1, timestamp(Utc::now())],
+            params![(index + 1) as i64, timestamp(Utc::now())],
         )?;
         transaction.commit()?;
     }

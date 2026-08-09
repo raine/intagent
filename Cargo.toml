@@ -19,19 +19,19 @@ axum = "0.8"
 chrono = "0.4"
 libc = "0.2"
 regex = "1"
-rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f" }
-rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f" }
+rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "c233893b9eb9f9ddfc7b7626d3436424c83f7da9" }
+rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "c233893b9eb9f9ddfc7b7626d3436424c83f7da9" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "rustls",
 ] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "=1.0.1"
 serde_json = "1"
 thiserror = "2"
-tree-sitter = "=0.25.10"
+tree-sitter = "=0.26.12"
 tree-sitter-bash = "=0.25.1"
 url = "2"
 tokio = { version = "1", features = [
@@ -53,10 +53,10 @@ tracing-subscriber = "0.3"
 
 [dev-dependencies]
 http = "1"
-rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f", features = [
+rig-agent = { git = "https://github.com/0xPlaygrounds/rig", rev = "c233893b9eb9f9ddfc7b7626d3436424c83f7da9", features = [
   "test-utils",
 ] }
-rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "1f9547774edb4c269be991ac42eb043fd7b6e87f", features = [
+rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "c233893b9eb9f9ddfc7b7626d3436424c83f7da9", features = [
   "test-utils",
 ] }
 tempfile = "3"

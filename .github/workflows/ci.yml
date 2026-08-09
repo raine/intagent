@@ -12,15 +12,15 @@ jobs:
     name: Full checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Install Rust 1.94.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install Rust 1.97.1
         run: |
-          rustup toolchain install 1.94.0 --profile minimal --component clippy,rustfmt
-          rustup default 1.94.0
+          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.97.1
       - run: scripts/install-checkle
         env:
           CHECKLE_INSTALL_DIR: ${{ runner.temp }}/checkle-bin
       - name: Install just
-        run: cargo install just --locked --version 1.45.0
+        run: cargo install just --locked --version 1.58.0
       - run: npm ci --prefix web
       - run: just check-ci

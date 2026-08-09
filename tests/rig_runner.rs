@@ -277,8 +277,11 @@ async fn max_turns_counts_total_mock_model_calls() {
         let results = calls
             .into_iter()
             .map(|call| {
-                UserContent::tool_result(
-                    call.tool_call.id,
+                let call = call.tool_call;
+                UserContent::tool_result_for(
+                    call.id,
+                    call.provider,
+                    call.function.name,
                     OneOrMany::one(ToolResultContent::text("ok")),
                 )
             })
@@ -1245,9 +1248,10 @@ impl ProductionFixture {
     fn command_count(&self) -> usize {
         let connection = rusqlite::Connection::open(self.root.path().join("intagent.sqlite"))
             .expect("open fixture database");
-        connection
+        let count: i64 = connection
             .query_row("SELECT COUNT(*) FROM command_events", [], |row| row.get(0))
-            .expect("command count")
+            .expect("command count");
+        usize::try_from(count).expect("nonnegative command count")
     }
 
     fn prompt_rows(&self) -> Vec<(String, String)> {

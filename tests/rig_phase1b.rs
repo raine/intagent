@@ -72,11 +72,11 @@ async fn compaction_records_one_summary_and_preserves_canonical_recent_groups() 
     let encrypted_reasoning = AssistantContent::Reasoning(
         Reasoning::encrypted("opaque-reasoning").with_id("reasoning-1".to_string()),
     );
-    let tool_call = ToolCall::new(
-        "call-1".to_string(),
+    let tool_call = ToolCall::from_dual_wire(
+        "call-1",
+        "provider-call-1",
         ToolFunction::new("bash".to_string(), json!({"value": "allowed"})),
-    )
-    .with_call_id("provider-call-1".to_string());
+    );
     let assistant_group = vec![
         encrypted_reasoning.clone(),
         AssistantContent::ToolCall(tool_call.clone()),
@@ -130,7 +130,8 @@ async fn compaction_records_one_summary_and_preserves_canonical_recent_groups() 
     let expected_result = Message::User {
         content: OneOrMany::one(UserContent::tool_result_with_call_id(
             "call-1",
-            "provider-call-1".to_string(),
+            "provider-call-1",
+            "bash",
             OneOrMany::one(ToolResultContent::text("bash executed")),
         )),
     };

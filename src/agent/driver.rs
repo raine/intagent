@@ -541,11 +541,7 @@ where
 
 fn tool_result(call: ToolCall, output: String) -> UserContent {
     let content = OneOrMany::one(ToolResultContent::text(output));
-    if let Some(call_id) = call.call_id {
-        UserContent::tool_result_with_call_id(call.id, call_id, content)
-    } else {
-        UserContent::tool_result(call.id, content)
-    }
+    UserContent::tool_result_for(call.id, call.provider, call.function.name, content)
 }
 
 fn resolve_invalid_calls(

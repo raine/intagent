@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { JSX } from "react"
 import type {
   RunDetail,
   TimelineEntry as RunTimelineEntry,
@@ -760,7 +761,7 @@ interface TimelineProps {
   setFilter: (filter: TimelineFilter) => void
   following: boolean
   setFollowing: (value: boolean) => void
-  timelineRef: React.RefObject<HTMLElement>
+  timelineRef: React.RefObject<HTMLElement | null>
   onLoadMore: () => void
   refreshing: boolean
 }
