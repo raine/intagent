@@ -15,13 +15,4 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
       - name: Build package
-        run: |
-          for attempt in 1 2 3 4 5; do
-            if nix build --no-link --print-build-logs --option max-jobs 1; then
-              exit 0
-            fi
-            if [ "$attempt" = 5 ]; then
-              exit 1
-            fi
-            sleep 10
-          done
+        run: nix build --no-link --print-build-logs
