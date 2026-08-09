@@ -25,7 +25,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "rustls",
 ] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "=1.0.1"
