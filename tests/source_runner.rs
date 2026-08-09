@@ -58,7 +58,11 @@ fn source(command: PathBuf) -> SourceConfig {
 
 fn executable(root: &TempDir, body: &str) -> PathBuf {
     let path = root.path().join("source");
-    fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write source fixture");
+    fs::write(
+        &path,
+        format!("#!/bin/sh\nIFS= read -r request || true\n{body}\n"),
+    )
+    .expect("write source fixture");
     let mut permissions = fs::metadata(&path).expect("source metadata").permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&path, permissions).expect("make source executable");
@@ -111,7 +115,7 @@ async fn queues_valid_response_with_versioned_bounded_request() {
     let root = tempfile::tempdir().expect("temporary directory");
     let request_path = root.path().join("request.json");
     let body = format!(
-        "IFS= read -r request\nprintf '%s' \"$request\" > '{}'\nprintf '%s\\n' '{}'",
+        "printf '%s' \"$request\" > '{}'\nprintf '%s\\n' '{}'",
         request_path.display(),
         response(json!([item("external:1")]))
     );
@@ -333,7 +337,7 @@ async fn rolls_back_events_and_checkpoint_when_commit_fails() {
     let command = executable(
         &root,
         &format!(
-            "IFS= read -r request\nprintf '%s\\n' '{}'",
+            "printf '%s\\n' '{}'",
             response(json!([item("rollback:item")]))
         ),
     );
