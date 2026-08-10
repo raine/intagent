@@ -607,6 +607,16 @@ fn normalize_email(account_id: &str, email: &Email, thread: &[Email]) -> IntakeI
         "bcc": email.bcc,
         "attachments": attachments,
         "threadMessageCount": thread.len(),
+        "currentMessage": {
+            "messageId": email.id,
+            "receivedAt": email.received_at,
+            "subject": email.subject,
+            "from": email.from,
+            "to": email.to,
+            "cc": email.cc,
+            "bcc": email.bcc,
+            "body": body_text(email),
+        },
     })
     .as_object()
     .cloned()

@@ -133,6 +133,14 @@ fn repository_skill_examples_are_valid_templates() {
     let catalog = format_skill_catalog(&validation.skills);
     assert!(catalog.contains("email-triage"));
     assert!(catalog.contains("github-investigation"));
+
+    let email = fs::read_to_string(directory.join("email-triage/SKILL.md")).unwrap();
+    assert!(email.contains("current revision"));
+    assert!(email.contains("Do not record acknowledgments"));
+    let github = fs::read_to_string(directory.join("github-investigation/SKILL.md")).unwrap();
+    assert!(github.contains("current revision"));
+    assert!(github.contains("Handle availability selects update versus replacement"));
+    assert!(github.contains("whether investigation is warranted"));
 }
 
 #[test]

@@ -551,6 +551,7 @@ async fn production_prompt_inventory_skills_and_storage_match_the_event_scope() 
     let system = request.preamble.as_deref().expect("system prompt");
     assert!(system.contains("Verified local project inventory"));
     assert!(system.contains("Route actionable intake"));
+    assert!(system.contains("Investigation-handle availability never makes an event actionable"));
     assert!(system.contains(&skill.to_string_lossy().to_string()));
     let history = serde_json::to_string(&request.chat_history).expect("request history");
     assert!(history.contains("untrusted-intake-json"));
@@ -560,7 +561,16 @@ async fn production_prompt_inventory_skills_and_storage_match_the_event_scope() 
     assert_eq!(prompts.len(), 2);
     assert_eq!(prompts[0].0, "system");
     assert_eq!(prompts[1].0, "user");
-    assert!(prompts[1].1.contains("untrusted-intake-json"));
+    let user_prompt = &prompts[1].1;
+    assert!(user_prompt.contains("<intake-state>"));
+    assert!(user_prompt.contains("untrusted-intake-json"));
+    let (trusted, untrusted) = user_prompt
+        .split_once("<untrusted-intake-json>")
+        .expect("prompt boundary");
+    assert!(trusted.contains("priorHandling"));
+    assert!(trusted.contains("revision-1"));
+    assert!(!untrusted.contains("priorHandling"));
+    assert!(untrusted.contains("prompt fixture"));
 }
 
 #[tokio::test]

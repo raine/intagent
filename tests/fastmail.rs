@@ -167,6 +167,8 @@ async fn emits_stable_events_with_bounded_threads_and_attachment_metadata() {
     assert_eq!(item.revision_id, "message-2");
     assert!(item.body.contains("Initial request"));
     assert!(item.body.contains("Follow up"));
+    assert_eq!(item.metadata["currentMessage"]["messageId"], "message-2");
+    assert_eq!(item.metadata["currentMessage"]["body"], "Follow up");
     assert_eq!(item.metadata["attachments"].as_array().unwrap().len(), 2);
     assert!(
         !serde_json::to_string(&item.metadata)
@@ -449,6 +451,13 @@ async fn enforces_body_thread_message_and_attachment_limits() {
     .unwrap();
     let item = &result.items[0];
     assert_eq!(item.metadata["threadMessageCount"], 100);
+    assert_eq!(item.metadata["currentMessage"]["messageId"], "message-100");
+    assert!(
+        item.metadata["currentMessage"]["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("body-100")
+    );
     assert_eq!(item.metadata["attachments"].as_array().unwrap().len(), 100);
     assert_eq!(item.body.encode_utf16().count(), 64 * 1024 * 4);
     assert!(!item.body.contains("UNWANTED_FIRST"));
