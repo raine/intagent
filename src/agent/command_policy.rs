@@ -142,6 +142,28 @@ impl CommandPolicy {
             ("LC_ALL".to_string(), "C.UTF-8".to_string()),
             ("NO_COLOR".to_string(), "1".to_string()),
             ("TERM".to_string(), "dumb".to_string()),
+            ("GIT_CONFIG_COUNT".to_string(), "2".to_string()),
+            (
+                "GIT_CONFIG_KEY_0".to_string(),
+                "url.https://github.com/.insteadOf".to_string(),
+            ),
+            (
+                "GIT_CONFIG_VALUE_0".to_string(),
+                "git@github.com:".to_string(),
+            ),
+            (
+                "GIT_CONFIG_KEY_1".to_string(),
+                "url.https://github.com/.insteadOf".to_string(),
+            ),
+            (
+                "GIT_CONFIG_VALUE_1".to_string(),
+                "ssh://git@github.com/".to_string(),
+            ),
+            ("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()),
+            (
+                "GIT_SSH_COMMAND".to_string(),
+                "ssh -o BatchMode=yes -o ConnectTimeout=10".to_string(),
+            ),
         ];
         let mut stdin = input.map(ToOwned::to_owned);
         let mut stderr = String::new();

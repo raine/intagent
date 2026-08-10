@@ -35,6 +35,7 @@ fn fixture_with_timeout(timeout_seconds: u64) -> Fixture {
         "ignore-term",
         "orphan",
         "cat",
+        "environment",
     ] {
         let body = match name {
             "allowed" => format!(
@@ -58,6 +59,7 @@ fn fixture_with_timeout(timeout_seconds: u64) -> Fixture {
                 marker.display()
             ),
             "cat" => "#!/bin/sh\nexec /bin/cat\n".to_string(),
+            "environment" => "#!/bin/sh\nprintf '%s\\n' \"$GIT_CONFIG_COUNT\" \"$GIT_CONFIG_KEY_0\" \"$GIT_CONFIG_VALUE_0\" \"$GIT_CONFIG_KEY_1\" \"$GIT_CONFIG_VALUE_1\" \"$GIT_TERMINAL_PROMPT\" \"$GIT_SSH_COMMAND\"\n".to_string(),
             _ => unreachable!(),
         };
         write_executable(&bin.join(name), &body);
@@ -76,6 +78,7 @@ fn fixture_with_timeout(timeout_seconds: u64) -> Fixture {
         "ignore-term",
         "orphan",
         "cat",
+        "environment",
     ]
     .into_iter()
     .map(|executable| CommandRule {
@@ -131,6 +134,29 @@ async fn accepts_literal_arguments_and_authorized_pipelines() {
         fs::read_to_string(&fixture.marker)
             .unwrap()
             .contains("allowed|search|login issue")
+    );
+}
+
+#[tokio::test]
+async fn supplies_noninteractive_https_git_transport() {
+    let fixture = fixture();
+    let result = fixture
+        .policy
+        .execute("environment", &fixture.root, CancellationToken::new(), None)
+        .await
+        .unwrap();
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(
+        result.stdout.lines().collect::<Vec<_>>(),
+        [
+            "2",
+            "url.https://github.com/.insteadOf",
+            "git@github.com:",
+            "url.https://github.com/.insteadOf",
+            "ssh://git@github.com/",
+            "0",
+            "ssh -o BatchMode=yes -o ConnectTimeout=10",
+        ]
     );
 }
 
