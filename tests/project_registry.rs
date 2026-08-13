@@ -101,6 +101,67 @@ async fn derives_repository_metadata_and_likely_matches() {
 }
 
 #[tokio::test]
+async fn includes_explicit_github_repository_associations() {
+    let root = TempDir::new().unwrap();
+    let code = root.path().join("code");
+    let repository = code.join("example");
+    initialize_repository(&repository);
+    run_git(&[
+        "-C",
+        repository.to_str().unwrap(),
+        "config",
+        "--add",
+        "intagent.githubRepository",
+        "owner/public-example",
+    ]);
+    run_git(&[
+        "-C",
+        repository.to_str().unwrap(),
+        "config",
+        "--add",
+        "intagent.githubRepository",
+        "OWNER/EXAMPLE",
+    ]);
+    let registry = root.path().join("projects.yaml");
+    fs::write(&registry, format!("- {}\n", repository.display())).unwrap();
+    let roots = vec![code.display().to_string()];
+
+    let inventory = load_project_inventory(&registry, &roots).await.unwrap();
+
+    assert!(inventory.diagnostics.is_empty());
+    assert_eq!(
+        inventory.projects[0].github_repositories,
+        ["owner/example", "owner/public-example"]
+    );
+}
+
+#[tokio::test]
+async fn rejects_invalid_github_repository_associations() {
+    let root = TempDir::new().unwrap();
+    let code = root.path().join("code");
+    let repository = code.join("example");
+    initialize_repository(&repository);
+    run_git(&[
+        "-C",
+        repository.to_str().unwrap(),
+        "config",
+        "intagent.githubRepository",
+        "not-a-repository",
+    ]);
+    let registry = root.path().join("projects.yaml");
+    fs::write(&registry, format!("- {}\n", repository.display())).unwrap();
+    let roots = vec![code.display().to_string()];
+
+    let inventory = load_project_inventory(&registry, &roots).await.unwrap();
+
+    assert!(inventory.projects.is_empty());
+    assert_eq!(inventory.diagnostics.len(), 1);
+    assert!(
+        inventory.diagnostics[0].contains("invalid intagent.githubRepository: not-a-repository")
+    );
+}
+
+#[tokio::test]
 async fn validates_complete_registry_replacements() {
     let root = TempDir::new().unwrap();
     let code = root.path().join("code");

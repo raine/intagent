@@ -286,11 +286,20 @@ async fn inspect_project(path_value: &str, roots: &[PathBuf]) -> Result<ProjectI
     }
     let mut github_repositories = Vec::new();
     for remote in &remotes {
-        if let Some(repository) = github_repository(remote)
-            && !github_repositories.contains(&repository)
-        {
-            github_repositories.push(repository);
+        if let Some(repository) = github_repository(remote) {
+            push_repository(&mut github_repositories, repository);
         }
+    }
+    let associated_output = git_output(
+        &repository_path,
+        &["config", "--get-all", "intagent.githubRepository"],
+    )
+    .await?
+    .unwrap_or_default();
+    for value in associated_output.lines() {
+        let repository = repository_pair(value)
+            .ok_or_else(|| anyhow::anyhow!("invalid intagent.githubRepository: {value}"))?;
+        push_repository(&mut github_repositories, repository);
     }
     let default_branch = git_output(
         &repository_path,
@@ -361,6 +370,15 @@ fn github_repository(remote: &str) -> Option<String> {
         return None;
     }
     repository_pair(url.path().trim_start_matches('/'))
+}
+
+fn push_repository(repositories: &mut Vec<String>, repository: String) {
+    if !repositories
+        .iter()
+        .any(|value| value.eq_ignore_ascii_case(&repository))
+    {
+        repositories.push(repository);
+    }
 }
 
 fn repository_pair(value: &str) -> Option<String> {
