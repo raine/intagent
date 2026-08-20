@@ -34,7 +34,7 @@ Use the available Aven and workmux skills for command syntax.
    activity sentence when no permalink is available. Send this prompt:
 
    ```text
-   New GitHub activity is available for this <issue-or-pull-request>: <entity-url>. Activity: <activity-permalink>. Reassess it using the existing investigation context. Investigate the activity, perform any additional verification it warrants, update your conclusions and recommended next action, and report only decision-relevant findings.
+   New GitHub activity is available for this <issue-or-pull-request>: <entity-url>. Activity: <activity-permalink>. Reassess it using the existing investigation context. Investigate the activity, perform any additional verification it warrants, update your conclusions and recommended next action, and report only decision-relevant findings. Do not modify the associated Aven task or add notes to it. Return findings only in your investigation response.
    ```
 
    Create a replacement investigation only when the current activity warrants
@@ -52,6 +52,9 @@ Use the available Aven and workmux skills for command syntax.
 
    ```text
    /investigate <url>
+
+   Do not modify the associated Aven task or add notes to it. Return findings
+   only in your investigation response.
    ```
 
    Do not copy notification or discussion content into the prompt.

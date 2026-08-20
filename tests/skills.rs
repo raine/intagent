@@ -141,6 +141,12 @@ fn repository_skill_examples_are_valid_templates() {
     assert!(github.contains("current revision"));
     assert!(github.contains("Handle availability selects update versus replacement"));
     assert!(github.contains("whether investigation is warranted"));
+    assert_eq!(
+        github
+            .matches("Do not modify the associated Aven task or add notes to it")
+            .count(),
+        2
+    );
 }
 
 #[test]
