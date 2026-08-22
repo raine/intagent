@@ -32,6 +32,9 @@ sources:
       include_message_id_contains:
         - /issues/
         - /pull/
+      exclude_headers:
+        X-GitHub-PullRequestStatus:
+          - closed
   - name: github
     command: intagent-github-source
     interval_seconds: 60

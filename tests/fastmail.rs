@@ -185,21 +185,21 @@ async fn emits_stable_events_with_bounded_threads_and_attachment_metadata() {
 
 #[tokio::test]
 async fn excludes_messages_by_header_before_thread_assembly() {
-    let mut push = email(
-        "push-message",
+    let mut closed = email(
+        "closed-message",
         "2026-08-03T10:05:00.000Z",
-        "Pushed one commit",
+        "Contributor closed this pull request.",
     );
-    push["header:X-GitHub-Reason:asText"] = json!("push");
+    closed["header:X-GitHub-PullRequestStatus:asText"] = json!("closed");
     let server = FixtureServer::start(|base| {
         vec![
             session(base),
             jmap(
                 "Email/queryChanges",
-                json!({ "added": [{ "id": "push-message", "index": 0 }], "removed": [], "newQueryState": "query-state-2", "hasMoreChanges": false }),
+                json!({ "added": [{ "id": "closed-message", "index": 0 }], "removed": [], "newQueryState": "query-state-2", "hasMoreChanges": false }),
                 "changes",
             ),
-            jmap("Email/get", json!({ "list": [push] }), "emails"),
+            jmap("Email/get", json!({ "list": [closed] }), "emails"),
         ]
     })
     .await;
@@ -209,7 +209,7 @@ async fn excludes_messages_by_header_before_thread_assembly() {
     );
     request.options.insert(
         "exclude_headers".into(),
-        json!({ "X-GitHub-Reason": ["push"] }),
+        json!({ "X-GitHub-PullRequestStatus": ["closed"] }),
     );
     let result = poll_fastmail(request, &http_client().unwrap(), "source-only-token")
         .await
@@ -220,7 +220,7 @@ async fn excludes_messages_by_header_before_thread_assembly() {
         calls[2].body["methodCalls"][0][1]["properties"]
             .as_array()
             .unwrap()
-            .contains(&json!("header:X-GitHub-Reason:asText"))
+            .contains(&json!("header:X-GitHub-PullRequestStatus:asText"))
     );
 }
 
