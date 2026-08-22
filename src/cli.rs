@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::auth::{AuthPaths, authorize};
+use crate::agent::auth::{AuthPaths, login};
 use crate::agent::command_policy::CommandPolicy;
 use crate::agent::rig_runner::{ChatGptTriageRunner, TriageRunnerCore};
 use crate::agent::skills::validate_skills;
@@ -340,7 +340,8 @@ pub async fn run(argv: Vec<String>) -> Result<i32> {
 
     if spec.is_some_and(|spec| spec.runtime == Runtime::Login) {
         let auth = auth_paths()?;
-        authorize(&auth, true).await?;
+        login(&auth).await?;
+        println!("ChatGPT subscription authentication is ready.");
         return Ok(0);
     }
 

@@ -48,14 +48,50 @@ impl AuthPaths {
 }
 
 pub fn chatgpt_client(auth_file: &Path, interactive: bool) -> Result<chatgpt::Client> {
-    Ok(chatgpt::Client::builder()
+    let mut builder = chatgpt::Client::builder()
         .oauth()
         .auth_file(auth_file)
         .originator("intagent")
         .user_agent(concat!("intagent/", env!("CARGO_PKG_VERSION")))
         .default_instructions("")
-        .allow_device_flow(interactive)
-        .build()?)
+        .allow_device_flow(interactive);
+    if interactive {
+        builder = builder.on_device_code(|prompt| {
+            println!(
+                "Open {} and enter code {}.",
+                prompt.verification_uri, prompt.user_code
+            );
+        });
+    }
+    Ok(builder.build()?)
+}
+
+pub async fn login(paths: &AuthPaths) -> Result<()> {
+    paths.prepare()?;
+    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let cache_name = paths
+        .cache
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("Rig authentication cache has an invalid file name")?;
+    let login_cache = paths.directory.join(format!(
+        ".{cache_name}.login.{}.{}",
+        std::process::id(),
+        sequence
+    ));
+    write_cache_atomically(&login_cache, b"{}\n")?;
+    let login_paths = AuthPaths {
+        directory: paths.directory.clone(),
+        cache: login_cache.clone(),
+    };
+    let result = async {
+        authorize(&login_paths, true).await?;
+        let credentials = fs::read(&login_cache).context("read new authentication cache")?;
+        write_cache_atomically(&paths.cache, &credentials)
+    }
+    .await;
+    let _ = fs::remove_file(login_cache);
+    result
 }
 
 pub async fn authorize(paths: &AuthPaths, interactive: bool) -> Result<()> {
