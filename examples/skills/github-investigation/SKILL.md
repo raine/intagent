@@ -14,7 +14,9 @@ Use the available workmux skill for command syntax.
    is context that prior revisions already presented for triage.
    Acknowledgments, gratitude, agreement, reactions, and social closure with no
    new request, question, evidence, constraint, correction, or material state
-   change are `no_action`. Do not inspect an investigation for them.
+   change are `no_action`. A report that an issue is resolved or will be closed
+   is also `no_action` when it contains no new request or unresolved concern. Do
+   not inspect an investigation for them.
 2. Match `owner/repository` against the verified project inventory. Use a
    verified unregistered candidate without rediscovery and add its canonical
    path to the registry. Otherwise verify a likely repository-name path beneath

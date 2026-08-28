@@ -140,6 +140,7 @@ fn repository_skill_examples_are_valid_templates() {
     assert!(email.contains("Do not record acknowledgments"));
     let github = fs::read_to_string(directory.join("github-investigation/SKILL.md")).unwrap();
     assert!(github.contains("current revision"));
+    assert!(github.contains("an issue is resolved or will be closed"));
     assert!(github.contains("Handle availability selects update versus replacement"));
     assert!(github.contains("whether investigation is warranted"));
     assert!(!github.to_ascii_lowercase().contains("aven"));
