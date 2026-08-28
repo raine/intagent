@@ -135,6 +135,7 @@ fn repository_skill_examples_are_valid_templates() {
     assert!(catalog.contains("github-investigation"));
 
     let email = fs::read_to_string(directory.join("email-triage/SKILL.md")).unwrap();
+    assert!(email.contains("Handle non-GitHub email"));
     assert!(email.contains("current revision"));
     assert!(email.contains("Do not record acknowledgments"));
     let github = fs::read_to_string(directory.join("github-investigation/SKILL.md")).unwrap();

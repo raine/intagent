@@ -1,8 +1,8 @@
 ---
 name: email-triage
 description:
-  Decide whether an incoming email requires local follow-up, update one task per
-  thread, and dispatch investigation when useful.
+  Handle non-GitHub email that may require local follow-up, task updates, or
+  investigation.
 ---
 
 # Email triage
