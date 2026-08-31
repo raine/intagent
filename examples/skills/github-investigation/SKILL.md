@@ -49,8 +49,6 @@ Use the available workmux skill for command syntax.
 
    ```text
    /skill:investigate <url>
-
-   Return findings only in your investigation response.
    ```
 
    Do not copy notification or discussion content into the prompt.

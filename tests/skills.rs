@@ -146,7 +146,7 @@ fn repository_skill_examples_are_valid_templates() {
     assert!(!github.to_ascii_lowercase().contains("aven"));
     assert!(github.contains("/skill:investigate <url>"));
     assert!(!github.contains("/investigate <url>"));
-    assert!(github.contains("Return findings only in your investigation response"));
+    assert!(!github.contains("Return findings only in your investigation response"));
 }
 
 #[test]
