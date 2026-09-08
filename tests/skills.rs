@@ -138,6 +138,9 @@ fn repository_skill_examples_are_valid_templates() {
     assert!(email.contains("Handle non-GitHub email"));
     assert!(email.contains("current revision"));
     assert!(email.contains("Do not record acknowledgments"));
+    assert!(email.contains(
+        "put a blank line before and after every delimiter\nso Markdown does not interpret the preceding paragraph as a setext heading"
+    ));
     let github = fs::read_to_string(directory.join("github-investigation/SKILL.md")).unwrap();
     assert!(github.contains("current revision"));
     assert!(github.contains("an issue is resolved or will be closed"));
