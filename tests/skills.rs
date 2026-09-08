@@ -138,9 +138,13 @@ fn repository_skill_examples_are_valid_templates() {
     assert!(email.contains("Handle non-GitHub email"));
     assert!(email.contains("current revision"));
     assert!(email.contains("Do not record acknowledgments"));
-    assert!(email.contains(
-        "put a blank line before and after every delimiter\nso Markdown does not interpret the preceding paragraph as a setext heading"
-    ));
+    assert!(email.contains("Use a labeled Markdown list for email headers and a blockquote"));
+    for field in ["From", "To", "Date", "Subject"] {
+        assert!(email.contains(&format!("- **{field}:**")));
+    }
+    assert!(email.contains("Prefix every body line with `>`, including blank lines"));
+    assert!(email.contains("> Dear Developer,\\\n> Is this model supported?\n>\n> Thank you."));
+    assert!(email.contains("Keep task summaries and agent instructions outside"));
     let github = fs::read_to_string(directory.join("github-investigation/SKILL.md")).unwrap();
     assert!(github.contains("current revision"));
     assert!(github.contains("an issue is resolved or will be closed"));
