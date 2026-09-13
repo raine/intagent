@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+use chrono::DateTime;
 use reqwest::Client;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value, json};
@@ -473,7 +475,7 @@ async fn get_thread(
     )
     .await?;
     emails.retain(|email| is_allowed(email, filters));
-    emails.sort_by(|left, right| message_timestamp(left).cmp(message_timestamp(right)));
+    emails.sort_by(compare_message_timestamps);
     Ok(emails)
 }
 
@@ -486,7 +488,7 @@ async fn normalize_messages(
     filters: &EmailFilters,
     client: &Client,
 ) -> Result<Vec<IntakeItem>, ProtocolError> {
-    messages.sort_by(|left, right| message_timestamp(left).cmp(message_timestamp(right)));
+    messages.sort_by(compare_message_timestamps);
     let mut thread_cache: HashMap<String, Vec<Email>> = HashMap::new();
     let mut items = Vec::new();
     for email in messages {
@@ -840,6 +842,18 @@ fn integer_option(request: &PollRequest, name: &str) -> Option<usize> {
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
         .filter(|value| *value <= 9_007_199_254_740_991)
+}
+
+fn compare_message_timestamps(left: &Email, right: &Email) -> Ordering {
+    let left = message_timestamp(left);
+    let right = message_timestamp(right);
+    match (
+        DateTime::parse_from_rfc3339(left),
+        DateTime::parse_from_rfc3339(right),
+    ) {
+        (Ok(left), Ok(right)) => left.cmp(&right),
+        _ => left.cmp(right),
+    }
 }
 
 fn message_timestamp(email: &Email) -> &str {

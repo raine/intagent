@@ -376,6 +376,56 @@ async fn suppresses_a_thread_when_its_newest_message_is_sent_mail() {
 }
 
 #[tokio::test]
+async fn emits_a_follow_up_newer_than_sent_mail_across_time_zones() {
+    let initial = email("message-1", "2026-09-13T20:31:35Z", "Initial request");
+    let mut sent = email("message-2", "2026-09-13T20:42:08Z", "Sent reply");
+    sent["sentAt"] = json!("2026-09-13T23:42:08+03:00");
+    sent["mailboxIds"] = json!({ "sent": true });
+    let mut follow_up = email("message-3", "2026-09-13T20:59:33Z", "Customer follow up");
+    follow_up["sentAt"] = json!("2026-09-13T14:59:15-06:00");
+    let server = FixtureServer::start(|base| {
+        vec![
+            session(base),
+            jmap(
+                "Email/queryChanges",
+                json!({ "added": [{ "id": "message-3", "index": 0 }], "removed": [], "newQueryState": "query-state-2", "hasMoreChanges": false }),
+                "changes",
+            ),
+            jmap(
+                "Email/get",
+                json!({ "list": [follow_up.clone()] }),
+                "emails",
+            ),
+            jmap(
+                "Thread/get",
+                json!({ "list": [{ "id": "thread-1", "emailIds": ["message-1", "message-2", "message-3"] }] }),
+                "thread",
+            ),
+            jmap(
+                "Email/get",
+                json!({ "list": [initial, sent, follow_up] }),
+                "emails",
+            ),
+        ]
+    })
+    .await;
+    let result = poll_fastmail(
+        request(
+            &server.base_url,
+            json!({ "queryState": "query-state-1", "mailboxId": "inbox", "sentMailboxId": "sent" }),
+        ),
+        &http_client().unwrap(),
+        "source-only-token",
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].revision_id, "message-3");
+    assert!(result.items[0].body.contains("Customer follow up"));
+    server.finish().await;
+}
+
+#[tokio::test]
 async fn advances_through_removals_without_emitting_items() {
     let server = FixtureServer::start(|base| vec![
         session(base),
