@@ -788,6 +788,66 @@ async fn production_failed_tool_can_be_recovered_by_the_model() {
 }
 
 #[tokio::test]
+async fn production_records_workmux_effects_from_bash_commands() {
+    let mut fixture = ProductionFixture::new("record workmux effect", "github_pull_request").await;
+    fs::create_dir(fixture.root.path().join(".git")).expect("git metadata directory");
+    let bin = fixture.root.path().join("bin");
+    fs::create_dir(&bin).expect("fixture bin directory");
+    let workmux = bin.join("workmux");
+    fs::write(
+        &workmux,
+        "#!/bin/sh\nprintf 'Worktree: /tmp/default-session\\n'\n",
+    )
+    .expect("workmux fixture");
+    let mut permissions = fs::metadata(&workmux)
+        .expect("workmux metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&workmux, permissions).expect("executable workmux fixture");
+    fixture
+        .config
+        .commands
+        .path
+        .insert(0, bin.to_string_lossy().into_owned());
+    fixture.config.commands.rules.push(CommandRule {
+        executable: "workmux".into(),
+    });
+    let model = MockCompletionModel::from_turns([
+        MockTurn::tool_call(
+            "call-workmux",
+            "bash",
+            json!({"command": "workmux add default-session"}),
+        ),
+        MockTurn::text("done"),
+    ]);
+
+    fixture
+        .runner(model)
+        .run(fixture.event.clone(), CancellationToken::new())
+        .await
+        .expect("workmux command succeeds");
+    fixture.database.flush().await.expect("flush database");
+
+    let event = fixture
+        .database
+        .readers()
+        .event(fixture.event.id)
+        .await
+        .expect("event read")
+        .expect("event record");
+    assert_eq!(
+        event.investigation_handle.as_deref(),
+        Some("default-session")
+    );
+    let connection = rusqlite::Connection::open(fixture.root.path().join("intagent.sqlite"))
+        .expect("open fixture database");
+    let command: String = connection
+        .query_row("SELECT command FROM command_events", [], |row| row.get(0))
+        .expect("recorded command");
+    assert_eq!(command, "tool=workmux");
+}
+
+#[tokio::test]
 async fn production_retries_compacts_and_reports_observed_activity() {
     let mut fixture = ProductionFixture::new("telemetry", "email").await;
     fixture.config.triage.compaction_trigger_tokens = 100;

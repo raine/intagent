@@ -23,6 +23,7 @@ pub struct ParsedCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandResult {
+    pub executable: String,
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
@@ -198,6 +199,7 @@ impl CommandPolicy {
             }
         }
         Ok(CommandResult {
+            executable: parsed.stages[0][0].clone(),
             exit_code,
             stdout: self.filter(&String::from_utf8_lossy(
                 stdin.as_deref().unwrap_or_default(),

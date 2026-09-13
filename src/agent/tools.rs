@@ -302,7 +302,7 @@ impl ProductionTools {
             .database
             .record_command(
                 self.event_id,
-                input.command,
+                result.executable,
                 result.exit_code,
                 combined.clone(),
                 Utc::now(),
