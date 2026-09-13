@@ -14,6 +14,15 @@ pub struct RecordedRequest {
     pub body: Value,
 }
 
+#[allow(dead_code)]
+pub enum FixtureResponse {
+    Json(Value),
+    Bytes {
+        content_type: &'static str,
+        body: Vec<u8>,
+    },
+}
+
 pub struct FixtureServer {
     pub base_url: String,
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
@@ -22,13 +31,23 @@ pub struct FixtureServer {
 
 impl FixtureServer {
     pub async fn start(build: impl FnOnce(&str) -> Vec<Value>) -> Self {
+        Self::start_with(|base_url| {
+            build(base_url)
+                .into_iter()
+                .map(FixtureResponse::Json)
+                .collect()
+        })
+        .await
+    }
+
+    pub async fn start_with(build: impl FnOnce(&str) -> Vec<FixtureResponse>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         let responses = build(&base_url);
         let requests = Arc::new(Mutex::new(Vec::new()));
         let captured = Arc::clone(&requests);
         let task = tokio::spawn(async move {
-            let mut responses: VecDeque<Value> = responses.into();
+            let mut responses: VecDeque<FixtureResponse> = responses.into();
             while let Some(response) = responses.pop_front() {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut bytes = Vec::new();
@@ -71,9 +90,14 @@ impl FixtureServer {
                     headers,
                     body,
                 });
-                let body = serde_json::to_vec(&response).unwrap();
+                let (content_type, body) = match response {
+                    FixtureResponse::Json(value) => {
+                        ("application/json", serde_json::to_vec(&value).unwrap())
+                    }
+                    FixtureResponse::Bytes { content_type, body } => (content_type, body),
+                };
                 let response_headers = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
                 );
                 stream.write_all(response_headers.as_bytes()).await.unwrap();

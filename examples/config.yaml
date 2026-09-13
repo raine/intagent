@@ -21,6 +21,8 @@ sources:
       - FASTMAIL_API_TOKEN
     options:
       mailbox_id: inbox
+      # Download attachments to private files and expose their paths to triage.
+      attachment_directory: ~/.local/state/intagent/attachments
       # Header names map to case-insensitive values. Every include rule must
       # match. Exclude rules use the same mapping and reject matches. Filtered
       # messages are omitted from events and later thread context.

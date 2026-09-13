@@ -1,11 +1,13 @@
 mod support;
 
+use std::os::unix::fs::PermissionsExt;
 use std::process::Stdio;
 
 use intagent::protocol::{PollRequest, PollResponse};
 use intagent::sources::{fastmail::poll_fastmail, http_client};
 use serde_json::{Map, Value, json};
-use support::FixtureServer;
+use support::{FixtureResponse, FixtureServer};
+use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -180,6 +182,79 @@ async fn emits_stable_events_with_bounded_threads_and_attachment_metadata() {
     assert_eq!(
         calls[1].body["methodCalls"][0][1]["filter"],
         json!({ "inMailbox": "inbox" })
+    );
+}
+
+#[tokio::test]
+async fn downloads_current_message_attachments_to_private_files() {
+    let directory = TempDir::new().unwrap();
+    let mut message = email("message-2", "2026-08-03T10:05:00.000Z", "Follow up");
+    message["bodyStructure"]["subParts"][0]["blobId"] = json!("blob-current");
+    let server = FixtureServer::start_with(|base| {
+        let mut session = session(base);
+        session["downloadUrl"] = json!(format!(
+            "{base}/download/{{accountId}}/{{blobId}}/{{name}}?accept={{type}}"
+        ));
+        vec![
+            FixtureResponse::Json(session),
+            FixtureResponse::Json(jmap(
+                "Email/queryChanges",
+                json!({ "added": [{ "id": "message-2", "index": 0 }], "removed": [], "newQueryState": "query-state-2", "hasMoreChanges": false }),
+                "changes",
+            )),
+            FixtureResponse::Json(jmap(
+                "Email/get",
+                json!({ "list": [message.clone()] }),
+                "emails",
+            )),
+            FixtureResponse::Json(jmap(
+                "Thread/get",
+                json!({ "list": [{ "id": "thread-1", "emailIds": ["message-2"] }] }),
+                "thread",
+            )),
+            FixtureResponse::Json(jmap(
+                "Email/get",
+                json!({ "list": [message] }),
+                "emails",
+            )),
+            FixtureResponse::Bytes {
+                content_type: "application/pdf",
+                body: b"attachment contents".to_vec(),
+            },
+        ]
+    })
+    .await;
+    let mut request = request(
+        &server.base_url,
+        json!({ "queryState": "query-state-1", "mailboxId": "inbox", "sentMailboxId": "sent" }),
+    );
+    request.options.insert(
+        "attachment_directory".into(),
+        json!(directory.path().join("attachments")),
+    );
+    let result = poll_fastmail(request, &http_client().unwrap(), "source-only-token")
+        .await
+        .unwrap();
+
+    let path = result.items[0].metadata["attachments"][0]["localPath"]
+        .as_str()
+        .expect("local attachment path");
+    assert_eq!(std::fs::read(path).unwrap(), b"attachment contents");
+    assert_eq!(
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let calls = server.finish().await;
+    assert_eq!(
+        calls.last().unwrap().target,
+        "/download/account-1/blob-current/report.pdf?accept=application%2Fpdf"
+    );
+    assert!(
+        calls
+            .last()
+            .unwrap()
+            .headers
+            .contains("Bearer source-only-token")
     );
 }
 

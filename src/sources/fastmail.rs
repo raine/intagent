@@ -1,5 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 use chrono::DateTime;
 use reqwest::Client;
@@ -15,11 +20,15 @@ const CORE_CAPABILITY: &str = "urn:ietf:params:jmap:core";
 const BODY_LIMIT: usize = 64 * 1024;
 const THREAD_MESSAGE_LIMIT: usize = 100;
 const ATTACHMENT_LIMIT: usize = 100;
+const MAX_ATTACHMENT_FILE_BYTES: usize = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_TOTAL_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JmapSession {
     api_url: String,
+    #[serde(default)]
+    download_url: Option<String>,
     primary_accounts: HashMap<String, String>,
 }
 
@@ -123,6 +132,18 @@ struct EmailFilters {
     include_message_id_contains: Vec<String>,
 }
 
+struct MessageNormalizationContext<'a> {
+    api_url: &'a str,
+    download_url: Option<&'a str>,
+    account_id: &'a str,
+    token: &'a str,
+    source: &'a str,
+    sent_mailbox_id: Option<&'a str>,
+    filters: &'a EmailFilters,
+    attachment_directory: Option<&'a Path>,
+    client: &'a Client,
+}
+
 pub async fn poll_fastmail(
     request: PollRequest,
     client: &Client,
@@ -184,6 +205,18 @@ pub async fn poll_fastmail(
         .unwrap_or(0)
         .min(request.item_limit);
     let filters = email_filters(&request)?;
+    let attachment_directory = attachment_directory(&request)?;
+    let normalization = MessageNormalizationContext {
+        api_url: &session.api_url,
+        download_url: session.download_url.as_deref(),
+        account_id: &account_id,
+        token,
+        source: &request.source,
+        sent_mailbox_id: sent_mailbox_id.as_deref(),
+        filters: &filters,
+        attachment_directory: attachment_directory.as_deref(),
+        client,
+    };
 
     if !has_checkpoint {
         let baseline = query_mailbox(
@@ -208,16 +241,7 @@ pub async fn poll_fastmail(
             )
             .await?
         };
-        let items = normalize_messages(
-            &session.api_url,
-            &account_id,
-            token,
-            messages,
-            sent_mailbox_id.as_deref(),
-            &filters,
-            client,
-        )
-        .await?;
+        let items = normalize_messages(messages, &normalization).await?;
         return Ok(response(baseline.0, mailbox_id, sent_mailbox_id, items));
     }
 
@@ -276,16 +300,7 @@ pub async fn poll_fastmail(
     } else {
         get_emails(&session.api_url, &account_id, token, &ids, &filters, client).await?
     };
-    let items = normalize_messages(
-        &session.api_url,
-        &account_id,
-        token,
-        messages,
-        sent_mailbox_id.as_deref(),
-        &filters,
-        client,
-    )
-    .await?;
+    let items = normalize_messages(messages, &normalization).await?;
     Ok(response(
         new_query_state,
         mailbox_id,
@@ -480,35 +495,30 @@ async fn get_thread(
 }
 
 async fn normalize_messages(
-    api_url: &str,
-    account_id: &str,
-    token: &str,
     mut messages: Vec<Email>,
-    sent_mailbox_id: Option<&str>,
-    filters: &EmailFilters,
-    client: &Client,
+    context: &MessageNormalizationContext<'_>,
 ) -> Result<Vec<IntakeItem>, ProtocolError> {
     messages.sort_by(compare_message_timestamps);
     let mut thread_cache: HashMap<String, Vec<Email>> = HashMap::new();
     let mut items = Vec::new();
     for email in messages {
-        if !is_allowed(&email, filters) {
+        if !is_allowed(&email, context.filters) {
             continue;
         }
         if !thread_cache.contains_key(&email.thread_id) {
             let thread = get_thread(
-                api_url,
-                account_id,
-                token,
+                context.api_url,
+                context.account_id,
+                context.token,
                 &email.thread_id,
-                filters,
-                client,
+                context.filters,
+                context.client,
             )
             .await?;
             thread_cache.insert(email.thread_id.clone(), thread);
         }
         let thread = &thread_cache[&email.thread_id];
-        if sent_mailbox_id.is_some_and(|sent| {
+        if context.sent_mailbox_id.is_some_and(|sent| {
             thread
                 .last()
                 .and_then(|latest| latest.mailbox_ids.get(sent))
@@ -517,7 +527,22 @@ async fn normalize_messages(
         }) {
             continue;
         }
-        items.push(normalize_email(account_id, &email, thread));
+        let local_attachments = download_attachment_files(
+            context.download_url,
+            context.account_id,
+            context.token,
+            context.source,
+            &email,
+            context.attachment_directory,
+            context.client,
+        )
+        .await?;
+        items.push(normalize_email(
+            context.account_id,
+            &email,
+            thread,
+            &local_attachments,
+        ));
     }
     Ok(items)
 }
@@ -570,7 +595,12 @@ async fn jmap_call(
         .ok_or_else(|| source_error("Fastmail JMAP response has no method result"))
 }
 
-fn normalize_email(account_id: &str, email: &Email, thread: &[Email]) -> IntakeItem {
+fn normalize_email(
+    account_id: &str,
+    email: &Email,
+    thread: &[Email],
+    local_attachments: &HashMap<String, String>,
+) -> IntakeItem {
     let thread_body = truncate_utf16(
         &thread
             .iter()
@@ -597,7 +627,7 @@ fn normalize_email(account_id: &str, email: &Email, thread: &[Email]) -> IntakeI
     );
     let attachments: Vec<Value> = thread
         .iter()
-        .flat_map(|message| attachment_metadata(message.body_structure.as_ref()))
+        .flat_map(|message| attachment_metadata(message.body_structure.as_ref(), local_attachments))
         .take(ATTACHMENT_LIMIT)
         .collect();
     let metadata = json!({
@@ -658,7 +688,186 @@ fn body_text(email: &Email) -> String {
     truncate_utf16(&value, BODY_LIMIT)
 }
 
-fn attachment_metadata(root: Option<&BodyPart>) -> Vec<Value> {
+fn attachment_directory(request: &PollRequest) -> Result<Option<PathBuf>, ProtocolError> {
+    let Some(configured) = string_option(request, "attachment_directory") else {
+        return Ok(None);
+    };
+    let path = if configured == "~" {
+        PathBuf::from(env::var("HOME").unwrap_or_default())
+    } else if let Some(relative) = configured.strip_prefix("~/") {
+        PathBuf::from(env::var("HOME").unwrap_or_default()).join(relative)
+    } else {
+        PathBuf::from(configured)
+    };
+    if !path.is_absolute() {
+        return Err(source_error(
+            "Fastmail attachment_directory must be an absolute path",
+        ));
+    }
+    fs::create_dir_all(&path)
+        .map_err(|_| source_error("Fastmail attachment directory is unavailable"))?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+        .map_err(|_| source_error("Fastmail attachment directory permissions could not be set"))?;
+    Ok(Some(path))
+}
+
+async fn download_attachment_files(
+    download_url: Option<&str>,
+    account_id: &str,
+    token: &str,
+    source: &str,
+    email: &Email,
+    attachment_directory: Option<&Path>,
+    client: &Client,
+) -> Result<HashMap<String, String>, ProtocolError> {
+    let Some(root) = attachment_directory else {
+        return Ok(HashMap::new());
+    };
+    let parts = attachment_parts(email.body_structure.as_ref());
+    if parts.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let template = download_url
+        .ok_or_else(|| source_error("Fastmail JMAP session has no attachment download URL"))?;
+    let directory = root
+        .join(stable_component(source))
+        .join(stable_component(account_id))
+        .join(stable_component(&email.id));
+    fs::create_dir_all(&directory)
+        .map_err(|_| source_error("Fastmail attachment directory could not be created"))?;
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))
+        .map_err(|_| source_error("Fastmail attachment directory permissions could not be set"))?;
+
+    let mut downloaded = HashMap::new();
+    let mut total = 0usize;
+    for (index, part) in parts.into_iter().take(ATTACHMENT_LIMIT).enumerate() {
+        let Some(blob_id) = part.blob_id.as_deref() else {
+            continue;
+        };
+        if part
+            .size
+            .is_some_and(|size| size > MAX_ATTACHMENT_FILE_BYTES as u64)
+            || total >= MAX_ATTACHMENT_TOTAL_BYTES
+        {
+            continue;
+        }
+        let name = part.name.as_deref().unwrap_or("attachment");
+        let media_type = part
+            .media_type
+            .as_deref()
+            .unwrap_or("application/octet-stream");
+        let url = template
+            .replace("{accountId}", &url_component(account_id))
+            .replace("{blobId}", &url_component(blob_id))
+            .replace("{name}", &url_component(name))
+            .replace("{type}", &url_component(media_type));
+        let mut response = client
+            .get(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|_| source_error("Fastmail attachment download failed"))?;
+        if !response.status().is_success() {
+            return Err(source_error(format!(
+                "Fastmail attachment download failed with {}",
+                response.status().as_u16()
+            )));
+        }
+        let remaining = MAX_ATTACHMENT_TOTAL_BYTES.saturating_sub(total);
+        let limit = MAX_ATTACHMENT_FILE_BYTES.min(remaining);
+        let mut bytes = Vec::with_capacity(
+            part.size
+                .and_then(|size| usize::try_from(size).ok())
+                .unwrap_or(0)
+                .min(limit),
+        );
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| source_error("Fastmail attachment download failed"))?
+        {
+            if bytes.len().saturating_add(chunk.len()) > limit {
+                return Err(source_error("Fastmail attachment exceeds download limits"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let path = directory.join(format!("{:03}-{}", index + 1, safe_attachment_name(name)));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&path)
+            .map_err(|_| source_error("Fastmail attachment file could not be created"))?;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| source_error("Fastmail attachment file could not be written"))?;
+        total += bytes.len();
+        downloaded.insert(blob_id.to_string(), path.to_string_lossy().into_owned());
+    }
+    Ok(downloaded)
+}
+
+fn attachment_parts(root: Option<&BodyPart>) -> Vec<&BodyPart> {
+    let Some(root) = root else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    let mut pending = vec![root];
+    while let Some(part) = pending.pop() {
+        pending.extend(part.sub_parts.iter());
+        if part.blob_id.is_some()
+            && (part.name.is_some() || part.disposition.as_deref() == Some("attachment"))
+        {
+            result.push(part);
+        }
+    }
+    result
+}
+
+fn stable_component(value: &str) -> String {
+    let hash = value
+        .as_bytes()
+        .iter()
+        .fold(0xcbf29ce484222325_u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+        });
+    format!("{hash:016x}")
+}
+
+fn safe_attachment_name(value: &str) -> String {
+    let name = Path::new(value)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("attachment");
+    let sanitized = name
+        .chars()
+        .take(100)
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || ".-_".contains(character) {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let sanitized = sanitized.trim_start_matches('.');
+    if sanitized.is_empty() {
+        "attachment".into()
+    } else {
+        sanitized.into()
+    }
+}
+
+fn url_component(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
+fn attachment_metadata(
+    root: Option<&BodyPart>,
+    local_attachments: &HashMap<String, String>,
+) -> Vec<Value> {
     let Some(root) = root else {
         return Vec::new();
     };
@@ -674,13 +883,21 @@ fn attachment_metadata(root: Option<&BodyPart>) -> Vec<Value> {
         {
             continue;
         }
-        result.push(json!({
+        let mut metadata = json!({
             "name": part.name,
             "type": part.media_type.as_deref().unwrap_or("application/octet-stream"),
             "size": part.size.unwrap_or(0),
             "disposition": part.disposition,
             "cid": part.cid,
-        }));
+        });
+        if let Some(path) = part
+            .blob_id
+            .as_ref()
+            .and_then(|blob_id| local_attachments.get(blob_id))
+        {
+            metadata["localPath"] = Value::String(path.clone());
+        }
+        result.push(metadata);
     }
     result
 }
